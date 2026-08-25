@@ -1,0 +1,13 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/repl"
+
+// Values
+
+// Errors
+
+// Types and methods
+type DapTransport
+
+// Type aliases
+
+// Traits

@@ -13,14 +13,19 @@ name = "Kaida-Amethyst/moondbg"
 
 version = "0.1.0"
 
+import {
+  "Kaida-Amethyst/readline@0.1.1",
+  "moonbitlang/async@0.21.0",
+}
+
 readme = "README.mbt.md"
 
 repository = ""
 
 license = "Apache-2.0"
 
-keywords = []
+keywords = [ ]
 
-preferred_target = "wasm"
+preferred_target = "native"
 
 description = ""
