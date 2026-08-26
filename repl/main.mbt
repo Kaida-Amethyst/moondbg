@@ -81,7 +81,10 @@ fn run_repl(
         if line != "" {
           history.add(line)
         }
-        println("Commands are not implemented yet.")
+        match parse_repl_command(line) {
+          Quit => return
+          Unknown => println("Commands are not implemented yet.")
+        }
       }
     }
   }
