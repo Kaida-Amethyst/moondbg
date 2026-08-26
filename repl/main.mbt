@@ -79,7 +79,7 @@ async fn run_repl(
 ) -> Unit {
   for ;; {
     let input = editor.read_line(prompt="(moondbg) ") catch {
-      Interrupted => {
+      @readline.Interrupted => {
         println("")
         continue
       }

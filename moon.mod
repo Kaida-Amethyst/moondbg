@@ -14,8 +14,8 @@ name = "Kaida-Amethyst/moondbg"
 version = "0.1.0"
 
 import {
-  "Kaida-Amethyst/readline@0.1.1",
   "moonbitlang/async@0.21.0",
+  "Kaida-Amethyst/readline@0.1.2",
 }
 
 readme = "README.mbt.md"
