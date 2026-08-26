@@ -55,7 +55,7 @@ T-03 的实施按 `P1` 至 `P5` 推进。阶段状态使用“待实施”、“
 
 ### P1. 建立可控的 fake adapter 测试设施
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 为 adapter 后台准备、请求时序、故障和清理建立不依赖真实 LLDB 启动速度的
 确定性测试入口。
@@ -70,12 +70,18 @@ T-03 的实施按 `P1` 至 `P5` 推进。阶段状态使用“待实施”、“
    子进程组是否完全回收；
 4. 为所有等待设置硬超时，失败路径不能遗留 fake adapter 或 moondbg 子进程。
 
+**实施结果：** 新增 `tools/fake_dap.py`，通过环境变量控制 initialize 延迟、launch
+response 与 initialized event 顺序、源码位置、trace 文件和 initialize 前异常退出；请求
+trace 可以核对完整 DAP 命令序列与 adapter PID。`tools/repl_e2e.py` 已接入正常 fake
+调试闭环和 initialize failure，并提供 `--fake-only`、`--real-only` 选择；所有 PTY session
+继续使用硬超时和进程组残留检查。fake adapter 正常闭环与准备期失败测试均已通过。
+
 **完成条件：** 测试设施能够稳定制造“adapter 尚未 ready”“initialize 成功”和
 “准备期间 adapter 退出”三种场景，并为 P3、P5 提供可复用断言。
 
 ### P2. 拆分持久 debugger session 与单次 execution
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 建立 T-03 的所有权边界，同时暂时保持 T-02 的外部单次运行行为，避免把结构
 重构和用户体验变化混在同一步。
@@ -89,6 +95,14 @@ T-03 的实施按 `P1` 至 `P5` 推进。阶段状态使用“待实施”、“
 4. 明确 execution 的创建、交接、关闭和失败接口，保证关闭操作幂等；
 5. 调整状态机和白盒测试，验证旧 execution 的 frame、变量引用和消息不能被另一
    execution 接受。
+
+**实施结果：** `DebugSession` 现只持有 executable、逻辑断点、稳定编号、当前
+`DebugExecution?` 和 execution 分离后的状态；新提取的 `DebugExecution` 独占 dispatcher、
+adapter process、DAP 状态机、capabilities、事件、stop/variable 缓存、输出队列和本次
+adapter 断点结果。`LogicalBreakpoint` 只保存稳定用户事实，verified、actual line、DAP ID
+与 rejected 状态进入 `ExecutionBreakpointState`；白盒测试证明同一个逻辑断点在两个
+execution 中的 adapter 结果彼此隔离。现有公开方法由持久 session 委托给当前 execution，
+关闭后会移除全部 adapter-scoped 资源。`moon info` 确认公开 `.mbti` 无变化。
 
 **完成条件：** 当前 T-02 的真实调试闭环保持可用；持久状态不再依赖某一个 dispatcher，
 execution 可以被完整替换，相关单元测试通过且公开接口变化符合预期。

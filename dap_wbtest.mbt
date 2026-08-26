@@ -215,7 +215,9 @@ test "resuming invalidates frame and variable references from the stop epoch" {
 test "breakpoint responses preserve moondbg ids and adapter outcomes" {
   let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
   let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
+  let state = ExecutionBreakpointState::new()
   apply_breakpoint_response(
+    state,
     [first, second],
     test_response(40, 4, "setBreakpoints", {
       "breakpoints": [
@@ -224,12 +226,12 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
       ],
     }),
   )
-  let first_snapshot = first.snapshot()
+  let first_snapshot = state.snapshot(first)
   assert_eq(first_snapshot.id(), 1)
   assert_eq(first_snapshot.requested_line(), 4)
   assert_eq(first_snapshot.actual_line(), Some(5))
   assert_true(first_snapshot.status() is Verified)
-  let second_snapshot = second.snapshot()
+  let second_snapshot = state.snapshot(second)
   assert_eq(second_snapshot.id(), 2)
   assert_true(
     second_snapshot.status() is Rejected("no executable code at this location"),
@@ -240,7 +242,8 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
 test "a failed setBreakpoints response rejects the complete source set" {
   let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
   let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
-  apply_breakpoint_response([first, second], {
+  let state = ExecutionBreakpointState::new()
+  apply_breakpoint_response(state, [first, second], {
     seq: 41,
     request_seq: 5,
     command: Some("setBreakpoints"),
@@ -248,8 +251,23 @@ test "a failed setBreakpoints response rejects the complete source set" {
     message: Some("source is unavailable"),
     body: null,
   })
-  assert_true(first.snapshot().status() is Rejected("source is unavailable"))
-  assert_true(second.snapshot().status() is Rejected("source is unavailable"))
+  assert_true(
+    state.snapshot(first).status() is Rejected("source is unavailable"),
+  )
+  assert_true(
+    state.snapshot(second).status() is Rejected("source is unavailable"),
+  )
+}
+
+///|
+test "adapter breakpoint outcomes are isolated per execution" {
+  let breakpoint = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let first = ExecutionBreakpointState::new()
+  let second = ExecutionBreakpointState::new()
+  first.verify(breakpoint, Some(5), Some(17))
+  assert_true(first.snapshot(breakpoint).status() is Verified)
+  assert_true(second.snapshot(breakpoint).status() is Pending)
+  assert_eq(second.snapshot(breakpoint).actual_line(), None)
 }
 
 ///|

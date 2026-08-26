@@ -55,58 +55,87 @@ fn validate_response_command(
 }
 
 ///|
-/// Owns the lldb-dap process, protocol dispatcher, and debugger state for one
-/// moondbg REPL session.
+// Owns adapter-scoped resources and protocol state for one execution.
 #warnings("-unused_field")
-pub struct DebugSession {
-  priv dispatcher : DapDispatcher
-  priv machine : DebugSessionMachine
-  priv executable : String
-  priv events : Array[DapEvent]
-  priv breakpoints : Array[LogicalBreakpoint]
-  priv mut next_breakpoint_id : Int
-  priv mut capabilities : Json
-  priv mut stop_reason : String
-  priv mut exit_code : Int?
-  priv mut last_snapshot : StopSnapshot?
-  priv variable_cache : StopVariableCache
-  priv pending_output : Array[DebugOutput]
+priv struct DebugExecution {
+  dispatcher : DapDispatcher
+  machine : DebugSessionMachine
+  events : Array[DapEvent]
+  mut capabilities : Json
+  mut stop_reason : String
+  mut exit_code : Int?
+  mut last_snapshot : StopSnapshot?
+  variable_cache : StopVariableCache
+  breakpoint_state : ExecutionBreakpointState
+  pending_output : Array[DebugOutput]
 }
 
 ///|
-/// Starts lldb-dap without creating a target. The returned session is in
-/// `Ready`; a later `run` command will begin the only execution epoch.
-pub async fn[X] DebugSession::start(
+/// Owns debugger configuration that remains stable for the REPL lifetime.
+/// Adapter processes and DAP references are isolated inside the current
+/// execution and can be replaced without changing logical breakpoint IDs.
+pub struct DebugSession {
+  priv executable : String
+  priv breakpoints : Array[LogicalBreakpoint]
+  priv mut next_breakpoint_id : Int
+  priv mut execution : DebugExecution?
+  priv mut detached_state : DebugSessionState
+}
+
+///|
+async fn[X] DebugExecution::start(
   group : @async.TaskGroup[X],
   adapter : String,
-  executable : String,
-) -> DebugSession {
+) -> DebugExecution {
   let dispatcher = DapDispatcher::start(group, adapter)
   {
     dispatcher,
     machine: DebugSessionMachine::new(),
-    executable,
     events: [],
-    breakpoints: [],
-    next_breakpoint_id: 1,
     capabilities: null,
     stop_reason: "stopped",
     exit_code: None,
     last_snapshot: None,
     variable_cache: StopVariableCache::new(),
+    breakpoint_state: ExecutionBreakpointState::new(),
     pending_output: [],
+  }
+}
+
+///|
+/// Starts lldb-dap without creating a target. The returned persistent session
+/// owns one `Ready` execution; a later `run` begins the only execution epoch.
+pub async fn[X] DebugSession::start(
+  group : @async.TaskGroup[X],
+  adapter : String,
+  executable : String,
+) -> DebugSession {
+  {
+    executable,
+    breakpoints: [],
+    next_breakpoint_id: 1,
+    execution: Some(DebugExecution::start(group, adapter)),
+    detached_state: Ready,
   }
 }
 
 ///|
 /// Returns the current stable or transitional debugger state.
 pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
+  match self.execution {
+    Some(execution) => execution.state()
+    None => self.detached_state
+  }
+}
+
+///|
+fn DebugExecution::state(self : DebugExecution) -> DebugSessionState {
   self.machine.state
 }
 
 ///|
-fn DebugSession::accept_event(
-  self : DebugSession,
+fn DebugExecution::accept_event(
+  self : DebugExecution,
   event : DapEvent,
 ) -> Unit raise DapSessionError {
   if output_from_event(event) is Some(output) {
@@ -144,8 +173,8 @@ fn DebugSession::accept_event(
 }
 
 ///|
-async fn DebugSession::wait_for_response_inner(
-  self : DebugSession,
+async fn DebugExecution::wait_for_response_inner(
+  self : DebugExecution,
   request_seq : Int,
   command : String,
   terminal_event_completes? : Bool = false,
@@ -179,8 +208,8 @@ async fn DebugSession::wait_for_response_inner(
 }
 
 ///|
-async fn DebugSession::request(
-  self : DebugSession,
+async fn DebugExecution::request(
+  self : DebugExecution,
   command : String,
   arguments : Json,
 ) -> DapResponse {
@@ -197,9 +226,10 @@ pub fn DebugSession::add_source_breakpoint(
   source_path : String,
   line : Int,
 ) -> BreakpointSnapshot raise DebugSessionError {
-  guard self.machine.state is Ready else {
+  let state = self.state()
+  guard state is Ready else {
     raise DebugSessionError::OperationNotAllowed(
-      state=self.machine.state,
+      state~,
       action="add source breakpoint",
     )
   }
@@ -210,31 +240,46 @@ pub fn DebugSession::add_source_breakpoint(
   )
   self.next_breakpoint_id += 1
   self.breakpoints.push(breakpoint)
-  breakpoint.snapshot()
+  breakpoint.pending_snapshot()
 }
 
 ///|
 pub fn DebugSession::source_breakpoints(
   self : DebugSession,
 ) -> Array[BreakpointSnapshot] {
-  self.breakpoints.map(breakpoint => breakpoint.snapshot())
+  match self.execution {
+    Some(execution) =>
+      self.breakpoints.map(breakpoint => {
+        execution.breakpoint_state.snapshot(breakpoint)
+      })
+    None => self.breakpoints.map(LogicalBreakpoint::pending_snapshot)
+  }
 }
 
 ///|
 pub fn DebugSession::last_stop_snapshot(self : DebugSession) -> StopSnapshot? {
-  self.last_snapshot
+  match self.execution {
+    Some(execution) => execution.last_snapshot
+    None => None
+  }
 }
 
 ///|
 pub fn DebugSession::take_output(self : DebugSession) -> Array[DebugOutput] {
+  guard self.execution is Some(execution) else { return [] }
+  execution.take_output()
+}
+
+///|
+fn DebugExecution::take_output(self : DebugExecution) -> Array[DebugOutput] {
   let output = self.pending_output.copy()
   self.pending_output.clear()
   output
 }
 
 ///|
-async fn DebugSession::load_scopes(
-  self : DebugSession,
+async fn DebugExecution::load_scopes(
+  self : DebugExecution,
   epoch : Int,
   frame_id : Int,
 ) -> Array[DapScope] {
@@ -254,8 +299,8 @@ async fn DebugSession::load_scopes(
 }
 
 ///|
-async fn DebugSession::load_variables(
-  self : DebugSession,
+async fn DebugExecution::load_variables(
+  self : DebugExecution,
   epoch : Int,
   reference : Int,
 ) -> Array[DapVariable] {
@@ -277,8 +322,8 @@ async fn DebugSession::load_variables(
 }
 
 ///|
-async fn DebugSession::find_variable_inner(
-  self : DebugSession,
+async fn DebugExecution::find_variable_inner(
+  self : DebugExecution,
   epoch : Int,
   frame_id : Int,
   name : String,
@@ -296,8 +341,8 @@ async fn DebugSession::find_variable_inner(
 }
 
 ///|
-pub async fn DebugSession::find_variable(
-  self : DebugSession,
+async fn DebugExecution::find_variable(
+  self : DebugExecution,
   name : String,
 ) -> VariableLookupResult {
   guard self.machine.state is Stopped &&
@@ -311,6 +356,20 @@ pub async fn DebugSession::find_variable(
   self.find_variable_inner(epoch, frame_id, name) catch {
     error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
   }
+}
+
+///|
+pub async fn DebugSession::find_variable(
+  self : DebugSession,
+  name : String,
+) -> VariableLookupResult {
+  guard self.execution is Some(execution) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.detached_state,
+      action="inspect a variable",
+    )
+  }
+  execution.find_variable(name)
 }
 
 ///|
@@ -344,46 +403,60 @@ fn breakpoint_result_message(result : Json) -> String {
 
 ///|
 fn update_breakpoint_from_result(
+  breakpoint_state : ExecutionBreakpointState,
   breakpoint : LogicalBreakpoint,
   result : Json,
 ) -> Unit {
   match result {
     { "verified": True, .. } =>
-      breakpoint.verify(
+      breakpoint_state.verify(
+        breakpoint,
         breakpoint_result_line(result),
         breakpoint_result_id(result),
       )
-    _ => breakpoint.reject(breakpoint_result_message(result))
+    _ => breakpoint_state.reject(breakpoint, breakpoint_result_message(result))
   }
 }
 
 ///|
 fn reject_breakpoints(
+  breakpoint_state : ExecutionBreakpointState,
   breakpoints : Array[LogicalBreakpoint],
   message : String,
 ) -> Unit {
   for breakpoint in breakpoints {
-    breakpoint.reject(message)
+    breakpoint_state.reject(breakpoint, message)
   }
 }
 
 ///|
 fn apply_breakpoint_response(
+  breakpoint_state : ExecutionBreakpointState,
   breakpoints : Array[LogicalBreakpoint],
   response : DapResponse,
 ) -> Unit {
   guard response.success else {
-    reject_breakpoints(breakpoints, breakpoint_response_message(response))
+    reject_breakpoints(
+      breakpoint_state,
+      breakpoints,
+      breakpoint_response_message(response),
+    )
     return
   }
   guard response.body is { "breakpoints": Array(results), .. } else {
-    reject_breakpoints(breakpoints, "lldb-dap returned no breakpoint results")
+    reject_breakpoints(
+      breakpoint_state, breakpoints, "lldb-dap returned no breakpoint results",
+    )
     return
   }
   for index, breakpoint in breakpoints {
     match results.get(index) {
-      Some(result) => update_breakpoint_from_result(breakpoint, result)
-      None => breakpoint.reject("lldb-dap omitted this breakpoint result")
+      Some(result) =>
+        update_breakpoint_from_result(breakpoint_state, breakpoint, result)
+      None =>
+        breakpoint_state.reject(
+          breakpoint, "lldb-dap omitted this breakpoint result",
+        )
     }
   }
 }
@@ -419,13 +492,16 @@ fn set_breakpoints_arguments(
 }
 
 ///|
-async fn DebugSession::configure_breakpoints(self : DebugSession) -> Unit {
+async fn DebugExecution::configure_breakpoints(
+  self : DebugExecution,
+  breakpoints : Array[LogicalBreakpoint],
+) -> Unit {
   let configured : Map[String, Bool] = Map([])
-  for breakpoint in self.breakpoints {
+  for breakpoint in breakpoints {
     guard configured.get(breakpoint.source_path) is None else { continue }
     configured.set(breakpoint.source_path, true)
     let source_breakpoints = breakpoints_for_source(
-      self.breakpoints,
+      breakpoints,
       breakpoint.source_path,
     )
     let arguments = set_breakpoints_arguments(
@@ -435,17 +511,23 @@ async fn DebugSession::configure_breakpoints(self : DebugSession) -> Unit {
     let seq = self.dispatcher.send_request("setBreakpoints", arguments)
     guard self.wait_for_response(seq, "setBreakpoints") is Some(response) else {
       reject_breakpoints(
-        source_breakpoints, "lldb-dap exited before verifying the breakpoints",
+        self.breakpoint_state,
+        source_breakpoints,
+        "lldb-dap exited before verifying the breakpoints",
       )
       continue
     }
-    apply_breakpoint_response(source_breakpoints, response)
+    apply_breakpoint_response(
+      self.breakpoint_state,
+      source_breakpoints,
+      response,
+    )
   }
 }
 
 ///|
-async fn DebugSession::wait_for_initialized(
-  self : DebugSession,
+async fn DebugExecution::wait_for_initialized(
+  self : DebugExecution,
   launch_seq : Int,
 ) -> DapResponse? {
   let mut launch_response : DapResponse? = None
@@ -463,7 +545,7 @@ async fn DebugSession::wait_for_initialized(
 }
 
 ///|
-async fn DebugSession::wait_until_stable(self : DebugSession) -> Unit {
+async fn DebugExecution::wait_until_stable(self : DebugExecution) -> Unit {
   while self.machine.state is Running {
     let routed = self.dispatcher.next() catch {
       AdapterClosed => {
@@ -559,7 +641,7 @@ fn select_stack_frame(body : Json) -> ParsedStackFrame? {
 }
 
 ///|
-async fn DebugSession::resolve_stopped_thread(self : DebugSession) -> Int {
+async fn DebugExecution::resolve_stopped_thread(self : DebugExecution) -> Int {
   match self.machine.selected_thread_id() {
     Some(thread_id) => thread_id
     None => {
@@ -573,7 +655,9 @@ async fn DebugSession::resolve_stopped_thread(self : DebugSession) -> Int {
 }
 
 ///|
-async fn DebugSession::build_stop_snapshot(self : DebugSession) -> StopSnapshot {
+async fn DebugExecution::build_stop_snapshot(
+  self : DebugExecution,
+) -> StopSnapshot {
   let thread_id = self.resolve_stopped_thread()
   let response = self.request("stackTrace", {
     "threadId": thread_id,
@@ -596,7 +680,9 @@ async fn DebugSession::build_stop_snapshot(self : DebugSession) -> StopSnapshot 
 }
 
 ///|
-async fn DebugSession::complete_execution(self : DebugSession) -> RunOutcome {
+async fn DebugExecution::complete_execution(
+  self : DebugExecution,
+) -> RunOutcome {
   self.wait_until_stable()
   match self.machine.state {
     Stopped => {
@@ -614,7 +700,11 @@ async fn DebugSession::complete_execution(self : DebugSession) -> RunOutcome {
 }
 
 ///|
-async fn DebugSession::run_transaction(self : DebugSession) -> RunOutcome {
+async fn DebugExecution::run_transaction(
+  self : DebugExecution,
+  executable : String,
+  breakpoints : Array[LogicalBreakpoint],
+) -> RunOutcome {
   errdefer self.machine.fail("run transaction failed")
   self.machine.begin_execution()
   let initialize = self.request("initialize", {
@@ -629,14 +719,14 @@ async fn DebugSession::run_transaction(self : DebugSession) -> RunOutcome {
   })
   self.capabilities = initialize.body
   let launch_seq = self.dispatcher.send_request("launch", {
-    "program": self.executable,
+    "program": executable,
     "stopOnEntry": false,
   })
   let mut launch_response = self.wait_for_initialized(launch_seq)
   if self.machine.state is Exited {
     return Exited(self.exit_code)
   }
-  self.configure_breakpoints()
+  self.configure_breakpoints(breakpoints)
   self.machine.mark_running()
   self.request("configurationDone", {}) |> ignore
   if launch_response is None {
@@ -649,21 +739,36 @@ async fn DebugSession::run_transaction(self : DebugSession) -> RunOutcome {
 }
 
 ///|
-pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+async fn DebugExecution::run(
+  self : DebugExecution,
+  executable : String,
+  breakpoints : Array[LogicalBreakpoint],
+) -> RunOutcome {
   guard self.machine.state is Ready else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.machine.state,
       action="run the program",
     )
   }
-  self.run_transaction() catch {
+  self.run_transaction(executable, breakpoints) catch {
     error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 
 ///|
-async fn DebugSession::continue_transaction(
-  self : DebugSession,
+pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+  guard self.execution is Some(execution) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.detached_state,
+      action="run the program",
+    )
+  }
+  execution.run(self.executable, self.breakpoints)
+}
+
+///|
+async fn DebugExecution::continue_transaction(
+  self : DebugExecution,
   thread_id : Int,
 ) -> RunOutcome {
   errdefer self.machine.fail("continue transaction failed")
@@ -676,8 +781,8 @@ async fn DebugSession::continue_transaction(
 }
 
 ///|
-pub async fn DebugSession::continue_execution(
-  self : DebugSession,
+async fn DebugExecution::continue_execution(
+  self : DebugExecution,
 ) -> RunOutcome {
   guard self.machine.state is Stopped &&
     self.machine.selected_thread_id() is Some(thread_id) else {
@@ -692,8 +797,21 @@ pub async fn DebugSession::continue_execution(
 }
 
 ///|
-async fn DebugSession::wait_for_response(
+pub async fn DebugSession::continue_execution(
   self : DebugSession,
+) -> RunOutcome {
+  guard self.execution is Some(execution) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.detached_state,
+      action="continue execution",
+    )
+  }
+  execution.continue_execution()
+}
+
+///|
+async fn DebugExecution::wait_for_response(
+  self : DebugExecution,
   request_seq : Int,
   command : String,
   terminal_event_completes? : Bool = false,
@@ -705,7 +823,7 @@ async fn DebugSession::wait_for_response(
 ///|
 /// Requests a graceful shutdown after a target has been created. A `Ready`
 /// session owns only an idle adapter, so closing its transport is sufficient.
-pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
+async fn DebugExecution::disconnect(self : DebugExecution) -> Unit {
   guard !(self.machine.state is Exited) else { return }
   if self.machine.state is Ready {
     self.machine.finish()
@@ -721,7 +839,24 @@ pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
 
 ///|
 /// Closes the DAP pipes and cancels the adapter process if it is still alive.
-pub fn DebugSession::close(self : DebugSession) -> Unit {
+fn DebugExecution::close(self : DebugExecution) -> Unit {
   self.dispatcher.close()
   self.machine.finish()
+}
+
+///|
+/// Requests a graceful shutdown of the current execution.
+pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
+  guard self.execution is Some(execution) else { return }
+  execution.disconnect()
+  self.detached_state = execution.state()
+}
+
+///|
+/// Closes the current execution and detaches all adapter-scoped resources.
+pub fn DebugSession::close(self : DebugSession) -> Unit {
+  guard self.execution is Some(execution) else { return }
+  execution.close()
+  self.detached_state = execution.state()
+  self.execution = None
 }

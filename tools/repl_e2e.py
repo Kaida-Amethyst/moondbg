@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Run the T-02 REPL flows against real lldb-dap processes."""
+"""Run moondbg REPL flows against real and deterministic fake adapters."""
 
 from __future__ import annotations
 
 import argparse
 import errno
+import json
 import os
 from pathlib import Path
 import pty
@@ -20,6 +21,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 DWARF_PROBE = ROOT / "testdata" / "dwarf_probe"
 EXIT_PROBE = ROOT / "testdata" / "exit_probe" / "main.c"
+FAKE_DAP = ROOT / "tools" / "fake_dap.py"
 
 
 class ReplError(RuntimeError):
@@ -310,10 +312,119 @@ def test_adapter_failure(
     )
 
 
+def read_trace(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def traced_commands(path: Path) -> list[str]:
+    return [
+        record["command"]
+        for record in read_trace(path)
+        if record["kind"] == "request"
+    ]
+
+
+def test_fake_adapter_flow(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-flow.jsonl"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS": "150",
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send(f"break {EXIT_PROBE}:1")
+        session.expect("Breakpoint 1 pending")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("p answer")
+        session.expect("answer: int = 42")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("fake-output")
+        session.expect("Process exited normally (code 0).")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    expected = [
+        "initialize",
+        "launch",
+        "setBreakpoints",
+        "configurationDone",
+        "stackTrace",
+        "scopes",
+        "variables",
+        "continue",
+    ]
+    commands = traced_commands(trace)
+    if commands != expected:
+        raise ReplError(
+            f"unexpected fake adapter request order: {commands!r}, expected {expected!r}"
+        )
+
+
+def test_fake_adapter_failure(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-failure.jsonl"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_MODE": "exit-before-initialize-response",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("moondbg: debugger adapter failed:")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    commands = traced_commands(trace)
+    if commands != ["initialize"]:
+        raise ReplError(
+            f"failure adapter received unexpected requests: {commands!r}"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=float, default=15)
     parser.add_argument("--skip-build", action="store_true")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--fake-only", action="store_true")
+    selection.add_argument("--real-only", action="store_true")
     args = parser.parse_args()
     try:
         moon, moondbg = require_development_environment()
@@ -322,15 +433,32 @@ def main() -> int:
         if not args.skip_build:
             subprocess.run([str(moon), "build"], cwd=ROOT, env=env, check=True)
         with tempfile.TemporaryDirectory(prefix="moondbg-e2e-") as directory:
-            executable = compile_exit_probe(Path(directory))
-            test_moonbit_flow(moon, env, args.timeout)
-            test_abnormal_exit(moondbg, executable, env, args.timeout)
-            test_quit(moondbg, executable, env, args.timeout)
-            test_adapter_failure(moondbg, executable, env, args.timeout)
+            test_directory = Path(directory)
+            executable = compile_exit_probe(test_directory)
+            if not args.real_only:
+                test_fake_adapter_flow(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+                test_fake_adapter_failure(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+            if not args.fake_only:
+                test_moonbit_flow(moon, env, args.timeout)
+                test_abnormal_exit(moondbg, executable, env, args.timeout)
+                test_quit(moondbg, executable, env, args.timeout)
+                test_adapter_failure(moondbg, executable, env, args.timeout)
     except (OSError, ReplError, subprocess.CalledProcessError) as error:
         print(f"repl e2e failed: {error}", file=sys.stderr)
         return 1
-    print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")
+    if args.fake_only:
+        print("repl e2e passed: fake adapter flow and initialize failure")
+    elif args.real_only:
+        print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")
+    else:
+        print(
+            "repl e2e passed: fake adapter, MoonBit flow, abnormal exit, quit, "
+            "adapter failure"
+        )
     return 0
 
 

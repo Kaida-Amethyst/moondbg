@@ -48,15 +48,10 @@ pub fn BreakpointSnapshot::status(
 }
 
 ///|
-// The DAP id is retained for later breakpoint mutation commands.
-#warnings("-unused_field")
 priv struct LogicalBreakpoint {
   id : Int
   source_path : String
   requested_line : Int
-  mut actual_line : Int?
-  mut dap_id : Int?
-  mut status : BreakpointStatus
 }
 
 ///|
@@ -65,44 +60,77 @@ fn LogicalBreakpoint::new(
   source_path : String,
   requested_line : Int,
 ) -> LogicalBreakpoint {
+  { id, source_path, requested_line, }
+}
+
+///|
+fn LogicalBreakpoint::pending_snapshot(
+  self : LogicalBreakpoint,
+) -> BreakpointSnapshot {
   {
-    id,
-    source_path,
-    requested_line,
+    id: self.id,
+    source_path: self.source_path,
+    requested_line: self.requested_line,
     actual_line: None,
-    dap_id: None,
     status: Pending,
   }
 }
 
 ///|
-fn LogicalBreakpoint::snapshot(self : LogicalBreakpoint) -> BreakpointSnapshot {
-  {
-    id: self.id,
-    source_path: self.source_path,
-    requested_line: self.requested_line,
-    actual_line: self.actual_line,
-    status: self.status,
-  }
+// The DAP id is scoped to one adapter and retained for later mutation commands.
+#warnings("-unused_field")
+priv struct AdapterBreakpointOutcome {
+  actual_line : Int?
+  dap_id : Int?
+  status : BreakpointStatus
 }
 
 ///|
-fn LogicalBreakpoint::verify(
-  self : LogicalBreakpoint,
+priv struct ExecutionBreakpointState {
+  outcomes : Map[Int, AdapterBreakpointOutcome]
+}
+
+///|
+fn ExecutionBreakpointState::new() -> ExecutionBreakpointState {
+  { outcomes: Map([]), }
+}
+
+///|
+fn ExecutionBreakpointState::verify(
+  self : ExecutionBreakpointState,
+  breakpoint : LogicalBreakpoint,
   actual_line : Int?,
   dap_id : Int?,
 ) -> Unit {
-  self.actual_line = actual_line
-  self.dap_id = dap_id
-  self.status = Verified
+  self.outcomes.set(breakpoint.id, { actual_line, dap_id, status: Verified, })
 }
 
 ///|
-fn LogicalBreakpoint::reject(
-  self : LogicalBreakpoint,
+fn ExecutionBreakpointState::reject(
+  self : ExecutionBreakpointState,
+  breakpoint : LogicalBreakpoint,
   message : String,
 ) -> Unit {
-  self.actual_line = None
-  self.dap_id = None
-  self.status = Rejected(message)
+  self.outcomes.set(breakpoint.id, {
+    actual_line: None,
+    dap_id: None,
+    status: Rejected(message),
+  })
+}
+
+///|
+fn ExecutionBreakpointState::snapshot(
+  self : ExecutionBreakpointState,
+  breakpoint : LogicalBreakpoint,
+) -> BreakpointSnapshot {
+  guard self.outcomes.get(breakpoint.id) is Some(outcome) else {
+    return breakpoint.pending_snapshot()
+  }
+  {
+    id: breakpoint.id,
+    source_path: breakpoint.source_path,
+    requested_line: breakpoint.requested_line,
+    actual_line: outcome.actual_line,
+    status: outcome.status,
+  }
 }
