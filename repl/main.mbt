@@ -71,6 +71,19 @@ async fn adapter_command() -> String {
 }
 
 ///|
+fn adapter_preparation_timeout_ms() -> Int {
+  let default_timeout_ms = 10000
+  guard @env.get_env_var("MOONDBG_ADAPTER_TIMEOUT_MS") is Some(value) else {
+    return default_timeout_ms
+  }
+  let parsed = Some(@string.parse_int(value, base=10)) catch { _ => None }
+  guard parsed is Some(timeout_ms) && timeout_ms > 0 else {
+    return default_timeout_ms
+  }
+  timeout_ms
+}
+
+///|
 async fn run_repl(
   editor : @readline.LineEditor,
   history : @readline.History,
@@ -167,6 +180,7 @@ async fn run_debuggee(session : @moondbg.DebugSession) -> Unit {
       return
     }
     @moondbg.AdapterFailure(message) => {
+      render_debug_output(session)
       println("moondbg: debugger adapter failed: \{message}")
       return
     }
@@ -184,6 +198,11 @@ async fn continue_debuggee(session : @moondbg.DebugSession) -> Unit {
       render_operation_not_allowed(state, action)
       return
     }
+    @moondbg.AdapterFailure(message) => {
+      render_debug_output(session)
+      println("moondbg: debugger adapter failed: \{message}")
+      return
+    }
     error => raise error
   }
   render_debug_output(session)
@@ -198,6 +217,11 @@ async fn inspect_variable(
   let result = session.find_variable(name) catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       render_operation_not_allowed(state, action)
+      return
+    }
+    @moondbg.AdapterFailure(message) => {
+      render_debug_output(session)
+      println("moondbg: debugger adapter failed: \{message}")
       return
     }
     error => raise error
@@ -334,6 +358,7 @@ async fn run(executable : String) -> Unit {
       group,
       adapter_command(),
       executable,
+      preparation_timeout_ms=adapter_preparation_timeout_ms(),
     )
     defer session.close()
     let history = @readline.History::new()

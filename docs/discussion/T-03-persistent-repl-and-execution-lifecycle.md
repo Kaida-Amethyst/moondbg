@@ -1,6 +1,6 @@
 # T-03. 持久 REPL 与 execution 生命周期
 
-> 最后更新日期：2026-08-26
+> 最后更新日期：2026-08-27
 > 仓库：moondbg
 > 记录者：Codex-GPT-5
 
@@ -195,7 +195,7 @@ Stopped 状态可以直接重启；每次运行都能证明使用了新的 adapt
 
 ### P5. 异常路径、资源清理与端到端验收
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 让后台准备失败、运行中 adapter failure 和各种退出路径只结束相关 execution，
 不破坏持久 REPL，并完成 T-03 的真实链路验收。
@@ -214,6 +214,29 @@ Stopped 状态可以直接重启；每次运行都能证明使用了新的 adapt
    变量查询、continue 和退出反馈；
 6. 检查所有端到端路径结束后没有遗留 lldb-dap、debuggee 或测试子进程组，并运行项目规定
    的格式化、接口生成、检查和测试流程。
+
+**实施结果：** preparation task 继续以 `allow_failure=true` 保存 initialize 结果，不会因
+后台失败取消外层 REPL；首个 `run` 在安全命令边界领取失败并报告，然后只创建下一份后台
+preparation，不自动 launch debuggee。等待 initialize 现在有默认 10 秒超时，
+`DebugSession::start` 新增可选的 `preparation_timeout_ms`，REPL 测试可通过
+`MOONDBG_ADAPTER_TIMEOUT_MS` 缩短该时间；超时会取消并等待旧 task 完成清理后再恢复
+`Ready`。
+
+`run`、`continue` 和变量查询期间发生 adapter failure 时，session 会在 1 秒边界内尽力
+发送 `disconnect`，无论该步骤成功、失败、超时或被取消，`defer` 都保证归档已收到的展示
+输出、关闭 dispatcher/process/pipe、移除旧 execution 并预热下一份 adapter。失败的当前
+命令只输出一次错误并返回 prompt；新 adapter 只完成 initialize，必须等用户再次显式
+`run` 才会 launch，因此旧 stop epoch、frame 和 `variablesReference` 不再可访问。退出时
+的 `disconnect` 同样有固定超时和幂等强制关闭兜底。
+
+fake adapter 与 PTY 验收新增并通过以下路径：首次 initialize 失败后下一次显式 run 恢复；
+variables 和 continue 请求期间 adapter 崩溃后恢复且不会静默重跑；100 ms 测试超时；编辑
+期间 Ctrl-C、EOF、准备期间 quit 和 task cancellation；重复 terminated event 与迟到
+output 不泄漏到下一 execution；所有 session 结束后进程组均为空。正常退出、非零退出和
+initialize 永久失败路径仍通过。真实 lldb-dap 与 `testdata/dwarf_probe` 继续通过重复运行、
+断点重放、Stopped 重启、变量查询、continue 和退出反馈验收。最终执行 `moon info`、
+`moon fmt`、`moon check`、29 个 MoonBit 测试以及 fake/真实端到端测试均成功；`.mbti` 的
+预期变化仅为 `DebugSession::start` 增加可选超时参数。
 
 **完成条件：** 正常路径和异常路径都保留可用的外层 REPL；不会静默重跑 debuggee、重复
 呈现终止反馈或跨 execution 使用临时引用；开发工具链下完整检查通过且没有遗留进程。

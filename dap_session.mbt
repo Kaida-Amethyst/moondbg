@@ -80,7 +80,7 @@ pub struct DebugSession {
   priv mut next_breakpoint_id : Int
   priv spawn_preparation : () -> @async.Task[DebugExecution]
   priv mut preparation : @async.Task[DebugExecution]?
-  priv mut preparation_error : String?
+  priv preparation_timeout_ms : Int
   priv mut execution : DebugExecution?
   priv mut detached_state : DebugSessionState
   priv last_breakpoint_snapshots : Map[Int, BreakpointSnapshot]
@@ -128,6 +128,7 @@ pub fn[X] DebugSession::start(
   group : @async.TaskGroup[X],
   adapter : String,
   executable : String,
+  preparation_timeout_ms? : Int = 10000,
 ) -> DebugSession {
   let spawn_preparation = () => {
     group.spawn(allow_failure=true, () => {
@@ -140,7 +141,7 @@ pub fn[X] DebugSession::start(
     next_breakpoint_id: 1,
     spawn_preparation,
     preparation: Some(spawn_preparation()),
-    preparation_error: None,
+    preparation_timeout_ms,
     execution: None,
     detached_state: Ready,
     last_breakpoint_snapshots: Map([]),
@@ -151,7 +152,6 @@ pub fn[X] DebugSession::start(
 ///|
 fn DebugSession::begin_preparation(self : DebugSession) -> Unit {
   self.preparation = Some((self.spawn_preparation)())
-  self.preparation_error = None
   self.detached_state = Ready
 }
 
@@ -417,7 +417,15 @@ pub async fn DebugSession::find_variable(
       action="inspect a variable",
     )
   }
-  execution.find_variable(name)
+  execution.find_variable(name) catch {
+    DebugSessionError::AdapterFailure(message) => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise DebugSessionError::AdapterFailure(message)
+    }
+    error => raise error
+  }
 }
 
 ///|
@@ -800,24 +808,32 @@ async fn DebugSession::prepared_execution(
     Some(execution) => return execution
     None => ()
   }
-  match self.preparation_error {
-    Some(message) => raise DebugSessionError::AdapterFailure(message)
-    None => ()
-  }
   guard self.preparation is Some(preparation) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.detached_state,
       action="run the program",
     )
   }
-  let execution = preparation.wait() catch {
+  let completed = @async.with_timeout_opt(self.preparation_timeout_ms, () => {
+    preparation.wait()
+  }) catch {
     error => {
       let message = @debug.to_string(error)
       self.preparation = None
-      self.preparation_error = Some(message)
-      self.detached_state = Failed
+      self.begin_preparation()
       raise DebugSessionError::AdapterFailure(message)
     }
+  }
+  guard completed is Some(execution) else {
+    self.preparation = None
+    preparation.cancel()
+    (preparation.wait() |> ignore) catch {
+      _ => ()
+    }
+    self.begin_preparation()
+    raise DebugSessionError::AdapterFailure(
+      "lldb-dap initialize timed out after \{self.preparation_timeout_ms} ms",
+    )
   }
   self.preparation = None
   self.execution = Some(execution)
@@ -851,15 +867,35 @@ fn DebugSession::complete_finished_execution(
 }
 
 ///|
+async fn DebugSession::recover_failed_execution(
+  self : DebugSession,
+  execution : DebugExecution,
+  try_disconnect~ : Bool,
+) -> Unit {
+  defer {
+    self.archive_execution(execution)
+    execution.close()
+    self.execution = None
+    self.begin_preparation()
+  }
+  if try_disconnect {
+    (@async.with_timeout_opt(1000, () => execution.disconnect()) catch {
+      _ => None
+    })
+    |> ignore
+  }
+}
+
+///|
 async fn DebugSession::restart_stopped_execution(
   self : DebugSession,
   execution : DebugExecution,
 ) -> Unit raise DebugSessionError {
   execution.disconnect() catch {
     error => {
-      execution.close()
-      self.execution = None
-      self.detached_state = Failed
+      self.recover_failed_execution(execution, try_disconnect=false) catch {
+        _ => ()
+      }
       raise DebugSessionError::AdapterFailure(@debug.to_string(error))
     }
   }
@@ -874,7 +910,15 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
     self.restart_stopped_execution(execution)
   }
   let execution = self.prepared_execution()
-  let outcome = execution.run(self.executable, self.breakpoints)
+  let outcome = execution.run(self.executable, self.breakpoints) catch {
+    DebugSessionError::AdapterFailure(message) => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise DebugSessionError::AdapterFailure(message)
+    }
+    error => raise error
+  }
   if outcome is Exited(_) {
     self.complete_finished_execution(execution)
   }
@@ -921,7 +965,15 @@ pub async fn DebugSession::continue_execution(
       action="continue execution",
     )
   }
-  let outcome = execution.continue_execution()
+  let outcome = execution.continue_execution() catch {
+    DebugSessionError::AdapterFailure(message) => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise DebugSessionError::AdapterFailure(message)
+    }
+    error => raise error
+  }
   if outcome is Exited(_) {
     self.complete_finished_execution(execution)
   }
@@ -967,8 +1019,15 @@ fn DebugExecution::close(self : DebugExecution) -> Unit {
 /// Requests a graceful shutdown of the current execution.
 pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
   guard self.execution is Some(execution) else { return }
-  execution.disconnect()
-  self.detached_state = execution.state()
+  defer {
+    execution.close()
+    self.execution = None
+    self.detached_state = Exited
+  }
+  (@async.with_timeout_opt(1000, () => execution.disconnect()) catch {
+    _ => None
+  })
+  |> ignore
 }
 
 ///|

@@ -28,6 +28,16 @@ class FakeAdapter:
             int(os.environ.get("MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS", "0"))
             / 1000
         )
+        self.fail_once_command = os.environ.get(
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_COMMAND"
+        )
+        marker_value = os.environ.get("MOONDBG_FAKE_DAP_FAIL_ONCE_MARKER")
+        self.fail_once_marker = Path(marker_value) if marker_value else None
+        self.forced_failure = False
+        self.duplicate_terminated = (
+            os.environ.get("MOONDBG_FAKE_DAP_DUPLICATE_TERMINATED") == "1"
+        )
+        self.late_output = os.environ.get("MOONDBG_FAKE_DAP_LATE_OUTPUT") == "1"
         self.source = os.environ.get("MOONDBG_FAKE_DAP_SOURCE", __file__)
         self.source_line = int(os.environ.get("MOONDBG_FAKE_DAP_SOURCE_LINE", "1"))
         trace_value = os.environ.get("MOONDBG_FAKE_DAP_TRACE")
@@ -48,6 +58,18 @@ class FakeAdapter:
         self.output.write(f"Content-Length: {len(body)}\r\n\r\n".encode())
         self.output.write(body)
         self.output.flush()
+
+    def should_fail_once(self, command: str) -> bool:
+        if self.fail_once_command != command or self.fail_once_marker is None:
+            return False
+        try:
+            with self.fail_once_marker.open("x", encoding="utf-8") as marker:
+                marker.write(f"{os.getpid()}\n")
+        except FileExistsError:
+            return False
+        self.forced_failure = True
+        self.trace("forced-exit", point=command)
+        return True
 
     def respond(
         self,
@@ -72,6 +94,8 @@ class FakeAdapter:
         if request.get("type") != "request" or not isinstance(command, str):
             raise ProtocolError(f"expected DAP request, got {request!r}")
         self.trace("request", command=command, request_seq=request.get("seq"))
+        if self.should_fail_once(command):
+            return False
         if command == "initialize":
             if self.mode == "exit-before-initialize-response":
                 self.trace("forced-exit", point="initialize")
@@ -157,6 +181,16 @@ class FakeAdapter:
             self.event("output", {"category": "stdout", "output": "fake-output\n"})
             self.event("exited", {"exitCode": 0})
             self.event("terminated")
+            if self.duplicate_terminated:
+                self.event("terminated")
+            if self.late_output:
+                self.event(
+                    "output",
+                    {
+                        "category": "stdout",
+                        "output": "late-output-should-not-render\n",
+                    },
+                )
         elif command == "disconnect":
             self.respond(request)
             return False
@@ -177,7 +211,12 @@ class FakeAdapter:
         self.trace("start", mode=self.mode)
         while (request := read_message(self.input)) is not None:
             if not self.handle(request):
-                exit_code = 17 if self.mode == "exit-before-initialize-response" else 0
+                if self.mode == "exit-before-initialize-response":
+                    exit_code = 17
+                elif self.forced_failure:
+                    exit_code = 18
+                else:
+                    exit_code = 0
                 self.trace("stop", exit_code=exit_code)
                 return exit_code
         self.trace("stop", exit_code=0)

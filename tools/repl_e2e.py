@@ -92,6 +92,9 @@ class PtyProcess:
     def send(self, command: str) -> None:
         os.write(self.master, (command + "\n").encode())
 
+    def send_bytes(self, data: bytes) -> None:
+        os.write(self.master, data)
+
     def wait(self) -> int:
         deadline = time.monotonic() + self.timeout
         while self.process.poll() is None:
@@ -334,6 +337,21 @@ def read_trace(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
+def wait_for_trace(path: Path, predicate, timeout: float) -> list[dict]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            records = read_trace(path)
+        except (FileNotFoundError, json.JSONDecodeError):
+            time.sleep(0.02)
+            continue
+        if predicate(records):
+            return records
+        time.sleep(0.02)
+    records = read_trace(path) if path.exists() else []
+    raise ReplError(f"timed out waiting for fake adapter trace\n\n{records!r}")
+
+
 def traced_commands(path: Path) -> list[str]:
     return [
         record["command"]
@@ -361,6 +379,8 @@ def test_fake_adapter_flow(
             "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
             "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
             "MOONDBG_FAKE_DAP_TRACE": str(trace),
+            "MOONDBG_FAKE_DAP_DUPLICATE_TERMINATED": "1",
+            "MOONDBG_FAKE_DAP_LATE_OUTPUT": "1",
         }
     )
 
@@ -480,6 +500,8 @@ def test_fake_adapter_flow(
         )
     if transcript.count("Process exited normally (code 0).") != 1:
         raise ReplError("exit feedback was duplicated\n\n" + transcript)
+    if "late-output-should-not-render" in transcript:
+        raise ReplError("a late event leaked across executions\n\n" + transcript)
 
 
 def test_fake_adapter_failure(
@@ -514,10 +536,313 @@ def test_fake_adapter_failure(
         drive=drive,
     )
     commands = traced_commands(trace)
-    if commands != ["initialize"]:
+    if not commands or any(command != "initialize" for command in commands):
         raise ReplError(
             f"failure adapter received unexpected requests: {commands!r}"
         )
+
+
+def test_fake_preparation_failure_recovery(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-preparation-recovery.jsonl"
+    marker = directory / "fake-adapter-preparation-recovery.once"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_COMMAND": "initialize",
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_MARKER": str(marker),
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        records = wait_for_trace(
+            trace,
+            lambda items: sum(
+                1
+                for item in items
+                if item["kind"] == "request"
+                and item.get("command") == "initialize"
+            )
+            >= 2,
+            timeout,
+        )
+        commands = [
+            item["command"] for item in records if item["kind"] == "request"
+        ]
+        if "launch" in commands:
+            raise ReplError("preparation failure silently launched the program")
+        session.send("help")
+        session.expect("Commands:")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    records = read_trace(trace)
+    adapter_pids = {
+        item["pid"]
+        for item in records
+        if item["kind"] == "request" and item.get("command") == "initialize"
+    }
+    if len(adapter_pids) != 2 or traced_commands(trace).count("launch") != 1:
+        raise ReplError(
+            "preparation recovery did not require exactly one explicit run: "
+            f"{records!r}"
+        )
+
+
+def test_fake_running_failure_recovery(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-running-recovery.jsonl"
+    marker = directory / "fake-adapter-running-recovery.once"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_COMMAND": "variables",
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_MARKER": str(marker),
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("p answer")
+        session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        records = wait_for_trace(
+            trace,
+            lambda items: sum(
+                1
+                for item in items
+                if item["kind"] == "request"
+                and item.get("command") == "initialize"
+            )
+            >= 2,
+            timeout,
+        )
+        commands = [
+            item["command"] for item in records if item["kind"] == "request"
+        ]
+        if commands.count("launch") != 1:
+            raise ReplError("running failure silently relaunched the program")
+        session.send("p answer")
+        session.expect("Cannot inspect a variable while the debugger is Ready.")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("p answer")
+        session.expect("answer: int = 42")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    records = read_trace(trace)
+    adapter_pids = {
+        item["pid"]
+        for item in records
+        if item["kind"] == "request" and item.get("command") == "initialize"
+    }
+    if len(adapter_pids) != 2 or traced_commands(trace).count("launch") != 2:
+        raise ReplError(f"running failure recovery was not isolated: {records!r}")
+
+
+def test_fake_continue_failure_recovery(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-continue-recovery.jsonl"
+    marker = directory / "fake-adapter-continue-recovery.once"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_COMMAND": "continue",
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_MARKER": str(marker),
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        records = wait_for_trace(
+            trace,
+            lambda items: sum(
+                1
+                for item in items
+                if item["kind"] == "request"
+                and item.get("command") == "initialize"
+            )
+            >= 2,
+            timeout,
+        )
+        commands = [
+            item["command"] for item in records if item["kind"] == "request"
+        ]
+        if commands.count("launch") != 1:
+            raise ReplError("continue failure silently relaunched the program")
+        session.send("p answer")
+        session.expect("Cannot inspect a variable while the debugger is Ready.")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    records = read_trace(trace)
+    adapter_pids = {
+        item["pid"]
+        for item in records
+        if item["kind"] == "request" and item.get("command") == "initialize"
+    }
+    if len(adapter_pids) != 2 or traced_commands(trace).count("launch") != 2:
+        raise ReplError(f"continue failure recovery was not isolated: {records!r}")
+
+
+def test_fake_preparation_timeout(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-timeout.jsonl"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_ADAPTER_TIMEOUT_MS": "100",
+            "MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS": "500",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("lldb-dap initialize timed out after 100 ms")
+        session.expect("(moondbg) ")
+        session.send("help")
+        session.expect("Commands:")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    commands = traced_commands(trace)
+    if "launch" in commands:
+        raise ReplError(f"timed-out preparation launched the program: {commands!r}")
+
+
+def test_readline_interrupt_and_eof(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    interrupt_env = dict(env)
+    interrupt_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_TRACE": str(directory / "interrupt.jsonl"),
+        }
+    )
+
+    def interrupt(session: PtyProcess) -> None:
+        session.send_bytes(b"\x03")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=interrupt_env,
+        timeout=timeout,
+        drive=interrupt,
+    )
+
+    eof_env = dict(env)
+    eof_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_TRACE": str(directory / "eof.jsonl"),
+        }
+    )
+
+    def eof(session: PtyProcess) -> None:
+        session.send_bytes(b"\x04")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=eof_env,
+        timeout=timeout,
+        drive=eof,
+    )
 
 
 def test_quit_during_fake_adapter_preparation(
@@ -594,7 +919,22 @@ def main() -> int:
                 test_fake_adapter_failure(
                     moondbg, executable, env, args.timeout, test_directory
                 )
+                test_fake_preparation_failure_recovery(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+                test_fake_running_failure_recovery(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+                test_fake_continue_failure_recovery(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+                test_fake_preparation_timeout(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
                 test_quit_during_fake_adapter_preparation(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
+                test_readline_interrupt_and_eof(
                     moondbg, executable, env, args.timeout, test_directory
                 )
             if not args.fake_only:
@@ -608,7 +948,7 @@ def main() -> int:
     if args.fake_only:
         print(
             "repl e2e passed: prompt prewarm, fake adapter flow, early quit, "
-            "initialize failure"
+            "failure recovery, timeout, terminal controls"
         )
     elif args.real_only:
         print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")
