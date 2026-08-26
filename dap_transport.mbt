@@ -43,7 +43,7 @@ async fn read_frame(reader : &@io.Reader) -> String? {
 }
 
 ///|
-struct DapTransport {
+priv struct DapTransport {
   reader : @process.ReadFromProcess
   writer : @process.WriteToProcess
   process : @process.Process
@@ -69,7 +69,7 @@ async fn[X] DapTransport::start(
     stdout=child_stdout,
     no_wait=true,
   )
-  { reader, writer, process, next_seq: 1, closed: false }
+  { reader, writer, process, next_seq: 1, closed: false, }
 }
 
 ///|

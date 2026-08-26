@@ -355,7 +355,7 @@ dispatcher 与状态机重构。
 
 ### P3. DAP dispatcher 与 DebugSession 状态机
 
-**状态：** 待实施
+**状态：** 已完成
 
 **目标：** 建立不依赖 response/event 固定顺序的协议与会话地基，同时不扩展成通用 DAP
 framework。
@@ -371,6 +371,15 @@ framework。
    stop 缓存失效；
 6. 使用构造消息或 fake adapter 覆盖 initialized 早于 launch response、stable event 早于
    执行 response、exited/terminated 重复等顺序。
+
+**实施结果：** DAP event、response 和 adapter request 已拆成保留完整 payload 与协议字段的
+内部消息类型；`DapDispatcher` 是唯一调用 transport receive 的入口，并使用 `request_seq`
+匹配或暂存乱序 response。`DebugSession` 启动后保持 `Ready`，不再隐式 launch 或停在入口，
+因此 REPL 可以立即显示提示符；后续 `run` 将从 `Ready` 开始 execution epoch。状态机已经
+覆盖七个状态、execution/stop epoch、旧 frame 与 variablesReference 失效、重复终止事件和
+adapter failure。构造消息测试覆盖 initialized/stable event 提前、乱序 response、重复
+stopped、exited/terminated 合并以及 stop epoch 缓存失效；真实 `moon debug main` 验证了
+Ready 状态下的即时提示符、退出清理和无残留 adapter。
 
 **完成条件：** REPL 不再直接读取 DAP JSON；所有 adapter 消息经过唯一 dispatcher；测试
 证明常见的 response/event 重排不会丢失消息、错误匹配请求或重复推进稳定状态。

@@ -3,6 +3,7 @@ package "Kaida-Amethyst/moondbg"
 
 import {
   "moonbitlang/async",
+  "moonbitlang/core/debug",
 }
 
 // Values
@@ -10,14 +11,26 @@ import {
 // Errors
 
 // Types and methods
-type DapTransport
-
 pub struct DebugSession {
   // private fields
 }
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::disconnect(Self) -> Unit
 pub async fn[X] DebugSession::start(@async.TaskGroup[X], String, String) -> Self
+pub fn DebugSession::state(Self) -> DebugSessionState
+
+pub enum DebugSessionState {
+  Ready
+  Preparing
+  Configuring
+  Running
+  Stopped
+  Exited
+  Failed
+} derive(Eq, @debug.Debug)
+pub fn DebugSessionState::equal(Self, Self) -> Bool
+pub fn DebugSessionState::not_equal(Self, Self) -> Bool
+pub fn DebugSessionState::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

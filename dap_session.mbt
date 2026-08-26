@@ -3,182 +3,137 @@ priv suberror DapSessionError {
   InvalidMessage(Json)
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
-  AdapterTerminated
+  DuplicateResponse(Int)
+  InvalidSequence(Int)
+  MismatchedResponseCommand(expected~ : String, actual~ : String)
+  InvalidSessionTransition(state~ : DebugSessionState, action~ : String)
 } derive(Debug)
 
 ///|
-priv enum IncomingMessage {
-  Event(String)
-  Response(request_seq~ : Int, success~ : Bool, message~ : String?)
-  Request(command~ : String)
-}
-
-///|
-fn classify_message(message : Json) -> IncomingMessage raise DapSessionError {
-  match message {
-    { "type": String("event"), "event": String(name), .. } => Event(name)
-    {
-      "type": String("response"),
-      "request_seq": Number(request_seq, ..),
-      "success": True
-      | False as success,
-      ..
-    } => {
-      let detail = match message {
-        { "message": String(detail), .. } => Some(detail)
-        _ => None
-      }
-      Response(
-        request_seq=request_seq.to_int(),
-        success=success is True,
-        message=detail,
-      )
-    }
-    { "type": String("request"), "command": String(command), .. } =>
-      Request(command~)
-    _ => raise InvalidMessage(message)
-  }
-}
-
-///|
-fn check_response(
-  response : IncomingMessage,
-  request_seq : Int,
+fn validate_response(
+  response : DapResponse,
   command : String,
-) -> Bool raise DapSessionError {
-  match response {
-    Response(request_seq=actual, success=true, ..) if actual == request_seq =>
-      true
-    Response(request_seq=actual, success=false, message~) if actual ==
-      request_seq =>
-      raise RequestFailed(
-        command~,
-        message=message.unwrap_or(
-          "the adapter did not provide an error message",
-        ),
-      )
-    _ => false
+) -> DapResponse raise DapSessionError {
+  guard response.command is None || response.command == Some(command) else {
+    raise MismatchedResponseCommand(
+      expected=command,
+      actual=response.command.unwrap(),
+    )
   }
+  guard response.success else {
+    raise RequestFailed(
+      command~,
+      message=response.message.unwrap_or(
+        "the adapter did not provide an error message",
+      ),
+    )
+  }
+  response
 }
 
 ///|
-async fn wait_for_response(
-  transport : DapTransport,
-  request_seq : Int,
-  command : String,
-) -> Unit {
-  for ;; {
-    let incoming = classify_message(transport.receive())
-    if check_response(incoming, request_seq, command) {
-      return
-    }
-    match incoming {
-      Event("terminated" | "exited") => raise AdapterTerminated
-      Request(command~) => raise UnsupportedAdapterRequest(command)
-      _ => ()
-    }
-  }
-}
-
-///|
-async fn bootstrap_session(
-  transport : DapTransport,
-  executable : String,
-) -> Unit {
-  let initialize_seq = transport.send_request("initialize", {
-    "clientID": "moondbg",
-    "clientName": "moondbg",
-    "adapterID": "lldb-dap",
-    "pathFormat": "path",
-    "linesStartAt1": true,
-    "columnsStartAt1": true,
-  })
-  wait_for_response(transport, initialize_seq, "initialize")
-  let launch_seq = transport.send_request("launch", {
-    "program": executable,
-    "stopOnEntry": true,
-  })
-  let mut launch_completed = false
-  let mut configuration_seq : Int? = None
-  let mut configuration_completed = false
-  let mut stopped = false
-  while !(launch_completed && configuration_completed && stopped) {
-    let incoming = classify_message(transport.receive())
-    match incoming {
-      Event("initialized") if configuration_seq is None =>
-        configuration_seq = Some(
-          transport.send_request("configurationDone", {}),
-        )
-      Event("stopped") => stopped = true
-      Event("terminated" | "exited") => raise AdapterTerminated
-      Request(command~) => raise UnsupportedAdapterRequest(command)
-      _ => ()
-    }
-    if check_response(incoming, launch_seq, "launch") {
-      launch_completed = true
-    }
-    if configuration_seq is Some(seq) &&
-      check_response(incoming, seq, "configurationDone") {
-      configuration_completed = true
-    }
-  }
-}
-
-///|
-async fn disconnect_session(transport : DapTransport) -> Unit {
-  let seq = transport.send_request("disconnect", { "terminateDebuggee": true })
-  for ;; {
-    let incoming = transport.receive() catch {
-      AdapterClosed => return
-      error => raise error
-    }
-    let incoming = classify_message(incoming)
-    if check_response(incoming, seq, "disconnect") {
-      return
-    }
-    match incoming {
-      Event("terminated" | "exited") => return
-      Request(command~) => raise UnsupportedAdapterRequest(command)
-      _ => ()
-    }
-  }
-}
-
-///|
-/// Owns the temporary lldb-dap process used by one debugging session.
-///
-/// The current implementation completes the initial launch and stops the
-/// target at entry before construction returns. This behavior is temporary;
-/// the type keeps adapter ownership outside terminal frontends so the session
-/// state machine can evolve independently.
+/// Owns the lldb-dap process, protocol dispatcher, and debugger state for one
+/// moondbg REPL session.
+#warnings("-unused_field")
 pub struct DebugSession {
-  priv transport : DapTransport
+  priv dispatcher : DapDispatcher
+  priv machine : DebugSessionMachine
+  priv executable : String
+  priv events : Array[DapEvent]
 }
 
 ///|
-/// Starts lldb-dap and completes the current minimal bootstrap sequence.
-///
-/// The adapter process belongs to `group`. Call `disconnect` for a graceful
-/// shutdown and always arrange for `close` as the final cleanup fallback.
+/// Starts lldb-dap without creating a target. The returned session is in
+/// `Ready`; a later `run` command will begin the only execution epoch.
 pub async fn[X] DebugSession::start(
   group : @async.TaskGroup[X],
   adapter : String,
   executable : String,
 ) -> DebugSession {
-  let transport = DapTransport::start(group, adapter)
-  errdefer transport.close()
-  bootstrap_session(transport, executable)
-  { transport, }
+  let dispatcher = DapDispatcher::start(group, adapter)
+  { dispatcher, machine: DebugSessionMachine::new(), executable, events: [], }
 }
 
 ///|
-/// Requests a graceful adapter shutdown and terminates the current debuggee.
+/// Returns the current stable or transitional debugger state.
+pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
+  self.machine.state
+}
+
+///|
+fn DebugSession::accept_event(
+  self : DebugSession,
+  event : DapEvent,
+) -> Unit raise DapSessionError {
+  self.machine.accept_event(event)
+  self.events.push(event)
+}
+
+///|
+async fn DebugSession::wait_for_response_inner(
+  self : DebugSession,
+  request_seq : Int,
+  command : String,
+  terminal_event_completes? : Bool = false,
+) -> DapResponse? {
+  for ;; {
+    let routed = self.dispatcher.next_for_request(request_seq) catch {
+      AdapterClosed => {
+        if terminal_event_completes {
+          self.machine.finish()
+          return None
+        }
+        raise AdapterClosed
+      }
+      error => raise error
+    }
+    match routed {
+      Matched(response) => return Some(validate_response(response, command))
+      BufferedResponse => continue
+      SessionEvent(event) => {
+        self.accept_event(event)
+        if terminal_event_completes &&
+          (event.name == "exited" || event.name == "terminated") {
+          return None
+        }
+      }
+      AdapterRequest(request) =>
+        raise UnsupportedAdapterRequest(request.command)
+    }
+  }
+}
+
+///|
+async fn DebugSession::wait_for_response(
+  self : DebugSession,
+  request_seq : Int,
+  command : String,
+  terminal_event_completes? : Bool = false,
+) -> DapResponse? {
+  errdefer self.machine.fail("DAP request failed")
+  self.wait_for_response_inner(request_seq, command, terminal_event_completes~)
+}
+
+///|
+/// Requests a graceful shutdown after a target has been created. A `Ready`
+/// session owns only an idle adapter, so closing its transport is sufficient.
 pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
-  disconnect_session(self.transport)
+  guard !(self.machine.state is Exited) else { return }
+  if self.machine.state is Ready {
+    self.machine.finish()
+    return
+  }
+  let seq = self.dispatcher.send_request("disconnect", {
+    "terminateDebuggee": true,
+  })
+  self.wait_for_response(seq, "disconnect", terminal_event_completes=true)
+  |> ignore
+  self.machine.finish()
 }
 
 ///|
 /// Closes the DAP pipes and cancels the adapter process if it is still alive.
 pub fn DebugSession::close(self : DebugSession) -> Unit {
-  self.transport.close()
+  self.dispatcher.close()
+  self.machine.finish()
 }

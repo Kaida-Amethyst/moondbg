@@ -3,7 +3,7 @@ priv suberror CliError {
   MissingExecutable
   ExecutableNotFound(String)
   ExecutableNotAFile(String)
-  BootstrapTimedOut
+  AdapterStartTimedOut
 } derive(Debug)
 
 ///|
@@ -98,10 +98,9 @@ async fn run(executable : String) -> Unit {
         @moondbg.DebugSession::start(group, adapter_command(), executable)
       })
       is Some(session) else {
-      raise BootstrapTimedOut
+      raise AdapterStartTimedOut
     }
     defer session.close()
-    println("Target stopped at entry.")
     let history = @readline.History::new()
     let editor = @readline.LineEditor::open(history~)
     run_repl(editor, history)
