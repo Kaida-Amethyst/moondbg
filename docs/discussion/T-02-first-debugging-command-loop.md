@@ -389,7 +389,7 @@ P3 的边界确认后再把调试命令建立在其上。
 
 ### P4. 行断点、run 与源码停点闭环
 
-**状态：** 待实施
+**状态：** 已完成
 
 **目标：** 完成第一个用户可见的 `break → run → stopped → source` 纵向闭环。
 
@@ -405,6 +405,25 @@ P3 的边界确认后再把调试命令建立在其上。
 5. 收到 stopped 后取得线程和 stack frame，建立最小 `StopSnapshot`；
 6. 自动显示停止原因、函数、文件、行号和当前行上下各两行源码，并实现 `list` 重新显示；
 7. 源码不可读时保留停止信息并给出明确提示，不让整个 stopped 事务失败。
+
+**实施结果：** REPL 已实现 `help`、`break`/`b`、`run`/`r` 和 `list`，并保留既有
+`quit`、`q`、`exit`；命令参数缺失或格式错误在本地解析层报告。源码断点路径相对于
+moondbg 启动 cwd 解析，经 `realpath` 规范化后传给 lldb-dap；逻辑断点由 moondbg 分配
+稳定编号，按源码文件发送完整 `setBreakpoints` 集合，并记录 pending、verified、实际移动
+行和 rejected 状态。`DebugSession::run` 已接通 initialize、launch/initialized 交错处理、
+断点重放、configurationDone、launch response 和 stopped/exited 稳定事件，且
+`stopOnEntry` 为 false。
+
+收到 stopped 后，session 从事件选择线程，必要时回退到 `threads`，再请求 stackTrace 并
+优先选择第一个带 `.mbt` 源码路径的 frame，形成包含原因、thread/frame、函数、源码路径、
+行和列的 `StopSnapshot`。REPL 基于 snapshot 自动显示当前行上下各两行，`list` 复用同一
+snapshot；源码不可读或行号越界时只输出源码不可用提示，不破坏 Stopped 状态。
+
+白盒与命令解析测试共 22 项通过。真实开发链路在 `testdata/dwarf_probe` 下通过
+`moon debug main` 验证：同一文件第 4、5 行的两个断点作为完整集合发送且均得到 verified，
+`run` 停在 `inspect_value` 的第 4 行并显示第 2 至 6 行源码，`list` 可重复显示；未设置
+断点时 `run` 正常运行到 `exited(0)`，moondbg 随之退出。两种路径结束后均无残留
+lldb-dap 进程。
 
 **完成条件：** 在真实 MoonBit fixture 上可以运行文档中的 break/run 示例，命中行断点后
 自动显示正确源码；无断点时程序正常退出；response/event 重排仍由 P3 状态机正确处理。

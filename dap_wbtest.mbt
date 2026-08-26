@@ -210,3 +210,107 @@ test "resuming invalidates frame and variable references from the stop epoch" {
   assert_false(machine.has_current_frame(42))
   assert_false(machine.has_current_variable_reference(99))
 }
+
+///|
+test "breakpoint responses preserve moondbg ids and adapter outcomes" {
+  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
+  apply_breakpoint_response(
+    [first, second],
+    test_response(40, 4, "setBreakpoints", {
+      "breakpoints": [
+        { "id": 17, "verified": true, "line": 5 },
+        { "verified": false, "message": "no executable code at this location" },
+      ],
+    }),
+  )
+  let first_snapshot = first.snapshot()
+  assert_eq(first_snapshot.id(), 1)
+  assert_eq(first_snapshot.requested_line(), 4)
+  assert_eq(first_snapshot.actual_line(), Some(5))
+  assert_true(first_snapshot.status() is Verified)
+  let second_snapshot = second.snapshot()
+  assert_eq(second_snapshot.id(), 2)
+  assert_true(
+    second_snapshot.status() is Rejected("no executable code at this location"),
+  )
+}
+
+///|
+test "a failed setBreakpoints response rejects the complete source set" {
+  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
+  apply_breakpoint_response([first, second], {
+    seq: 41,
+    request_seq: 5,
+    command: Some("setBreakpoints"),
+    success: false,
+    message: Some("source is unavailable"),
+    body: null,
+  })
+  assert_true(first.snapshot().status() is Rejected("source is unavailable"))
+  assert_true(second.snapshot().status() is Rejected("source is unavailable"))
+}
+
+///|
+test "setBreakpoints arguments replace the complete set for one source" {
+  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalBreakpoint::new(2, "/tmp/other.mbt", 7)
+  let third = LogicalBreakpoint::new(3, "/tmp/main.mbt", 9)
+  let selected = breakpoints_for_source([first, second, third], "/tmp/main.mbt")
+  assert_eq(selected.length(), 2)
+  let arguments = set_breakpoints_arguments("/tmp/main.mbt", selected)
+  guard arguments
+    is {
+      "source": { "path": String("/tmp/main.mbt"), .. },
+      "breakpoints": Array(breakpoints),
+      "sourceModified": False,
+      ..
+    } else {
+    fail("expected complete source breakpoint arguments")
+  }
+  assert_eq(breakpoints.length(), 2)
+  assert_true(breakpoints[0] is { "line": Number(4, ..), .. })
+  assert_true(breakpoints[1] is { "line": Number(9, ..), .. })
+}
+
+///|
+test "stack frame selection prefers the first MoonBit source frame" {
+  guard select_stack_frame({
+      "stackFrames": [
+        {
+          "id": 10,
+          "name": "runtime_entry",
+          "source": { "path": "/tmp/runtime.c" },
+          "line": 20,
+          "column": 1,
+        },
+        {
+          "id": 11,
+          "name": "main.inspect_value",
+          "source": { "path": "/tmp/main.mbt" },
+          "line": 4,
+          "column": 3,
+        },
+      ],
+    })
+    is Some(frame) else {
+    fail("expected a stack frame")
+  }
+  assert_eq(frame.id, 11)
+  assert_eq(frame.name, "main.inspect_value")
+  assert_eq(frame.source_path, Some("/tmp/main.mbt"))
+  assert_eq(frame.line, Some(4))
+  assert_eq(frame.column, Some(3))
+}
+
+///|
+test "thread fallback selects the first DAP thread" {
+  assert_eq(
+    first_thread_id({
+      "threads": [{ "id": 7, "name": "worker" }, { "id": 9, "name": "main" }],
+    }),
+    Some(7),
+  )
+  assert_eq(first_thread_id({ "threads": [] }), None)
+}

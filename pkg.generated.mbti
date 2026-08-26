@@ -9,13 +9,43 @@ import {
 // Values
 
 // Errors
+pub suberror DebugSessionError {
+  OperationNotAllowed(state~ : DebugSessionState, action~ : String)
+} derive(@debug.Debug)
+pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+pub struct BreakpointSnapshot {
+  id : Int
+  source_path : String
+  requested_line : Int
+  actual_line : Int?
+  status : BreakpointStatus
+}
+pub fn BreakpointSnapshot::actual_line(Self) -> Int?
+pub fn BreakpointSnapshot::id(Self) -> Int
+pub fn BreakpointSnapshot::requested_line(Self) -> Int
+pub fn BreakpointSnapshot::source_path(Self) -> String
+pub fn BreakpointSnapshot::status(Self) -> BreakpointStatus
+
+pub enum BreakpointStatus {
+  Pending
+  Verified
+  Rejected(String)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointStatus::equal(Self, Self) -> Bool
+pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
+pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
+
 pub struct DebugSession {
   // private fields
 }
+pub fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnapshot raise DebugSessionError
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::disconnect(Self) -> Unit
+pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
+pub async fn DebugSession::run(Self) -> RunOutcome
+pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
 pub async fn[X] DebugSession::start(@async.TaskGroup[X], String, String) -> Self
 pub fn DebugSession::state(Self) -> DebugSessionState
 
@@ -31,6 +61,28 @@ pub enum DebugSessionState {
 pub fn DebugSessionState::equal(Self, Self) -> Bool
 pub fn DebugSessionState::not_equal(Self, Self) -> Bool
 pub fn DebugSessionState::to_repr(Self) -> @debug.Repr
+
+pub enum RunOutcome {
+  Stopped(StopSnapshot)
+  Exited(Int?)
+}
+
+pub struct StopSnapshot {
+  reason : String
+  thread_id : Int
+  frame_id : Int
+  function_name : String
+  source_path : String?
+  line : Int?
+  column : Int?
+}
+pub fn StopSnapshot::column(Self) -> Int?
+pub fn StopSnapshot::frame_id(Self) -> Int
+pub fn StopSnapshot::function_name(Self) -> String
+pub fn StopSnapshot::line(Self) -> Int?
+pub fn StopSnapshot::reason(Self) -> String
+pub fn StopSnapshot::source_path(Self) -> String?
+pub fn StopSnapshot::thread_id(Self) -> Int
 
 // Type aliases
 

@@ -3,10 +3,12 @@ import {
   "Kaida-Amethyst/readline",
   "moonbitlang/async",
   "moonbitlang/async/fs",
+  "moonbitlang/async/io",
   "moonbitlang/async/process",
   "moonbitlang/core/argparse",
   "moonbitlang/core/debug",
   "moonbitlang/core/env",
+  "moonbitlang/core/string",
 }
 
 supported_targets = "+native"

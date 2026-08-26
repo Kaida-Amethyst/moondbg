@@ -90,6 +90,13 @@ async fn DapDispatcher::next_for_request(
 }
 
 ///|
+async fn DapDispatcher::next(self : DapDispatcher) -> RoutedMessage {
+  let incoming = classify_message(self.transport.receive())
+  guard incoming.seq() >= 0 else { raise InvalidSequence(incoming.seq()) }
+  self.inbox.route(incoming, -1)
+}
+
+///|
 fn DapDispatcher::close(self : DapDispatcher) -> Unit {
   self.transport.close()
 }
