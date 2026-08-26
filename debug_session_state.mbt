@@ -196,6 +196,14 @@ fn DebugSessionMachine::selected_frame_id(self : DebugSessionMachine) -> Int? {
 }
 
 ///|
+fn DebugSessionMachine::current_stop_epoch(self : DebugSessionMachine) -> Int? {
+  match self.stop_context {
+    Some(context) if context.epoch == self.stop_epoch => Some(context.epoch)
+    _ => None
+  }
+}
+
+///|
 fn DebugSessionMachine::finish(self : DebugSessionMachine) -> Unit {
   self.stop_context = None
   if !(self.state is Failed) {

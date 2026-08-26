@@ -15,14 +15,23 @@
 ## 使用完整调试信息构建
 
 必须使用开发工具链。这里有意使用 `moon debug` 而不是普通 `moon build`，因为前者会在
-相关的两个 moonc 阶段传入 `-debug-info full`。把 stdin 重定向到 `/dev/null` 后，当前
-最小版 moondbg 会在构建和入口停点完成后退出。
+相关的两个 moonc 阶段传入 `-debug-info full`，并在构建后进入 moondbg REPL。
 
 ```sh
 source ~/.zshrc
 set_moon_dev
 cd testdata/dwarf_probe
-moon debug main </dev/null
+moon debug main
+```
+
+可以在 REPL 中运行完整的 T-02 闭环：
+
+```text
+(moondbg) break main/main.mbt:4
+(moondbg) run
+(moondbg) p input
+(moondbg) p answer
+(moondbg) continue
 ```
 
 生成的程序位于：
@@ -80,3 +89,16 @@ breakpoint、frame、scope 和 variable 信息，并以状态码 2 退出。
 
 三次连续重复探测均通过全部检查。当前开发版编译器已经满足 P1 对行断点、源码 frame、
 参数和简单局部变量的要求，进入 P2 前不需要增加编译器修改。
+
+## 运行 REPL 端到端验收
+
+从 moondbg 仓库根目录运行：
+
+```sh
+source ~/.zshrc
+set_moon_dev
+python3 tools/repl_e2e.py
+```
+
+该脚本自动覆盖 MoonBit 的双断点、变量查询、两次继续和正常退出，也会编译 C exit fixture
+验证非零退出，并检查运行前 quit、adapter failure 和子进程组清理。

@@ -96,18 +96,9 @@ async fn run_repl(
           Help => print_help()
           Break(source, source_line) =>
             add_source_breakpoint(session, source, source_line)
-          Run =>
-            match session.run() {
-              @moondbg.Stopped(snapshot) => {
-                render_breakpoint_updates(session)
-                render_stop_snapshot(snapshot)
-              }
-              @moondbg.Exited(exit_code) => {
-                render_breakpoint_updates(session)
-                print_exit(exit_code)
-                return
-              }
-            }
+          Run => if run_debuggee(session) { return }
+          Continue => if continue_debuggee(session) { return }
+          PrintVariable(name) => inspect_variable(session, name)
           List =>
             match session.last_stop_snapshot() {
               Some(snapshot) => render_stop_snapshot(snapshot)
@@ -127,10 +118,101 @@ fn print_help() -> Unit {
     #|Commands:
     #|  break <file>:<line>  b <file>:<line>  Set a source breakpoint
     #|  run                  r                Run the program once
+    #|  continue             c                Continue the stopped program
+    #|  print <name>         p <name>         Show a simple variable
     #|  list                                  Show the current source location
     #|  help                                  Show this help
     #|  quit                  q, exit          Exit moondbg
   println(help)
+}
+
+///|
+fn render_operation_not_allowed(
+  state : @moondbg.DebugSessionState,
+  action : String,
+) -> Unit {
+  println("Cannot \{action} while the debugger is \{@debug.to_string(state)}.")
+}
+
+///|
+async fn render_debug_output(session : @moondbg.DebugSession) -> Unit {
+  let mut wrote_output = false
+  let mut ended_with_newline = true
+  for output in session.take_output() {
+    @stdio.stdout.write(output.text())
+    wrote_output = true
+    ended_with_newline = output.text().has_suffix("\n") ||
+      output.text().has_suffix("\r")
+  }
+  if wrote_output && !ended_with_newline {
+    println("")
+  }
+}
+
+///|
+async fn render_execution_outcome(outcome : @moondbg.RunOutcome) -> Bool {
+  match outcome {
+    @moondbg.Stopped(snapshot) => {
+      render_stop_snapshot(snapshot)
+      false
+    }
+    @moondbg.Exited(exit_code) => {
+      print_exit(exit_code)
+      true
+    }
+  }
+}
+
+///|
+async fn run_debuggee(session : @moondbg.DebugSession) -> Bool {
+  let outcome = session.run() catch {
+    @moondbg.OperationNotAllowed(state~, action~) => {
+      render_operation_not_allowed(state, action)
+      return false
+    }
+    error => raise error
+  }
+  render_debug_output(session)
+  render_breakpoint_updates(session)
+  render_execution_outcome(outcome)
+}
+
+///|
+async fn continue_debuggee(session : @moondbg.DebugSession) -> Bool {
+  let outcome = session.continue_execution() catch {
+    @moondbg.OperationNotAllowed(state~, action~) => {
+      render_operation_not_allowed(state, action)
+      return false
+    }
+    error => raise error
+  }
+  render_debug_output(session)
+  render_execution_outcome(outcome)
+}
+
+///|
+async fn inspect_variable(
+  session : @moondbg.DebugSession,
+  name : String,
+) -> Unit {
+  let result = session.find_variable(name) catch {
+    @moondbg.OperationNotAllowed(state~, action~) => {
+      render_operation_not_allowed(state, action)
+      return
+    }
+    error => raise error
+  }
+  render_debug_output(session)
+  match result {
+    @moondbg.VariableFound(variable) =>
+      match variable.type_name() {
+        Some(type_name) =>
+          println("\{variable.name()}: \{type_name} = \{variable.value()}")
+        None => println("\{variable.name()} = \{variable.value()}")
+      }
+    @moondbg.VariableNotFound(variable_name) =>
+      println("Variable '\{variable_name}' was not found in the current frame.")
+  }
 }
 
 ///|
@@ -238,7 +320,8 @@ async fn render_stop_snapshot(snapshot : @moondbg.StopSnapshot) -> Unit {
 ///|
 fn print_exit(exit_code : Int?) -> Unit {
   match exit_code {
-    Some(code) => println("Process exited (code \{code}).")
+    Some(0) => println("Process exited normally (code 0).")
+    Some(code) => println("Process exited with code \{code}.")
     None => println("Process exited.")
   }
 }
@@ -268,6 +351,8 @@ async fn main {
     let executable = executable_argument(command().parse())
     run(executable)
   } catch {
+    @moondbg.AdapterFailure(message) =>
+      println("moondbg: debugger adapter failed: \{message}")
     error => println("moondbg: \{@debug.to_string(error)}")
   }
 }

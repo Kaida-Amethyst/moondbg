@@ -433,7 +433,7 @@ lldb-dap 进程。
 
 ### P5. 简单变量、continue、退出与端到端验收
 
-**状态：** 待实施
+**状态：** 已完成
 
 **目标：** 补齐 T-02 的完整闭环，使用户能在停点查询简单变量、继续程序，并让 debuggee
 退出可靠地结束 moondbg。
@@ -450,6 +450,26 @@ lldb-dap 进程。
 6. 验证 quit、adapter failure、正常退出和异常退出的资源清理；
 7. 通过真实 `moon debug main` 完成 `break → run → source → p → continue → exit` 端到端
    测试，并运行项目的格式化、接口检查和 native 测试。
+
+**实施结果：** REPL 已实现 `print <name>`/`p <name>` 和 `continue`/`c`。变量命令只接受
+简单 MoonBit 标识符，字段、索引、运算和函数调用在本地解析阶段拒绝；session 使用当前
+frameId 请求 scopes，跳过 Registers，在 Locals/Globals 的 variables 中按名称精确查找，
+返回 name、type、value 和 variablesReference，不调用 LLDB expression evaluator。未找到
+时明确报告当前 frame 中没有该变量。
+
+scopes 与 variables 按 stop epoch 缓存；`continue` 发送前先使 frame、DAP reference、源码
+snapshot 和变量缓存失效，收到新的 stopped 后建立新 epoch 并重新查询。`continue`
+response 只作为 adapter 接受请求的确认，命令仍持续驱动 dispatcher，直到 stopped、exited
+或 terminated。stdout/stderr output event 保留原始文本并在恢复提示符或退出前输出；
+telemetry 与 lldb-dap 自己的 console 状态行不进入 debuggee 输出。exited/terminated 仍由
+状态机合并，REPL 只输出一次正常、非零退出或无退出码反馈，随后关闭 adapter 并退出。
+
+MoonBit 测试共 28 项通过，新增测试覆盖命令边界、scope/variable 解析、Registers 过滤、
+stop epoch 缓存隔离、output 分类和恢复后再次停止。`tools/repl_e2e.py` 使用真实 PTY、
+lldb-dap 和开发版 `moon debug` 自动验证两处源码断点、两次 stop epoch、`p input`、
+`p answer`、两次 `continue`、debuggee 输出 `42`/`83`、正常退出和无进程组残留；同一脚本
+使用 `testdata/exit_probe/main.c` 验证退出码 7，并覆盖运行前 quit、adapter 崩溃与清理。
+真实链路结束后没有残留 lldb-dap 进程。
 
 **完成条件：** T-02“目标闭环”和“验收标准”全部满足；旧 stop epoch 的 DAP 引用不会被
 复用；退出反馈只出现一次；debuggee 结束后 moondbg 自身退出且没有遗留 lldb-dap 进程。

@@ -12,6 +12,7 @@ priv suberror DapSessionError {
 ///|
 pub suberror DebugSessionError {
   OperationNotAllowed(state~ : DebugSessionState, action~ : String)
+  AdapterFailure(String)
 } derive(Debug)
 
 ///|
@@ -68,6 +69,8 @@ pub struct DebugSession {
   priv mut stop_reason : String
   priv mut exit_code : Int?
   priv mut last_snapshot : StopSnapshot?
+  priv variable_cache : StopVariableCache
+  priv pending_output : Array[DebugOutput]
 }
 
 ///|
@@ -90,6 +93,8 @@ pub async fn[X] DebugSession::start(
     stop_reason: "stopped",
     exit_code: None,
     last_snapshot: None,
+    variable_cache: StopVariableCache::new(),
+    pending_output: [],
   }
 }
 
@@ -104,6 +109,9 @@ fn DebugSession::accept_event(
   self : DebugSession,
   event : DapEvent,
 ) -> Unit raise DapSessionError {
+  if output_from_event(event) is Some(output) {
+    self.pending_output.push(output)
+  }
   match event.name {
     "stopped" =>
       self.stop_reason = match event.body {
@@ -119,6 +127,19 @@ fn DebugSession::accept_event(
     _ => ()
   }
   self.machine.accept_event(event)
+  match event.name {
+    "stopped" => {
+      self.last_snapshot = None
+      if self.machine.current_stop_epoch() is Some(epoch) {
+        self.variable_cache.reset(epoch)
+      }
+    }
+    "exited" | "terminated" => {
+      self.last_snapshot = None
+      self.variable_cache.reset(0)
+    }
+    _ => ()
+  }
   self.events.push(event)
 }
 
@@ -202,6 +223,94 @@ pub fn DebugSession::source_breakpoints(
 ///|
 pub fn DebugSession::last_stop_snapshot(self : DebugSession) -> StopSnapshot? {
   self.last_snapshot
+}
+
+///|
+pub fn DebugSession::take_output(self : DebugSession) -> Array[DebugOutput] {
+  let output = self.pending_output.copy()
+  self.pending_output.clear()
+  output
+}
+
+///|
+async fn DebugSession::load_scopes(
+  self : DebugSession,
+  epoch : Int,
+  frame_id : Int,
+) -> Array[DapScope] {
+  match self.variable_cache.cached_scopes(epoch) {
+    Some(scopes) => return scopes
+    None => ()
+  }
+  let response = self.request("scopes", { "frameId": frame_id })
+  guard parse_scopes(response.body) is Some(scopes) else {
+    raise InvalidMessage(response.body)
+  }
+  for scope in scopes {
+    self.machine.remember_variable_reference(scope.variables_reference)
+  }
+  self.variable_cache.store_scopes(epoch, scopes)
+  scopes
+}
+
+///|
+async fn DebugSession::load_variables(
+  self : DebugSession,
+  epoch : Int,
+  reference : Int,
+) -> Array[DapVariable] {
+  match self.variable_cache.cached_variables(epoch, reference) {
+    Some(variables) => return variables
+    None => ()
+  }
+  let response = self.request("variables", { "variablesReference": reference })
+  guard parse_variables(response.body) is Some(variables) else {
+    raise InvalidMessage(response.body)
+  }
+  for variable in variables {
+    if variable.variables_reference > 0 {
+      self.machine.remember_variable_reference(variable.variables_reference)
+    }
+  }
+  self.variable_cache.store_variables(epoch, reference, variables)
+  variables
+}
+
+///|
+async fn DebugSession::find_variable_inner(
+  self : DebugSession,
+  epoch : Int,
+  frame_id : Int,
+  name : String,
+) -> VariableLookupResult {
+  let scopes = self.load_scopes(epoch, frame_id)
+  for scope in scopes {
+    guard scope.is_relevant() else { continue }
+    for variable in self.load_variables(epoch, scope.variables_reference) {
+      if variable.name == name {
+        return VariableFound(variable.snapshot())
+      }
+    }
+  }
+  VariableNotFound(name)
+}
+
+///|
+pub async fn DebugSession::find_variable(
+  self : DebugSession,
+  name : String,
+) -> VariableLookupResult {
+  guard self.machine.state is Stopped &&
+    self.machine.current_stop_epoch() is Some(epoch) &&
+    self.machine.selected_frame_id() is Some(frame_id) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.machine.state,
+      action="inspect a variable",
+    )
+  }
+  self.find_variable_inner(epoch, frame_id, name) catch {
+    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+  }
 }
 
 ///|
@@ -487,7 +596,25 @@ async fn DebugSession::build_stop_snapshot(self : DebugSession) -> StopSnapshot 
 }
 
 ///|
-pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+async fn DebugSession::complete_execution(self : DebugSession) -> RunOutcome {
+  self.wait_until_stable()
+  match self.machine.state {
+    Stopped => {
+      let snapshot = self.build_stop_snapshot()
+      self.last_snapshot = Some(snapshot)
+      Stopped(snapshot)
+    }
+    Exited => Exited(self.exit_code)
+    state =>
+      raise InvalidSessionTransition(
+        state~,
+        action="complete execution transaction",
+      )
+  }
+}
+
+///|
+async fn DebugSession::run_transaction(self : DebugSession) -> RunOutcome {
   errdefer self.machine.fail("run transaction failed")
   self.machine.begin_execution()
   let initialize = self.request("initialize", {
@@ -518,16 +645,49 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
   if launch_response is Some(response) {
     validate_response(response, "launch") |> ignore
   }
-  self.wait_until_stable()
-  match self.machine.state {
-    Stopped => {
-      let snapshot = self.build_stop_snapshot()
-      self.last_snapshot = Some(snapshot)
-      Stopped(snapshot)
-    }
-    Exited => Exited(self.exit_code)
-    state =>
-      raise InvalidSessionTransition(state~, action="complete run transaction")
+  self.complete_execution()
+}
+
+///|
+pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+  guard self.machine.state is Ready else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.machine.state,
+      action="run the program",
+    )
+  }
+  self.run_transaction() catch {
+    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+  }
+}
+
+///|
+async fn DebugSession::continue_transaction(
+  self : DebugSession,
+  thread_id : Int,
+) -> RunOutcome {
+  errdefer self.machine.fail("continue transaction failed")
+  self.machine.mark_resumed()
+  self.last_snapshot = None
+  self.variable_cache.reset(0)
+  self.request("continue", { "threadId": thread_id, "singleThread": false })
+  |> ignore
+  self.complete_execution()
+}
+
+///|
+pub async fn DebugSession::continue_execution(
+  self : DebugSession,
+) -> RunOutcome {
+  guard self.machine.state is Stopped &&
+    self.machine.selected_thread_id() is Some(thread_id) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.machine.state,
+      action="continue execution",
+    )
+  }
+  self.continue_transaction(thread_id) catch {
+    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 

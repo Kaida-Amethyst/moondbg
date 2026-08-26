@@ -314,3 +314,120 @@ test "thread fallback selects the first DAP thread" {
   )
   assert_eq(first_thread_id({ "threads": [] }), None)
 }
+
+///|
+test "P5 scopes exclude register-only lookup and variables retain DAP fields" {
+  guard parse_scopes({
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 1,
+        },
+        { "name": "Globals", "variablesReference": 2 },
+        {
+          "name": "Registers",
+          "presentationHint": "registers",
+          "variablesReference": 3,
+        },
+      ],
+    })
+    is Some([locals, globals, registers]) else {
+    fail("expected three parsed scopes")
+  }
+  assert_true(locals.is_relevant())
+  assert_true(globals.is_relevant())
+  assert_false(registers.is_relevant())
+  guard parse_variables({
+      "variables": [
+        {
+          "name": "answer",
+          "type": "int",
+          "value": "42",
+          "variablesReference": 0,
+        },
+      ],
+    })
+    is Some([variable]) else {
+    fail("expected one parsed variable")
+  }
+  let snapshot = variable.snapshot()
+  assert_eq(snapshot.name(), "answer")
+  assert_eq(snapshot.type_name(), Some("int"))
+  assert_eq(snapshot.value(), "42")
+  assert_eq(snapshot.variables_reference(), 0)
+}
+
+///|
+test "P5 variable caches are isolated by stop epoch" {
+  let cache = StopVariableCache::new()
+  let scopes = [
+    DapScope::{
+      name: "Locals",
+      variables_reference: 1,
+      presentation_hint: Some("locals"),
+    },
+  ]
+  let variables = [
+    DapVariable::{
+      name: "answer",
+      value: "42",
+      type_name: Some("int"),
+      variables_reference: 0,
+    },
+  ]
+  cache.reset(1)
+  cache.store_scopes(1, scopes)
+  cache.store_variables(1, 1, variables)
+  assert_true(cache.cached_scopes(1) is Some(_))
+  assert_true(cache.cached_variables(1, 1) is Some(_))
+  cache.reset(2)
+  assert_true(cache.cached_scopes(1) is None)
+  assert_true(cache.cached_variables(1, 1) is None)
+  assert_true(cache.cached_scopes(2) is None)
+  cache.store_variables(1, 1, variables)
+  assert_true(cache.cached_variables(2, 1) is None)
+}
+
+///|
+test "P5 output events preserve user text and discard adapter-only output" {
+  guard output_from_event(
+      test_event("output", { "category": "stdout", "output": "42\n" }),
+    )
+    is Some(output) else {
+    fail("expected stdout output")
+  }
+  assert_eq(output.category(), Some("stdout"))
+  assert_eq(output.text(), "42\n")
+  assert_true(
+    output_from_event(
+      test_event("output", {
+        "category": "telemetry",
+        "output": "internal metrics",
+      }),
+    )
+    is None,
+  )
+  assert_true(
+    output_from_event(
+      test_event("output", {
+        "category": "console",
+        "output": "Process exited with status = 0",
+      }),
+    )
+    is None,
+  )
+}
+
+///|
+test "P5 a second stop creates a new epoch after resume" {
+  let machine = DebugSessionMachine::new()
+  machine.begin_execution()
+  machine.mark_running()
+  machine.accept_event(test_event("stopped", { "threadId": 7 }))
+  assert_eq(machine.current_stop_epoch(), Some(1))
+  machine.mark_resumed()
+  assert_eq(machine.current_stop_epoch(), None)
+  machine.accept_event(test_event("stopped", { "threadId": 7 }))
+  assert_eq(machine.current_stop_epoch(), Some(2))
+}

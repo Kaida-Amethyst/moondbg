@@ -4,6 +4,8 @@ priv enum ReplCommand {
   Help
   Run
   Break(String, Int)
+  Continue
+  PrintVariable(String)
   List
   Invalid(String)
   Unknown
@@ -49,6 +51,35 @@ fn parse_breakpoint(arguments : StringView) -> ReplCommand {
 }
 
 ///|
+fn is_variable_name_char(character : Char, first~ : Bool) -> Bool {
+  if character.is_ascii() {
+    character.is_ascii_alphabetic() ||
+    character == '_' ||
+    (!first && character.is_ascii_digit())
+  } else {
+    character.is_printable() &&
+    !character.is_whitespace() &&
+    !character.is_control()
+  }
+}
+
+///|
+fn parse_variable_name(arguments : StringView) -> ReplCommand {
+  guard arguments is [first, .. rest] else {
+    return Invalid("print requires a simple variable name")
+  }
+  guard is_variable_name_char(first, first=true) else {
+    return Invalid("print only accepts a simple variable name")
+  }
+  for character in rest {
+    guard is_variable_name_char(character, first=false) else {
+      return Invalid("print only accepts a simple variable name")
+    }
+  }
+  PrintVariable(arguments.to_owned())
+}
+
+///|
 fn parse_repl_command(line : StringView) -> ReplCommand {
   let input = line.trim_start(chars=" \t")
   if has_command_word(input, "quit") || has_command_word(input, "exit") {
@@ -72,6 +103,24 @@ fn parse_repl_command(line : StringView) -> ReplCommand {
   match command_arguments(input, "r") {
     Some("") => return Run
     Some(_) => return Invalid("r does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "continue") {
+    Some("") => return Continue
+    Some(_) => return Invalid("continue does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "c") {
+    Some("") => return Continue
+    Some(_) => return Invalid("c does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "print") {
+    Some(arguments) => return parse_variable_name(arguments)
+    None => ()
+  }
+  match command_arguments(input, "p") {
+    Some(arguments) => return parse_variable_name(arguments)
     None => ()
   }
   match command_arguments(input, "break") {
@@ -115,6 +164,25 @@ test "P4 local commands and aliases parse without arguments" {
   assert_true(parse_repl_command("r") is Run)
   assert_true(parse_repl_command("list") is List)
   assert_true(parse_repl_command("q") is Quit)
+}
+
+///|
+test "P5 continue and simple variable commands parse with fixed aliases" {
+  assert_true(parse_repl_command("continue") is Continue)
+  assert_true(parse_repl_command(" c\t") is Continue)
+  assert_true(parse_repl_command("print answer") is PrintVariable("answer"))
+  assert_true(parse_repl_command("p input") is PrintVariable("input"))
+  assert_true(parse_repl_command("p 结果") is PrintVariable("结果"))
+}
+
+///|
+test "P5 variable command rejects expressions and missing names" {
+  let commands = [
+    "p", "print", "p point.x", "p items[3]", "p answer + 1", "p 42", "continue now",
+  ]
+  for command in commands {
+    assert_true(parse_repl_command(command) is Invalid(_), msg=command)
+  }
 }
 
 ///|
