@@ -1,11 +1,23 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "Kaida-Amethyst/moondbg"
 
+import {
+  "moonbitlang/async",
+}
+
 // Values
 
 // Errors
 
 // Types and methods
+type DapTransport
+
+pub struct DebugSession {
+  // private fields
+}
+pub fn DebugSession::close(Self) -> Unit
+pub async fn DebugSession::disconnect(Self) -> Unit
+pub async fn[X] DebugSession::start(@async.TaskGroup[X], String, String) -> Self
 
 // Type aliases
 

@@ -6,7 +6,6 @@ package "Kaida-Amethyst/moondbg/repl"
 // Errors
 
 // Types and methods
-type DapTransport
 
 // Type aliases
 

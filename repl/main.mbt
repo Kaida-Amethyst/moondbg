@@ -3,6 +3,7 @@ priv suberror CliError {
   MissingExecutable
   ExecutableNotFound(String)
   ExecutableNotAFile(String)
+  BootstrapTimedOut
 } derive(Debug)
 
 ///|
@@ -90,19 +91,18 @@ fn run_repl(
 async fn run(executable : String) -> Unit {
   let executable = validate_executable(executable)
   @async.with_task_group(async fn(group) {
-    let transport = DapTransport::start(group, adapter_command())
-    defer transport.close()
     guard @async.with_timeout_opt(10000, () => {
-        bootstrap_session(transport, executable)
+        @moondbg.DebugSession::start(group, adapter_command(), executable)
       })
-      is Some(_) else {
+      is Some(session) else {
       raise BootstrapTimedOut
     }
+    defer session.close()
     println("Target stopped at entry.")
     let history = @readline.History::new()
     let editor = @readline.LineEditor::open(history~)
     run_repl(editor, history)
-    disconnect_session(transport)
+    session.disconnect()
     println("Debugger exited.")
   })
 }

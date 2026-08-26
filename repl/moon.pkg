@@ -1,15 +1,12 @@
 import {
+  "Kaida-Amethyst/moondbg",
   "Kaida-Amethyst/readline",
   "moonbitlang/async",
   "moonbitlang/async/fs",
-  "moonbitlang/async/io",
   "moonbitlang/async/process",
   "moonbitlang/core/argparse",
   "moonbitlang/core/debug",
-  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/env",
-  "moonbitlang/core/json",
-  "moonbitlang/core/string",
 }
 
 supported_targets = "+native"

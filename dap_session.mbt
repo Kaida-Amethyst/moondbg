@@ -4,7 +4,6 @@ priv suberror DapSessionError {
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
   AdapterTerminated
-  BootstrapTimedOut
 } derive(Debug)
 
 ///|
@@ -143,4 +142,43 @@ async fn disconnect_session(transport : DapTransport) -> Unit {
       _ => ()
     }
   }
+}
+
+///|
+/// Owns the temporary lldb-dap process used by one debugging session.
+///
+/// The current implementation completes the initial launch and stops the
+/// target at entry before construction returns. This behavior is temporary;
+/// the type keeps adapter ownership outside terminal frontends so the session
+/// state machine can evolve independently.
+pub struct DebugSession {
+  priv transport : DapTransport
+}
+
+///|
+/// Starts lldb-dap and completes the current minimal bootstrap sequence.
+///
+/// The adapter process belongs to `group`. Call `disconnect` for a graceful
+/// shutdown and always arrange for `close` as the final cleanup fallback.
+pub async fn[X] DebugSession::start(
+  group : @async.TaskGroup[X],
+  adapter : String,
+  executable : String,
+) -> DebugSession {
+  let transport = DapTransport::start(group, adapter)
+  errdefer transport.close()
+  bootstrap_session(transport, executable)
+  { transport, }
+}
+
+///|
+/// Requests a graceful adapter shutdown and terminates the current debuggee.
+pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
+  disconnect_session(self.transport)
+}
+
+///|
+/// Closes the DAP pipes and cancels the adapter process if it is still alive.
+pub fn DebugSession::close(self : DebugSession) -> Unit {
+  self.transport.close()
 }

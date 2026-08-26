@@ -24,6 +24,43 @@ You can browse and install extra skills here:
 - Try to keep deprecated blocks in file called `deprecated.mbt` in each
   directory.
 
+## 开发工具链环境
+
+本项目必须使用 MoonBit 的本地开发工具链。凡是需要构建、测试、运行或调试 moondbg，
+开始任务前都必须完成以下检查，不能直接使用系统中偶然出现在 `PATH` 里的稳定版工具链。
+
+1. 确认 `MOON_HOME` 展开后的路径是 `~/.moon_dev`。工具执行环境不一定自动加载交互式
+   zsh 配置；如果 `MOON_HOME` 未设置或不是该路径，必须先运行：
+
+   ```sh
+   source ~/.zshrc
+   set_moon_dev
+   ```
+
+   `set_moon_dev` 的定义位于 `~/.zshrc`。运行后需要重新检查 `MOON_HOME`，不能只假定
+   函数调用成功。
+
+2. 确认 `$MOON_HOME/bin/moonc`、`$MOON_HOME/bin/moon` 和
+   `$MOON_HOME/bin/moondbg` 都是有效的软链接，链接目标存在且可以执行。同时确认
+   `command -v moonc`、`command -v moon`、`command -v moondbg` 分别解析到这三个路径，
+   避免实际运行到其他工具链。
+
+3. 确认开发版 `moonc` 的 `build-package` 和 `link-core` 子命令支持
+   `-debug-info {none|minimal|full}`，从而可以实际传入 `-debug-info full`。可以使用以下
+   命令检查：
+
+   ```sh
+   moonc build-package -help 2>&1 | rg -- '-debug-info.*full'
+   moonc link-core -help 2>&1 | rg -- '-debug-info.*full'
+   ```
+
+4. 确认开发版 `moon` 提供 `moon debug` 子命令，并检查 `moon debug --help` 能正常显示
+   `moon debug [OPTIONS] <PACKAGE>`。
+
+如果以上任一条件不满足，说明本地开发环境出现问题。必须立即暂停当前任务并向用户汇报
+具体失败项、实际路径和检查输出；不得静默退回稳定版 `moon`/`moonc`、绕过检查继续实现，
+也不得在没有用户指示时自行重建工具链或修改这些软链接。
+
 ## Tooling
 
 - `moon fmt` is used to format your code properly.
