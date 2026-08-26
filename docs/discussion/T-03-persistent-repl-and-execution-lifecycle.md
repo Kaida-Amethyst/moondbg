@@ -16,6 +16,11 @@ T-03 继承以下已经确认的目标，不重新讨论其产品方向：
 - 逻辑断点、程序参数、环境变量和 cwd 跨运行保留；
 - `lldb-dap`、target、PTY 以及 DAP 临时 ID 属于单次 execution；每次 `run` 都创建新的
   adapter session，并重放持久配置；
+- 每次进入 `Ready` 后立即向用户显示提示符，同时在后台为下一次 execution 准备
+  `lldb-dap`；提示符不等待 adapter 启动完成；
+- 用户可以在 adapter 准备期间输入命令；不依赖 adapter 的命令立即执行，第一个依赖
+  adapter 的命令在准备尚未完成时等待同一个后台任务，准备完成后继续执行，不重复启动
+  adapter；
 - 在 `Stopped` 状态执行 `run` 时直接回收当前 execution 并重新运行，不额外询问；
 - adapter failure 只结束和清理当前 execution，不自动重跑程序，也不应破坏外层 REPL。
 
@@ -30,6 +35,7 @@ T-03 继承以下已经确认的目标，不重新讨论其产品方向：
 - `Ready`、`Running`、`Stopped`、`Exited` 和 adapter failure 后的用户可见行为；
 - 正常退出、非零退出、主动重启、`quit` 和 adapter 异常时的统一资源清理；
 - 新 execution 的创建、旧 execution 的销毁，以及断点和运行配置的重放时机；
+- adapter 后台准备任务的所有权、就绪结果交接，以及用户提前 `quit` 时的取消和清理；
 - `run -- <args>` 对持久参数的更新语义，以及 cwd、环境变量后续接入的位置；
 - 终止事件、迟到 response 和旧 epoch 消息不能污染下一次运行；
 - 为重复运行、停止状态重启和异常恢复建立端到端测试闭环。
