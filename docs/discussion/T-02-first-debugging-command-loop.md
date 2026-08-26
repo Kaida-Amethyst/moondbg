@@ -1,6 +1,6 @@
 # T-02. 第一个可执行调试命令闭环
 
-> 最后更新日期：2026-08-25
+> 最后更新日期：2026-08-26
 > 仓库：moondbg
 > 记录者：Codex-GPT-5
 
@@ -295,3 +295,109 @@ DWARF 缺失。
 ## 待决策问题
 
 暂无。
+
+## 任务划分
+
+T-02 的实施按以下阶段推进。阶段编号固定使用 `P1`、`P2`、`P3`、`P4`，后续记录进展时
+不重新编号；如需增加阶段，在现有最大编号之后继续追加。阶段状态使用“待实施”、
+“进行中”、“已完成”或“阻塞”。
+
+### P1. DWARF 能力探测
+
+**状态：** 待实施
+
+**目标：** 在修改主要 REPL 行为之前，确认当前开发版编译器生成的完整 DWARF 能否支撑
+行断点、源码位置和简单变量查询。
+
+**任务：**
+
+1. 增加一个专用的最小 MoonBit debug fixture，包含函数参数、简单局部变量、函数调用和
+   明确可停止的源码行；
+2. 使用 `--debug-info full` 构建 fixture，并通过真实 lldb-dap 执行 initialize、launch、
+   setBreakpoints、configurationDone、stackTrace、scopes、variables、continue；
+3. 记录 breakpoint 是否 verified、实际源码位置、函数名、参数和局部变量的 name/type/value，
+   以及 exited、terminated 和相关 response 的实际顺序；
+4. 区分 moondbg/DAP 使用问题与编译器 DWARF 缺失。若发现后者，明确需要修改的 line table、
+   variable DIE、location、scope 或类型信息，不在 moondbg 中增加猜测性绕过。
+
+**完成条件：** 形成可以重复运行的 fixture 和能力探测结果，明确行断点、源码 frame、参数、
+简单局部变量四项分别是否可用，并能据此判断 P3、P4 是否需要编译器前置修改。
+
+**Review 节点：** P1 完成后先 review 能力结果。如果关键 DWARF 能力缺失，暂停依赖该能力
+的后续阶段，先决定并完成编译器任务。
+
+### P2. DAP dispatcher 与 DebugSession 状态机
+
+**状态：** 待实施
+
+**目标：** 建立不依赖 response/event 固定顺序的协议与会话地基，同时不扩展成通用 DAP
+framework。
+
+**任务：**
+
+1. 让 DAP response、event 和 adapter request 保留完整 body 及必要的协议字段；
+2. 建立唯一 DAP 消息读取入口，通过 request_seq 匹配或暂存 response；
+3. 等待特定 response 时继续处理 initialized、output、stopped、exited、terminated 等 event；
+4. 将当前一次性 bootstrap 拆成 Ready、Preparing、Configuring、Running、Stopped、Exited、
+   Failed 状态；
+5. 建立 execution epoch 与 stop epoch，并在恢复运行时使旧 frameId、variablesReference 和
+   stop 缓存失效；
+6. 使用构造消息或 fake adapter 覆盖 initialized 早于 launch response、stable event 早于
+   执行 response、exited/terminated 重复等顺序。
+
+**完成条件：** REPL 不再直接读取 DAP JSON；所有 adapter 消息经过唯一 dispatcher；测试
+证明常见的 response/event 重排不会丢失消息、错误匹配请求或重复推进稳定状态。
+
+**Review 节点：** P2 完成后单独 review package API、唯一 reader、请求关联和状态所有权。
+P2 的边界确认后再把用户命令建立在其上。
+
+### P3. 行断点、run 与源码停点闭环
+
+**状态：** 待实施
+
+**目标：** 完成第一个用户可见的 `break → run → stopped → source` 纵向闭环。
+
+**任务：**
+
+1. 建立命令解析和本地 help、quit；
+2. 实现 `break <file>:<line>`，相对路径暂时只相对于 moondbg 启动 cwd 解析，并向 DAP 使用
+   规范绝对路径；
+3. 建立 moondbg 逻辑断点编号和按文件保存的完整断点集合，区分 pending、verified、实际
+   移动位置和 adapter 拒绝；
+4. 实现唯一一次 `run` 的 initialize、launch、断点重放、configurationDone 和稳定 event
+   等待；不设置隐式入口停点，没有断点时允许程序正常运行到退出；
+5. 收到 stopped 后取得线程和 stack frame，建立最小 `StopSnapshot`；
+6. 自动显示停止原因、函数、文件、行号和当前行上下各两行源码，并实现 `list` 重新显示；
+7. 源码不可读时保留停止信息并给出明确提示，不让整个 stopped 事务失败。
+
+**完成条件：** 在真实 MoonBit fixture 上可以运行文档中的 break/run 示例，命中行断点后
+自动显示正确源码；无断点时程序正常退出；response/event 重排仍由 P2 状态机正确处理。
+
+**Review 节点：** P3 完成后可以检查首个用户闭环；若没有出现新的交互或 DWARF 问题，
+不要求在 P3 与 P4 之间停顿，可以继续完成 P4 后统一进行最终 review。
+
+### P4. 简单变量、continue、退出与端到端验收
+
+**状态：** 待实施
+
+**目标：** 补齐 T-02 的完整闭环，使用户能在停点查询简单变量、继续程序，并让 debuggee
+退出可靠地结束 moondbg。
+
+**任务：**
+
+1. 实现 `p <name>`，通过当前 frame 的 scopes/variables 精确查找简单变量，不调用 LLDB
+   expression evaluator；
+2. 在当前 stop epoch 内缓存 scopes 和已取得的 variables，恢复运行时整体失效；
+3. 实现 `continue`，以新的 stopped、exited 或单独 terminated event 作为完成条件；
+4. 处理并输出运行期间必要的 output event，合并 exited/terminated 为一次退出反馈；
+5. debuggee 正常或异常退出后回收 adapter、恢复终端并结束 moondbg，不恢复 prompt，也不
+   支持第二次 run；
+6. 验证 quit、adapter failure、正常退出和异常退出的资源清理；
+7. 通过真实 `moon debug main` 完成 `break → run → source → p → continue → exit` 端到端
+   测试，并运行项目的格式化、接口检查和 native 测试。
+
+**完成条件：** T-02“目标闭环”和“验收标准”全部满足；旧 stop epoch 的 DAP 引用不会被
+复用；退出反馈只出现一次；debuggee 结束后 moondbg 自身退出且没有遗留 lldb-dap 进程。
+
+**Review 节点：** P4 完成后进行 T-02 最终 review，核对完整终端体验、结构化结果、资源
+清理、真实 MoonBit DWARF 表现以及 `moon debug main` 的端到端行为。
