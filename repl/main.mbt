@@ -95,8 +95,8 @@ async fn run_repl(
           Help => print_help()
           Break(source, source_line) =>
             add_source_breakpoint(session, source, source_line)
-          Run => if run_debuggee(session) { return }
-          Continue => if continue_debuggee(session) { return }
+          Run => run_debuggee(session)
+          Continue => continue_debuggee(session)
           PrintVariable(name) => inspect_variable(session, name)
           List =>
             match session.last_stop_snapshot() {
@@ -116,7 +116,7 @@ fn print_help() -> Unit {
   let help =
     #|Commands:
     #|  break <file>:<line>  b <file>:<line>  Set a source breakpoint
-    #|  run                  r                Run the program once
+    #|  run                  r                Run or restart the program
     #|  continue             c                Continue the stopped program
     #|  print <name>         p <name>         Show a simple variable
     #|  list                                  Show the current source location
@@ -149,29 +149,26 @@ async fn render_debug_output(session : @moondbg.DebugSession) -> Unit {
 }
 
 ///|
-async fn render_execution_outcome(outcome : @moondbg.RunOutcome) -> Bool {
+async fn render_execution_outcome(outcome : @moondbg.RunOutcome) -> Unit {
   match outcome {
-    @moondbg.Stopped(snapshot) => {
-      render_stop_snapshot(snapshot)
-      false
-    }
-    @moondbg.Exited(exit_code) => {
-      print_exit(exit_code)
-      true
-    }
+    @moondbg.Stopped(snapshot) => render_stop_snapshot(snapshot)
+    @moondbg.Exited(exit_code) => print_exit(exit_code)
   }
 }
 
 ///|
-async fn run_debuggee(session : @moondbg.DebugSession) -> Bool {
+async fn run_debuggee(session : @moondbg.DebugSession) -> Unit {
+  if session.state() is @moondbg.Stopped {
+    println("Restarting program.")
+  }
   let outcome = session.run() catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       render_operation_not_allowed(state, action)
-      return false
+      return
     }
     @moondbg.AdapterFailure(message) => {
       println("moondbg: debugger adapter failed: \{message}")
-      return false
+      return
     }
     error => raise error
   }
@@ -181,11 +178,11 @@ async fn run_debuggee(session : @moondbg.DebugSession) -> Bool {
 }
 
 ///|
-async fn continue_debuggee(session : @moondbg.DebugSession) -> Bool {
+async fn continue_debuggee(session : @moondbg.DebugSession) -> Unit {
   let outcome = session.continue_execution() catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       render_operation_not_allowed(state, action)
-      return false
+      return
     }
     error => raise error
   }

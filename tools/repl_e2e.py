@@ -203,9 +203,6 @@ def test_moonbit_flow(
         session.expect("Breakpoint 2 verified")
         session.expect("Stopped (")
         session.expect("(moondbg) ")
-        session.send("run")
-        session.expect("Cannot run the program while the debugger is Stopped.")
-        session.expect("(moondbg) ")
         session.send("p input")
         session.expect("input: int = 41")
         session.expect("(moondbg) ")
@@ -222,6 +219,19 @@ def test_moonbit_flow(
         session.send("continue")
         session.expect("83")
         session.expect("Process exited normally (code 0).")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Breakpoint 2 verified")
+        session.expect("Stopped (")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Restarting program.")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Breakpoint 2 verified")
+        session.expect("Stopped (")
+        session.expect("(moondbg) ")
+        session.send("quit")
         session.expect("Debugger exited.")
 
     transcript = run_session(
@@ -260,6 +270,8 @@ def test_abnormal_exit(
         session.send("run")
         session.expect("c-exit-probe")
         session.expect("Process exited with code 7.")
+        session.expect("(moondbg) ")
+        session.send("quit")
         session.expect("Debugger exited.")
 
     run_session(
@@ -387,30 +399,87 @@ def test_fake_adapter_flow(
         session.send("continue")
         session.expect("fake-output")
         session.expect("Process exited normally (code 0).")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Restarting program.")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("p answer")
+        session.expect("answer: int = 42")
+        session.expect("(moondbg) ")
+        session.send("quit")
         session.expect("Debugger exited.")
 
-    run_session(
+    transcript = run_session(
         [str(moondbg), str(executable)],
         cwd=ROOT,
         env=fake_env,
         timeout=timeout,
         drive=drive,
     )
-    expected = [
-        "initialize",
-        "launch",
-        "setBreakpoints",
-        "configurationDone",
-        "stackTrace",
-        "scopes",
-        "variables",
-        "continue",
+    records = read_trace(trace)
+    adapter_pids = [
+        record["pid"] for record in records if record["kind"] == "start"
     ]
-    commands = traced_commands(trace)
-    if commands != expected:
+    if len(adapter_pids) != 3 or len(set(adapter_pids)) != 3:
         raise ReplError(
-            f"unexpected fake adapter request order: {commands!r}, expected {expected!r}"
+            f"expected three distinct fake adapters, got {adapter_pids!r}"
         )
+    commands_by_adapter = [
+        [
+            record["command"]
+            for record in records
+            if record["kind"] == "request" and record["pid"] == pid
+        ]
+        for pid in adapter_pids
+    ]
+    expected_by_adapter = [
+        [
+            "initialize",
+            "launch",
+            "setBreakpoints",
+            "configurationDone",
+            "stackTrace",
+            "scopes",
+            "variables",
+            "continue",
+        ],
+        [
+            "initialize",
+            "launch",
+            "setBreakpoints",
+            "configurationDone",
+            "stackTrace",
+            "disconnect",
+        ],
+        [
+            "initialize",
+            "launch",
+            "setBreakpoints",
+            "configurationDone",
+            "stackTrace",
+            "scopes",
+            "variables",
+            "disconnect",
+        ],
+    ]
+    if commands_by_adapter != expected_by_adapter:
+        raise ReplError(
+            "unexpected requests across repeated fake executions: "
+            f"{commands_by_adapter!r}"
+        )
+    if transcript.count("Breakpoint 1 verified") != 3:
+        raise ReplError(
+            "logical breakpoint was not replayed with stable id three times\n\n"
+            + transcript
+        )
+    if transcript.count("Process exited normally (code 0).") != 1:
+        raise ReplError("exit feedback was duplicated\n\n" + transcript)
 
 
 def test_fake_adapter_failure(

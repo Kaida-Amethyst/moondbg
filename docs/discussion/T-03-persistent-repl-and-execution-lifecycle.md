@@ -155,7 +155,7 @@ REPL 仍可显示下一个 prompt 并由用户退出。`moon check`、29 个 Moo
 
 ### P4. 实现重复运行、重启与断点重放
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 把 T-02 的一次性 REPL 改为持久 REPL，并确保每次运行使用全新的 execution
 和 adapter。
@@ -174,6 +174,21 @@ REPL 仍可显示下一个 prompt 并由用户退出。`moon check`、29 个 Moo
    旧 stop epoch 的缓存和 DAP 引用全部失效；
 6. 丢弃或隔离旧 execution 的迟到 response、event 和终止通知，不能重复输出退出信息或
    推进新 execution 的状态。
+
+**实施结果：** 持久 `DebugSession` 现在保存一个捕获 task group 与 adapter 路径的
+preparation factory。debuggee 正常或非零退出后，session 只把待显示的输出和断点快照复制
+为不含 DAP 引用的展示数据，随即关闭并移除旧 `DebugExecution`、恢复 `Ready`，同时启动
+下一次 `initialize` 预热；REPL 输出一次退出结果后继续显示 prompt。后续 `run` 领取新的
+preparation task，使用新的 dispatcher、状态机、stop/variable 缓存和 adapter process，
+并按原有逻辑断点及稳定用户编号重新发送 `setBreakpoints`。
+
+在 `Stopped` 状态执行 `run` 时，REPL 先输出 `Restarting program.`，session 随后发送
+`disconnect` 终止当前 debuggee、关闭旧 execution，再创建并等待新的 preparation；不复用
+旧 frame、stop epoch 或 `variablesReference`。fake adapter 端到端测试确认连续三次运行
+分别使用三个 PID，每个 execution 都独立执行 initialize/launch/断点配置，Breakpoint 1
+以同一编号验证三次，退出反馈只出现一次；真实 lldb-dap 测试也覆盖了退出后再次运行和
+Stopped 直接重启。`moon info` 未产生新的公开接口变化，`moon check`、29 个 MoonBit 测试、
+fake adapter 与真实 lldb-dap 端到端测试均通过。
 
 **完成条件：** 同一 REPL 中可以完成至少两次独立运行；断点编号稳定且每次正确重放；
 Stopped 状态可以直接重启；每次运行都能证明使用了新的 adapter，旧 DAP 引用不会泄漏。

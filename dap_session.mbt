@@ -78,10 +78,13 @@ pub struct DebugSession {
   priv executable : String
   priv breakpoints : Array[LogicalBreakpoint]
   priv mut next_breakpoint_id : Int
+  priv spawn_preparation : () -> @async.Task[DebugExecution]
   priv mut preparation : @async.Task[DebugExecution]?
   priv mut preparation_error : String?
   priv mut execution : DebugExecution?
   priv mut detached_state : DebugSessionState
+  priv last_breakpoint_snapshots : Map[Int, BreakpointSnapshot]
+  priv pending_output : Array[DebugOutput]
 }
 
 ///|
@@ -126,19 +129,30 @@ pub fn[X] DebugSession::start(
   adapter : String,
   executable : String,
 ) -> DebugSession {
+  let spawn_preparation = () => {
+    group.spawn(allow_failure=true, () => {
+      DebugExecution::prepare(group, adapter)
+    })
+  }
   {
     executable,
     breakpoints: [],
     next_breakpoint_id: 1,
-    preparation: Some(
-      group.spawn(allow_failure=true, () => {
-        DebugExecution::prepare(group, adapter)
-      }),
-    ),
+    spawn_preparation,
+    preparation: Some(spawn_preparation()),
     preparation_error: None,
     execution: None,
     detached_state: Ready,
+    last_breakpoint_snapshots: Map([]),
+    pending_output: [],
   }
+}
+
+///|
+fn DebugSession::begin_preparation(self : DebugSession) -> Unit {
+  self.preparation = Some((self.spawn_preparation)())
+  self.preparation_error = None
+  self.detached_state = Ready
 }
 
 ///|
@@ -274,7 +288,13 @@ pub fn DebugSession::source_breakpoints(
       self.breakpoints.map(breakpoint => {
         execution.breakpoint_state.snapshot(breakpoint)
       })
-    None => self.breakpoints.map(LogicalBreakpoint::pending_snapshot)
+    None =>
+      self.breakpoints.map(breakpoint => {
+        match self.last_breakpoint_snapshots.get(breakpoint.id) {
+          Some(snapshot) => snapshot
+          None => breakpoint.pending_snapshot()
+        }
+      })
   }
 }
 
@@ -288,8 +308,14 @@ pub fn DebugSession::last_stop_snapshot(self : DebugSession) -> StopSnapshot? {
 
 ///|
 pub fn DebugSession::take_output(self : DebugSession) -> Array[DebugOutput] {
-  guard self.execution is Some(execution) else { return [] }
-  execution.take_output()
+  let output = self.pending_output.copy()
+  self.pending_output.clear()
+  if self.execution is Some(execution) {
+    for item in execution.take_output() {
+      output.push(item)
+    }
+  }
+  output
 }
 
 ///|
@@ -799,9 +825,60 @@ async fn DebugSession::prepared_execution(
 }
 
 ///|
+fn DebugSession::archive_execution(
+  self : DebugSession,
+  execution : DebugExecution,
+) -> Unit {
+  for output in execution.take_output() {
+    self.pending_output.push(output)
+  }
+  self.last_breakpoint_snapshots.clear()
+  for breakpoint in self.breakpoints {
+    let snapshot = execution.breakpoint_state.snapshot(breakpoint)
+    self.last_breakpoint_snapshots.set(snapshot.id(), snapshot)
+  }
+}
+
+///|
+fn DebugSession::complete_finished_execution(
+  self : DebugSession,
+  execution : DebugExecution,
+) -> Unit {
+  self.archive_execution(execution)
+  execution.close()
+  self.execution = None
+  self.begin_preparation()
+}
+
+///|
+async fn DebugSession::restart_stopped_execution(
+  self : DebugSession,
+  execution : DebugExecution,
+) -> Unit raise DebugSessionError {
+  execution.disconnect() catch {
+    error => {
+      execution.close()
+      self.execution = None
+      self.detached_state = Failed
+      raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+    }
+  }
+  execution.close()
+  self.execution = None
+  self.begin_preparation()
+}
+
+///|
 pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+  if self.execution is Some(execution) && execution.state() is Stopped {
+    self.restart_stopped_execution(execution)
+  }
   let execution = self.prepared_execution()
-  execution.run(self.executable, self.breakpoints)
+  let outcome = execution.run(self.executable, self.breakpoints)
+  if outcome is Exited(_) {
+    self.complete_finished_execution(execution)
+  }
+  outcome
 }
 
 ///|
@@ -844,7 +921,11 @@ pub async fn DebugSession::continue_execution(
       action="continue execution",
     )
   }
-  execution.continue_execution()
+  let outcome = execution.continue_execution()
+  if outcome is Exited(_) {
+    self.complete_finished_execution(execution)
+  }
+  outcome
 }
 
 ///|
