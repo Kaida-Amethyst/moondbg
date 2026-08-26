@@ -3,7 +3,6 @@ priv suberror CliError {
   MissingExecutable
   ExecutableNotFound(String)
   ExecutableNotAFile(String)
-  AdapterStartTimedOut
   BreakpointSourceNotFound(String)
   BreakpointSourceNotAFile(String)
 } derive(Debug)
@@ -170,6 +169,10 @@ async fn run_debuggee(session : @moondbg.DebugSession) -> Bool {
       render_operation_not_allowed(state, action)
       return false
     }
+    @moondbg.AdapterFailure(message) => {
+      println("moondbg: debugger adapter failed: \{message}")
+      return false
+    }
     error => raise error
   }
   render_debug_output(session)
@@ -330,12 +333,11 @@ fn print_exit(exit_code : Int?) -> Unit {
 async fn run(executable : String) -> Unit {
   let executable = validate_executable(executable)
   @async.with_task_group(async fn(group) {
-    guard @async.with_timeout_opt(10000, () => {
-        @moondbg.DebugSession::start(group, adapter_command(), executable)
-      })
-      is Some(session) else {
-      raise AdapterStartTimedOut
-    }
+    let session = @moondbg.DebugSession::start(
+      group,
+      adapter_command(),
+      executable,
+    )
     defer session.close()
     let history = @readline.History::new()
     let editor = @readline.LineEditor::open(history~)

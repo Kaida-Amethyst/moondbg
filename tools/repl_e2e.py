@@ -37,6 +37,8 @@ class PtyProcess:
         env: dict[str, str],
         timeout: float,
     ) -> None:
+        self.started_at = time.monotonic()
+        self.initial_prompt_elapsed = 0.0
         master, slave = pty.openpty()
         self.master = master
         self.timeout = timeout
@@ -165,6 +167,7 @@ def run_session(
     process_group = session.process_group
     try:
         session.expect("(moondbg) ")
+        session.initial_prompt_elapsed = time.monotonic() - session.started_at
         drive(session)
         return_code = session.wait()
         if return_code != 0:
@@ -302,6 +305,9 @@ def test_adapter_failure(
     def drive(session: PtyProcess) -> None:
         session.send("run")
         session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
 
     run_session(
         [str(moondbg), str(executable)],
@@ -331,12 +337,15 @@ def test_fake_adapter_flow(
     timeout: float,
     directory: Path,
 ) -> None:
+    initialize_delay = 1.8
     trace = directory / "fake-adapter-flow.jsonl"
     fake_env = dict(env)
     fake_env.update(
         {
             "MOONDBG_LLDB_DAP": str(FAKE_DAP),
-            "MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS": "150",
+            "MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS": str(
+                int(initialize_delay * 1000)
+            ),
             "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
             "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
             "MOONDBG_FAKE_DAP_TRACE": str(trace),
@@ -344,11 +353,32 @@ def test_fake_adapter_flow(
     )
 
     def drive(session: PtyProcess) -> None:
+        if session.initial_prompt_elapsed >= initialize_delay / 2:
+            raise ReplError(
+                "initial prompt waited for fake adapter initialization: "
+                f"{session.initial_prompt_elapsed:.3f}s"
+            )
+        help_started = time.monotonic()
+        session.send("help")
+        session.expect("Commands:")
+        session.expect("(moondbg) ")
+        help_elapsed = time.monotonic() - help_started
+        if help_elapsed >= initialize_delay / 2:
+            raise ReplError(
+                f"local help command waited for adapter: {help_elapsed:.3f}s"
+            )
         session.send(f"break {EXIT_PROBE}:1")
         session.expect("Breakpoint 1 pending")
         session.expect("(moondbg) ")
+        run_started = time.monotonic()
         session.send("run")
         session.expect("Breakpoint 1 verified")
+        run_elapsed = time.monotonic() - run_started
+        if run_elapsed < initialize_delay / 3:
+            raise ReplError(
+                "run did not wait for the in-flight adapter preparation: "
+                f"{run_elapsed:.3f}s"
+            )
         session.expect("Stopped (breakpoint) in fake.main")
         session.expect("(moondbg) ")
         session.send("p answer")
@@ -403,6 +433,9 @@ def test_fake_adapter_failure(
     def drive(session: PtyProcess) -> None:
         session.send("run")
         session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
 
     run_session(
         [str(moondbg), str(executable)],
@@ -416,6 +449,56 @@ def test_fake_adapter_failure(
         raise ReplError(
             f"failure adapter received unexpected requests: {commands!r}"
         )
+
+
+def test_quit_during_fake_adapter_preparation(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-adapter-early-quit.jsonl"
+    initialize_delay = 5.0
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_INITIALIZE_DELAY_MS": str(
+                int(initialize_delay * 1000)
+            ),
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        if session.initial_prompt_elapsed >= initialize_delay / 2:
+            raise ReplError(
+                "initial prompt waited during early-quit test: "
+                f"{session.initial_prompt_elapsed:.3f}s"
+            )
+        quit_started = time.monotonic()
+        session.send("quit")
+        session.expect("Debugger exited.")
+        quit_elapsed = time.monotonic() - quit_started
+        if quit_elapsed >= initialize_delay / 2:
+            raise ReplError(
+                f"quit waited for adapter initialization: {quit_elapsed:.3f}s"
+            )
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    if trace.exists():
+        commands = traced_commands(trace)
+        if commands not in ([], ["initialize"]):
+            raise ReplError(
+                f"early-quit adapter received unexpected requests: {commands!r}"
+            )
 
 
 def main() -> int:
@@ -442,6 +525,9 @@ def main() -> int:
                 test_fake_adapter_failure(
                     moondbg, executable, env, args.timeout, test_directory
                 )
+                test_quit_during_fake_adapter_preparation(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
             if not args.fake_only:
                 test_moonbit_flow(moon, env, args.timeout)
                 test_abnormal_exit(moondbg, executable, env, args.timeout)
@@ -451,7 +537,10 @@ def main() -> int:
         print(f"repl e2e failed: {error}", file=sys.stderr)
         return 1
     if args.fake_only:
-        print("repl e2e passed: fake adapter flow and initialize failure")
+        print(
+            "repl e2e passed: prompt prewarm, fake adapter flow, early quit, "
+            "initialize failure"
+        )
     elif args.real_only:
         print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")
     else:

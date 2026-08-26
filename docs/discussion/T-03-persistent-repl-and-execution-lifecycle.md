@@ -112,7 +112,7 @@ execution 可以被完整替换，相关单元测试通过且公开接口变化�
 
 ### P3. 接入后台预热与立即提示符
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 启动 moondbg 后不等待 lldb-dap ready 就显示 prompt，并确保首个需要 adapter
 的命令只消费同一个后台准备结果。
@@ -131,6 +131,21 @@ execution 可以被完整替换，相关单元测试通过且公开接口变化�
    session 中，在安全的命令边界报告；
 6. 使用 P1 的延迟 adapter 验证 prompt 先于 initialize ready 出现、`help` 不等待、`run`
    等待后只执行一次。
+
+**实施结果：** `DebugSession::start` 现在同步创建并持有一个允许独立失败的 async task，
+task 在后台创建 adapter、发送 `initialize`、等待 response 并缓存 capabilities；`launch` 已
+从准备阶段拆出，只由 `run` 在领取同一份 `DebugExecution` 后发送。准备期间 session 对本地
+命令保持 `Ready`，`help`、`break`、`quit` 均不等待 adapter；准备失败保存在 session 中，
+首个 `run` 在 readline 的安全命令边界输出错误并返回 prompt，不在编辑期间异步写终端。
+`close` 会取消未完成的准备任务，关闭已经完成的 execution，外层 task group 继续兜底回收
+竞态中的 process 和 pipe。公开接口仅把 `DebugSession::start` 从 async 改为同步，以准确
+表达“排入后台后立即返回”的语义。
+
+P1 的 PTY 测试已扩展：fake adapter 延迟 initialize 1.8 秒时，首个 prompt 和 `help` 均先于
+ready 返回，`run` 确实等待正在进行的准备任务，trace 中仍只有一次 `initialize` 和一次
+`launch`；initialize 延迟 5 秒时立即 `quit`，进程组检查确认没有残留 adapter。准备失败后
+REPL 仍可显示下一个 prompt 并由用户退出。`moon check`、29 个 MoonBit 测试、fake adapter
+端到端测试和真实 lldb-dap 端到端测试均通过。
 
 **完成条件：** 在 adapter 人为延迟时，用户仍能立即看到 prompt 并使用本地命令；`run`
 不会重复创建 adapter，提前退出后没有遗留子进程或损坏终端。

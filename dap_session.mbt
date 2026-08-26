@@ -78,17 +78,19 @@ pub struct DebugSession {
   priv executable : String
   priv breakpoints : Array[LogicalBreakpoint]
   priv mut next_breakpoint_id : Int
+  priv mut preparation : @async.Task[DebugExecution]?
+  priv mut preparation_error : String?
   priv mut execution : DebugExecution?
   priv mut detached_state : DebugSessionState
 }
 
 ///|
-async fn[X] DebugExecution::start(
+async fn[X] DebugExecution::prepare(
   group : @async.TaskGroup[X],
   adapter : String,
 ) -> DebugExecution {
   let dispatcher = DapDispatcher::start(group, adapter)
-  {
+  let execution = {
     dispatcher,
     machine: DebugSessionMachine::new(),
     events: [],
@@ -100,12 +102,26 @@ async fn[X] DebugExecution::start(
     breakpoint_state: ExecutionBreakpointState::new(),
     pending_output: [],
   }
+  errdefer execution.close()
+  let initialize = execution.request("initialize", {
+    "adapterID": "lldb",
+    "clientID": "moondbg",
+    "clientName": "moondbg",
+    "columnsStartAt1": true,
+    "linesStartAt1": true,
+    "pathFormat": "path",
+    "supportsRunInTerminalRequest": false,
+    "supportsVariableType": true,
+  })
+  execution.capabilities = initialize.body
+  execution
 }
 
 ///|
-/// Starts lldb-dap without creating a target. The returned persistent session
-/// owns one `Ready` execution; a later `run` begins the only execution epoch.
-pub async fn[X] DebugSession::start(
+/// Starts preparing lldb-dap in the background without creating a target.
+/// Local REPL commands can use the returned session immediately; a later
+/// `run` waits for and consumes this exact preparation result.
+pub fn[X] DebugSession::start(
   group : @async.TaskGroup[X],
   adapter : String,
   executable : String,
@@ -114,7 +130,13 @@ pub async fn[X] DebugSession::start(
     executable,
     breakpoints: [],
     next_breakpoint_id: 1,
-    execution: Some(DebugExecution::start(group, adapter)),
+    preparation: Some(
+      group.spawn(allow_failure=true, () => {
+        DebugExecution::prepare(group, adapter)
+      }),
+    ),
+    preparation_error: None,
+    execution: None,
     detached_state: Ready,
   }
 }
@@ -707,17 +729,6 @@ async fn DebugExecution::run_transaction(
 ) -> RunOutcome {
   errdefer self.machine.fail("run transaction failed")
   self.machine.begin_execution()
-  let initialize = self.request("initialize", {
-    "adapterID": "lldb",
-    "clientID": "moondbg",
-    "clientName": "moondbg",
-    "columnsStartAt1": true,
-    "linesStartAt1": true,
-    "pathFormat": "path",
-    "supportsRunInTerminalRequest": false,
-    "supportsVariableType": true,
-  })
-  self.capabilities = initialize.body
   let launch_seq = self.dispatcher.send_request("launch", {
     "program": executable,
     "stopOnEntry": false,
@@ -756,13 +767,40 @@ async fn DebugExecution::run(
 }
 
 ///|
-pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
-  guard self.execution is Some(execution) else {
+async fn DebugSession::prepared_execution(
+  self : DebugSession,
+) -> DebugExecution raise DebugSessionError {
+  match self.execution {
+    Some(execution) => return execution
+    None => ()
+  }
+  match self.preparation_error {
+    Some(message) => raise DebugSessionError::AdapterFailure(message)
+    None => ()
+  }
+  guard self.preparation is Some(preparation) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.detached_state,
       action="run the program",
     )
   }
+  let execution = preparation.wait() catch {
+    error => {
+      let message = @debug.to_string(error)
+      self.preparation = None
+      self.preparation_error = Some(message)
+      self.detached_state = Failed
+      raise DebugSessionError::AdapterFailure(message)
+    }
+  }
+  self.preparation = None
+  self.execution = Some(execution)
+  execution
+}
+
+///|
+pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+  let execution = self.prepared_execution()
   execution.run(self.executable, self.breakpoints)
 }
 
@@ -855,8 +893,20 @@ pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
 ///|
 /// Closes the current execution and detaches all adapter-scoped resources.
 pub fn DebugSession::close(self : DebugSession) -> Unit {
-  guard self.execution is Some(execution) else { return }
-  execution.close()
-  self.detached_state = execution.state()
-  self.execution = None
+  match self.execution {
+    Some(execution) => {
+      execution.close()
+      self.detached_state = execution.state()
+      self.execution = None
+    }
+    None => ()
+  }
+  guard self.preparation is Some(preparation) else { return }
+  let completed = preparation.try_wait() catch { _ => None }
+  preparation.cancel()
+  if completed is Some(execution) {
+    execution.close()
+    self.detached_state = execution.state()
+  }
+  self.preparation = None
 }
