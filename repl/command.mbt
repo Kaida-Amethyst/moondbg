@@ -1,4 +1,7 @@
 ///|
+const DEFAULT_SOURCE_LINE_COUNT : Int = 5
+
+///|
 priv enum ReplStepKind {
   StepOver
   StepInto
@@ -14,7 +17,7 @@ priv enum ReplCommand {
   Continue
   StepExecution(ReplStepKind)
   PrintVariable(String)
-  List
+  List(Int)
   Invalid(String)
   Unknown
 }
@@ -85,6 +88,34 @@ fn parse_variable_name(arguments : StringView) -> ReplCommand {
     }
   }
   PrintVariable(arguments.to_owned())
+}
+
+///|
+fn parse_list_count(arguments : StringView) -> ReplCommand {
+  guard arguments != "" else {
+    return Invalid("list count must be a positive integer")
+  }
+  let parsed_count = Some(@string.parse_int(arguments, base=10)) catch {
+    _ => None
+  }
+  guard parsed_count is Some(count) && count > 0 else {
+    return Invalid("list count must be a positive integer")
+  }
+  List(count)
+}
+
+///|
+fn parse_list(arguments : StringView) -> ReplCommand {
+  guard arguments != "" else { return List(DEFAULT_SOURCE_LINE_COUNT) }
+  match command_arguments(arguments, "-c") {
+    Some(count) => return parse_list_count(count)
+    None => ()
+  }
+  match command_arguments(arguments, "--count") {
+    Some(count) => return parse_list_count(count)
+    None => ()
+  }
+  Invalid("list only accepts -c <count> or --count <count>")
 }
 
 ///|
@@ -170,8 +201,7 @@ fn parse_repl_command(line : StringView) -> ReplCommand {
     None => ()
   }
   match command_arguments(input, "list") {
-    Some("") => return List
-    Some(_) => return Invalid("list does not accept arguments")
+    Some(arguments) => return parse_list(arguments)
     None => ()
   }
   Unknown
@@ -200,8 +230,26 @@ test "P4 local commands and aliases parse without arguments" {
   assert_true(parse_repl_command("help") is Help)
   assert_true(parse_repl_command(" run\t") is Run)
   assert_true(parse_repl_command("r") is Run)
-  assert_true(parse_repl_command("list") is List)
+  assert_true(parse_repl_command("list") is List(5))
   assert_true(parse_repl_command("q") is Quit)
+}
+
+///|
+test "list uses five lines by default and accepts LLDB count options" {
+  assert_true(parse_repl_command("list") is List(5))
+  assert_true(parse_repl_command(" list -c 10\t") is List(10))
+  assert_true(parse_repl_command("list --count\t12") is List(12))
+}
+
+///|
+test "list rejects invalid counts and unsupported argument forms" {
+  let commands = [
+    "list -c", "list --count", "list -c 0", "list -c -1", "list -c ten", "list -c 10 more",
+    "list 10", "list --lines 10",
+  ]
+  for command in commands {
+    assert_true(parse_repl_command(command) is Invalid(_), msg=command)
+  }
 }
 
 ///|

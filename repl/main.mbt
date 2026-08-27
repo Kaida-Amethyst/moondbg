@@ -112,9 +112,9 @@ async fn run_repl(
           Continue => continue_debuggee(session)
           StepExecution(kind) => step_debuggee(session, kind)
           PrintVariable(name) => inspect_variable(session, name)
-          List =>
+          List(line_count) =>
             match session.last_stop_snapshot() {
-              Some(snapshot) => render_stop_snapshot(snapshot)
+              Some(snapshot) => render_stop_snapshot(snapshot, line_count~)
               None => println("No stopped source location is available.")
             }
           Invalid(message) => println("Error: \{message}")
@@ -136,7 +136,7 @@ fn print_help() -> Unit {
     #|  step                 s                Step into a called function
     #|  finish               fin              Step out of the current function
     #|  print <name>         p <name>         Show a simple variable
-    #|  list                                  Show the current source location
+    #|  list [-c|--count <count>]             Show source context (default: 5 lines)
     #|  help                                  Show this help
     #|  quit                  q, exit          Exit moondbg
   println(help)
@@ -334,7 +334,35 @@ fn stop_location(snapshot : @moondbg.StopSnapshot) -> String {
 }
 
 ///|
-async fn render_source_context(snapshot : @moondbg.StopSnapshot) -> Unit {
+fn source_window(
+  current_line : Int,
+  total_lines : Int,
+  line_count~ : Int,
+) -> (Int, Int) {
+  let visible_count = if line_count < total_lines {
+    line_count
+  } else {
+    total_lines
+  }
+  let centered_first = if current_line > visible_count / 2 {
+    current_line - visible_count / 2
+  } else {
+    1
+  }
+  let maximum_first = total_lines - visible_count + 1
+  let first_line = if centered_first < maximum_first {
+    centered_first
+  } else {
+    maximum_first
+  }
+  (first_line, first_line + visible_count - 1)
+}
+
+///|
+async fn render_source_context(
+  snapshot : @moondbg.StopSnapshot,
+  line_count? : Int = DEFAULT_SOURCE_LINE_COUNT,
+) -> Unit {
   guard (snapshot.source_path(), snapshot.line())
     is (Some(source_path), Some(line)) else {
     println(
@@ -355,12 +383,7 @@ async fn render_source_context(snapshot : @moondbg.StopSnapshot) -> Unit {
     )
     return
   }
-  let first_line = if line > 2 { line - 2 } else { 1 }
-  let last_line = if line + 2 < lines.length() {
-    line + 2
-  } else {
-    lines.length()
-  }
+  let (first_line, last_line) = source_window(line, lines.length(), line_count~)
   let width = last_line.to_string().length()
   for source_line in first_line..<=last_line {
     let number = source_line.to_string()
@@ -371,11 +394,14 @@ async fn render_source_context(snapshot : @moondbg.StopSnapshot) -> Unit {
 }
 
 ///|
-async fn render_stop_snapshot(snapshot : @moondbg.StopSnapshot) -> Unit {
+async fn render_stop_snapshot(
+  snapshot : @moondbg.StopSnapshot,
+  line_count? : Int = DEFAULT_SOURCE_LINE_COUNT,
+) -> Unit {
   println(
     "Stopped (\{snapshot.reason()}) in \{snapshot.function_name()} at \{stop_location(snapshot)}",
   )
-  render_source_context(snapshot)
+  render_source_context(snapshot, line_count~)
 }
 
 ///|

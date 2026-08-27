@@ -540,6 +540,9 @@ def test_fake_stepping_commands(
         session.send("run")
         session.expect("Stopped (breakpoint) in fake.main")
         session.expect("(moondbg) ")
+        session.send("list -c 10")
+        session.expect("6 │")
+        session.expect("(moondbg) ")
         for command in ("n", "s", "fin"):
             session.send(command)
             session.expect("Stopped (step) in fake.main")
