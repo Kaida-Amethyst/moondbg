@@ -235,6 +235,62 @@ readline 编辑期间的真正异步消息将来可以通过 event sink 进入 f
 架构重构完成后，再单独迁移为 D6 确认的 MoonBit-first 分层测试体系；测试迁移不与本轮
 package、backend、session 和 REPL 重组交叉进行。
 
+## P1-P8 实施结果
+
+截至 2026-08-27，P1 至 P8 已完成并经过逐阶段 review；项目架构重构已经封口。P9 的
+MoonBit-first 测试体系迁移仍待单独实施，现有 Python fake adapter、PTY E2E 和 capability
+probe 继续作为等价迁移基线保留。
+
+最终 package 依赖方向为：
+
+```text
+repl ─────► moondbg core ◄───── lldb_dap ─────► dap
+  │                                  │
+  ├──────► lldb_dap                  └────────► moondbg core
+  ├──────► render
+  └──────► readline
+```
+
+- 根 `moondbg` package 由 `backend.mbt`、`session.mbt`、`state.mbt`、`breakpoint.mbt`、
+  `stack.mbt`、`variable.mbt` 和 `output.mbt` 组成，只保留 application/core 领域模型和
+  `DebugBackend` port；生产代码不依赖 DAP、JSON、lldb-dap 或 process；
+- `dap` 只包含 protocol、framing、dispatcher、transport 与协议错误，不依赖 debugger
+  领域模型；
+- `lldb_dap` 依赖根 package 与 `dap`，私有持有 adapter lifecycle、capability、DAP 临时
+  ID、scope 与 variable reference，并通过 `LldbDapBackend` 实现 core port；
+- `repl` 是 composition root，依赖 core、`lldb_dap`、`render` 与 readline；
+  `main.mbt` 只负责 CLI、可执行文件验证、adapter 发现、依赖组装、入口和顶层退出信息；
+- `render` 继续作为独立的 MoonBit 源码高亮 package。
+
+REPL 最终由 `ReplCommand`、`CommandSpec`、显式 `CommandRegistry`、`ReplContext`、
+`CommandResult`、结构化 `PresentationEvent` 和 human renderer 构成。`help`、`quit/exit`、
+`break`、`run`、`continue`、`next/n`、`step/s`、`finish/fin`、`print/p` 和 `list` 均由独立
+文件中的私有具体命令负责，spec 是名称、别名、usage、summary 与 parser/factory 的唯一
+来源。命令只调用 `DebugSession` 并返回结构化结果，不直接输出终端文本；stop header 与
+source view 是可被 future plain/JSON renderer 分别消费的事件。
+
+状态所有权按 D3 收敛：`DebugSession` 持有 executable、稳定逻辑断点、用户可见状态、
+线程/frame 选择及 execution/stop epoch；`LldbDapBackend` 持有 adapter 和当前 execution
+的协议状态；`dap` 持有 framing、sequence、response 配对与子进程 pipe。最终公共 `.mbti`
+中，core 不暴露 JSON、DAP event、request seq、DAP breakpoint ID 或
+`variablesReference`；`lldb_dap` 只公开 backend 的启动和 port 转换入口。
+
+P8 封口删除了临时 in-package backend、中央命令 enum/parser/dispatcher、legacy action、
+migration bridge、compat 分支、被替代旧文件和空初始化脚手架；正式 backend 内部字段统一
+使用 `session` 命名，不再保留迁移期 `legacy` 概念。架构审计确认没有具体命令残留在
+`repl/main.mbt`，也没有反向 package 依赖。P8 的完整验收结果为：
+
+- 本地开发版 `moon`、`moonc`、`moondbg` 链接、`-debug-info full` 与 `moon debug` 能力检查
+  通过；
+- `moon info && moon fmt`、`moon check` 和 `moon test` 通过，共 102 项测试；公共 `.mbti`
+  没有非预期变化；
+- Python fake E2E 通过 prompt prewarm、fake adapter、stepping、early quit、failure
+  recovery、timeout 和 terminal controls；真实 lldb-dap E2E 通过 MoonBit flow、abnormal
+  exit、quit 和 adapter failure；
+- 在 `../play` 实际执行 `moon debug main`，断点 `main/main.mbt:44` 被验证并停住，`next`
+  到第 45 行，`print x` 得到 `x: int = 3`，`list` 正常显示高亮源码，`quit` 正常退出；
+- `git diff --check` 与 `git fsck --full` 通过；工作区只有本阶段待 review 的预期变更。
+
 ## 已确认任务划分
 
 以下任务划分已经用户确认。P1 至 P8 完成本次架构重构，P9 在架构完成后单独迁移测试
@@ -242,6 +298,8 @@ package、backend、session 和 REPL 重组交叉进行。
 REPL 端到端回归通过；不采用先删除旧实现、最后再恢复功能的 big-bang rewrite。
 
 ### P1. 建立 core port 与迁移桥
+
+**实施状态：已完成。**
 
 在根 package 定义 DAP-independent 领域结果和高层 `DebugBackend`，让 `DebugSession` 通过
 port 使用调试能力。现有 DAP 实现暂时留在根 package，并通过临时的 in-package backend
@@ -252,6 +310,8 @@ port 使用调试能力。现有 DAP 实现暂时留在根 package，并通过�
 
 ### P2. 提取 DAP client package
 
+**实施状态：已完成。**
+
 建立 `dap` package，将 protocol、framing、dispatcher 和 transport 连同对应测试迁入其中，
 使其只负责协议编码、可靠收发、response 配对和原始 event 分派。迁移桥可以暂时从根
 package 依赖 `dap`，但 `dap` 不能依赖 debugger 领域模型。
@@ -259,6 +319,8 @@ package 依赖 `dap`，但 `dap` 不能依赖 debugger 领域模型。
 本阶段只改变代码归属和 import graph，不改变 launch、breakpoint、stepping 或变量语义。
 
 ### P3. 提取 LldbDapBackend
+
+**实施状态：已完成。**
 
 建立 `lldb_dap` package，将临时 backend、`DebugExecution`、initialize/launch、DAP
 breakpoint、stack、scope、variable、adapter failure 和预热逻辑迁入其中并实现
@@ -269,6 +331,8 @@ package graph 达到 D4 确认的方向。
 
 ### P4. 收敛 DebugSession 与 core 模型
 
+**实施状态：已完成。**
+
 按职责拆分根 package 中的 session、state、breakpoint、stack、variable 和 output，确保
 `DebugSession` 只持有持久用户配置和 application 状态。清除公共模型中的 DAP 临时字段，
 由 backend 负责用户逻辑选择与当前 execution 临时 ID 的映射。
@@ -277,6 +341,8 @@ package graph 达到 D4 确认的方向。
 stop epoch 和 failure；这不代表提前迁移 D6 所述的既有 Python 测试体系。
 
 ### P5. 建立 REPL 命令框架
+
+**实施状态：已完成。**
 
 实现 `ReplCommand`、`CommandSpec`、`CommandRegistry`、`ReplContext`、`CommandResult` 和
 human renderer 骨架。先迁移 `help`、`quit` 和 `exit`，验证名称/别名冲突检查、参数解析、
@@ -287,6 +353,8 @@ human renderer 骨架。先迁移 `help`、`quit` 和 `exit`，验证名称/别�
 
 ### P6. 迁移执行控制命令
 
+**实施状态：已完成。**
+
 依次迁移 `break`、`run`、`continue`、`next`、`step` 和 `finish`。每条命令由独立文件中的
 具体 struct、私有参数解析和 trait 实现负责，并通过 `DebugSession` 执行领域动作，返回
 结构化 `CommandResult`。
@@ -295,6 +363,8 @@ human renderer 骨架。先迁移 `help`、`quit` 和 `exit`，验证名称/别�
 不得让命令引用 DAP 或直接输出终端文本。
 
 ### P7. 迁移观察命令与 presentation
+
+**实施状态：已完成。**
 
 迁移 `print` 和 `list`，并将 source view、variable、stop、breakpoint update、debuggee
 output、process exit 和 user error 收敛为可渲染事件。human renderer 负责源码高亮和终端
@@ -305,6 +375,8 @@ output、process exit 和 user error 收敛为可渲染事件。human renderer �
 
 ### P8. 架构封口与完整验收
 
+**实施状态：已完成。**
+
 删除临时 backend、迁移桥、兼容分支和已被替代的旧文件，使 `repl/main.mbt` 只保留 CLI、
 依赖组装与程序入口。检查最终 package graph、公共 `.mbti` 和状态所有权，并更新架构文档。
 
@@ -312,6 +384,8 @@ output、process exit 和 user error 收敛为可渲染事件。human renderer �
 本阶段验收通过即表示架构重构完成。
 
 ### P9. 迁移 MoonBit-first 测试体系
+
+**实施状态：待实施。**
 
 在 P8 完成后，按 D6 将 session、command 和 DAP 行为下沉到纯 MoonBit fake backend、内存
 client/transport 和结构化结果测试；使用 MoonBit 测试代码配合极小 native C PTY stub

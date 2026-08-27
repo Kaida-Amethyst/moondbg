@@ -118,13 +118,13 @@ async test "lldb-dap stepping shares stop epochs snapshots and variable invalida
     guard session.run() is @moondbg.Stopped(_) else {
       fail("fake execution should stop after launch")
     }
-    guard backend.legacy.breakpoints is [logical] else {
+    guard backend.session.breakpoints is [logical] else {
       fail("backend should import one stable source breakpoint")
     }
     assert_eq(logical.id, pending.id())
     assert_eq(logical.source_path, "/tmp/main.mbt")
     assert_eq(logical.requested_line, 4)
-    guard backend.legacy.execution is Some(execution) else {
+    guard backend.session.execution is Some(execution) else {
       fail("stopped session should retain its execution")
     }
     assert_eq(execution.machine.stop_epoch, 1)

@@ -2,7 +2,7 @@
 /// lldb-dap implementation of the application-level debugger backend port.
 /// Protocol processes and execution-scoped identifiers remain private here.
 pub struct LldbDapBackend {
-  priv legacy : LldbDapSession
+  priv session : LldbDapSession
   priv mut imported_breakpoints : Int
 }
 
@@ -15,7 +15,7 @@ pub fn[X] LldbDapBackend::start(
   preparation_timeout_ms? : Int = 10000,
 ) -> LldbDapBackend {
   {
-    legacy: LldbDapSession::start(group, adapter, preparation_timeout_ms~),
+    session: LldbDapSession::start(group, adapter, preparation_timeout_ms~),
     imported_breakpoints: 0,
   }
 }
@@ -27,7 +27,7 @@ fn LldbDapBackend::sync_breakpoints(
 ) -> Unit raise {
   for index in self.imported_breakpoints..<breakpoints.length() {
     let breakpoint = breakpoints[index]
-    self.legacy.add_source_breakpoint(breakpoint) |> ignore
+    self.session.add_source_breakpoint(breakpoint) |> ignore
   }
   self.imported_breakpoints = breakpoints.length()
 }
@@ -41,7 +41,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
   self.sync_breakpoints(breakpoints) catch {
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
   }
-  self.legacy.run(executable) catch {
+  self.session.run(executable) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -53,7 +53,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(
   self,
   thread,
 ) {
-  self.legacy.continue_execution(thread) catch {
+  self.session.continue_execution(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -62,7 +62,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn next(self, thread) {
-  self.legacy.next(thread) catch {
+  self.session.next(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -71,7 +71,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn next(self, thread) {
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn step(self, thread) {
-  self.legacy.step(thread) catch {
+  self.session.step(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -80,7 +80,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn step(self, thread) {
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self, thread) {
-  self.legacy.finish(thread) catch {
+  self.session.finish(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -94,7 +94,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
   frame,
   name,
 ) {
-  self.legacy.find_variable(thread, frame, name) catch {
+  self.session.find_variable(thread, frame, name) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -103,17 +103,17 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn breakpoint_snapshots(self) {
-  self.legacy.source_breakpoints()
+  self.session.source_breakpoints()
 }
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn take_output(self) {
-  self.legacy.take_output()
+  self.session.take_output()
 }
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn disconnect(self) {
-  self.legacy.disconnect() catch {
+  self.session.disconnect() catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -122,7 +122,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn disconnect(self) {
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn close(self) {
-  self.legacy.close()
+  self.session.close()
 }
 
 ///|
