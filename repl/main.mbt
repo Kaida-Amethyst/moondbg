@@ -376,7 +376,10 @@ async fn render_source_context(
       return
     }
   }
-  let lines = @render.render_mbt_lines(source.unwrap(), theme = @render.Theme::gruvbox_dark())
+  let lines = @render.render_mbt_lines(
+    source.unwrap(),
+    theme=@render.Theme::gruvbox_dark(),
+  )
   guard line > 0 && line <= lines.length() else {
     println(
       "Source unavailable: line \{line} is outside \{source_path} (1..\{lines.length()}).",

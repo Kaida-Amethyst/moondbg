@@ -135,9 +135,13 @@ test "P2 resume kinds share request construction and user actions" {
 ///|
 async test "P2 stepping shares stop epochs snapshots and variable invalidation" {
   @async.with_task_group(async fn(group) {
-    let session = DebugSession::start(
-      group, "tools/fake_dap.py", "/tmp/moondbg-p2-fake-program",
+    let executable = "/tmp/moondbg-p2-fake-program"
+    let backend = InPackageDebugBackend::start(
+      group,
+      "tools/fake_dap.py",
+      preparation_timeout_ms=10000,
     )
+    let session = DebugSession::new(executable, backend)
     defer session.close()
     let rejected = try {
       session.next() |> ignore
@@ -148,11 +152,11 @@ async test "P2 stepping shares stop epochs snapshots and variable invalidation" 
       _ => false
     }
     assert_true(rejected)
-    guard session.run() is Stopped(initial) else {
+    guard session.run() is Stopped(_) else {
       fail("fake execution should stop after launch")
     }
-    assert_eq(initial.thread_id(), 1)
-    guard session.execution is Some(execution) else {
+    assert_eq(backend.legacy.executable, Some(executable))
+    guard backend.legacy.execution is Some(execution) else {
       fail("stopped session should retain its execution")
     }
     assert_eq(execution.machine.stop_epoch, 1)
@@ -165,7 +169,6 @@ async test "P2 stepping shares stop epochs snapshots and variable invalidation" 
       fail("next should stop again")
     }
     assert_eq(after_next.reason(), "step")
-    assert_eq(after_next.thread_id(), 1)
     assert_eq(execution.machine.stop_epoch, 2)
     assert_true(execution.variable_cache.cached_scopes(1) is None)
     guard session.step() is Stopped(after_step) else {
@@ -269,7 +272,7 @@ test "inbox matches request_seq and buffers an early unrelated response" {
 
 ///|
 test "initialized and stopped events advance the session state machine" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   assert_true(machine.state is Ready)
   assert_eq(machine.execution_epoch, 0)
   machine.begin_execution()
@@ -287,7 +290,7 @@ test "initialized and stopped events advance the session state machine" {
 
 ///|
 test "a duplicate stable event does not advance the stop epoch twice" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   let stopped = test_event("stopped", { "threadId": 7 })
@@ -300,7 +303,7 @@ test "a duplicate stable event does not advance the stop epoch twice" {
 ///|
 test "an early stable event is not lost while its response is still pending" {
   let inbox = DapInbox::new()
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   let stopped = test_event("stopped", { "threadId": 9 })
@@ -321,7 +324,7 @@ test "an early stable event is not lost while its response is still pending" {
 
 ///|
 test "exited and terminated collapse into one terminal state" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("exited", { "exitCode": 0 }))
@@ -333,7 +336,7 @@ test "exited and terminated collapse into one terminal state" {
 
 ///|
 test "adapter failure enters Failed and clears the current stop context" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
@@ -348,7 +351,7 @@ test "adapter failure enters Failed and clears the current stop context" {
 
 ///|
 test "resuming invalidates frame and variable references from the stop epoch" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
@@ -364,7 +367,7 @@ test "resuming invalidates frame and variable references from the stop epoch" {
 
 ///|
 test "a fallback thread id is retained in the current stop epoch" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", {}))
@@ -537,7 +540,7 @@ test "P5 scopes exclude register-only lookup and variables retain DAP fields" {
   assert_eq(snapshot.name(), "answer")
   assert_eq(snapshot.type_name(), Some("int"))
   assert_eq(snapshot.value(), "42")
-  assert_eq(snapshot.variables_reference(), 0)
+  assert_eq(variable.variables_reference, 0)
 }
 
 ///|
@@ -579,7 +582,7 @@ test "P5 output events preserve user text and discard adapter-only output" {
     is Some(output) else {
     fail("expected stdout output")
   }
-  assert_eq(output.category(), Some("stdout"))
+  assert_true(output.kind() is StandardOutput)
   assert_eq(output.text(), "42\n")
   assert_true(
     output_from_event(
@@ -603,7 +606,7 @@ test "P5 output events preserve user text and discard adapter-only output" {
 
 ///|
 test "P5 a second stop creates a new epoch after resume" {
-  let machine = DebugSessionMachine::new()
+  let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))

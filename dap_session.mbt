@@ -6,17 +6,14 @@ priv suberror DapSessionError {
   DuplicateResponse(Int)
   InvalidSequence(Int)
   MismatchedResponseCommand(expected~ : String, actual~ : String)
-  InvalidSessionTransition(state~ : DebugSessionState, action~ : String)
+  InvalidSessionTransition(state~ : DapSessionState, action~ : String)
 } derive(Debug)
 
 ///|
-pub suberror DebugSessionError {
-  OperationNotAllowed(state~ : DebugSessionState, action~ : String)
+priv suberror LegacyDapSessionError {
+  OperationNotAllowed(state~ : DapSessionState, action~ : String)
   AdapterFailure(String)
 } derive(Debug)
-
-///|
-pub extend DebugSessionError with @debug.Debug::{to_repr}
 
 ///|
 fn validate_response(
@@ -98,7 +95,7 @@ fn ExecutionResumeKind::request(
 #warnings("-unused_field")
 priv struct DebugExecution {
   dispatcher : DapDispatcher
-  machine : DebugSessionMachine
+  machine : LegacyDapSessionMachine
   events : Array[DapEvent]
   mut capabilities : Json
   mut stop_reason : String
@@ -110,20 +107,21 @@ priv struct DebugExecution {
 }
 
 ///|
-/// Owns debugger configuration that remains stable for the REPL lifetime.
-/// Adapter processes and DAP references are isolated inside the current
-/// execution and can be replaced without changing logical breakpoint IDs.
-pub struct DebugSession {
-  priv executable : String
-  priv breakpoints : Array[LogicalBreakpoint]
-  priv mut next_breakpoint_id : Int
-  priv spawn_preparation : () -> @async.Task[DebugExecution]
-  priv mut preparation : @async.Task[DebugExecution]?
-  priv preparation_timeout_ms : Int
-  priv mut execution : DebugExecution?
-  priv mut detached_state : DebugSessionState
-  priv last_breakpoint_snapshots : Map[Int, BreakpointSnapshot]
-  priv pending_output : Array[DebugOutput]
+/// Temporary DAP monolith retained behind InPackageDebugBackend during P1.
+/// Adapter processes and protocol-scoped state remain isolated here. The
+/// executable and logical breakpoint copies are migration state synchronized
+/// from the authoritative DebugSession and are removed in P3/P4.
+priv struct LegacyDapSession {
+  mut executable : String?
+  breakpoints : Array[LogicalBreakpoint]
+  mut next_breakpoint_id : Int
+  spawn_preparation : () -> @async.Task[DebugExecution]
+  mut preparation : @async.Task[DebugExecution]?
+  preparation_timeout_ms : Int
+  mut execution : DebugExecution?
+  mut detached_state : DapSessionState
+  last_breakpoint_snapshots : Map[Int, BreakpointSnapshot]
+  pending_output : Array[DebugOutput]
 }
 
 ///|
@@ -134,7 +132,7 @@ async fn[X] DebugExecution::prepare(
   let dispatcher = DapDispatcher::start(group, adapter)
   let execution = {
     dispatcher,
-    machine: DebugSessionMachine::new(),
+    machine: LegacyDapSessionMachine::new(),
     events: [],
     capabilities: null,
     stop_reason: "stopped",
@@ -163,19 +161,18 @@ async fn[X] DebugExecution::prepare(
 /// Starts preparing lldb-dap in the background without creating a target.
 /// Local REPL commands can use the returned session immediately; a later
 /// `run` waits for and consumes this exact preparation result.
-pub fn[X] DebugSession::start(
+fn[X] LegacyDapSession::start(
   group : @async.TaskGroup[X],
   adapter : String,
-  executable : String,
   preparation_timeout_ms? : Int = 10000,
-) -> DebugSession {
+) -> LegacyDapSession {
   let spawn_preparation = () => {
     group.spawn(allow_failure=true, () => {
       DebugExecution::prepare(group, adapter)
     })
   }
   {
-    executable,
+    executable: None,
     breakpoints: [],
     next_breakpoint_id: 1,
     spawn_preparation,
@@ -189,14 +186,22 @@ pub fn[X] DebugSession::start(
 }
 
 ///|
-fn DebugSession::begin_preparation(self : DebugSession) -> Unit {
+fn LegacyDapSession::set_launch_executable(
+  self : LegacyDapSession,
+  executable : String,
+) -> Unit {
+  self.executable = Some(executable)
+}
+
+///|
+fn LegacyDapSession::begin_preparation(self : LegacyDapSession) -> Unit {
   self.preparation = Some((self.spawn_preparation)())
   self.detached_state = Ready
 }
 
 ///|
 /// Returns the current stable or transitional debugger state.
-pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
+fn LegacyDapSession::state(self : LegacyDapSession) -> DapSessionState {
   match self.execution {
     Some(execution) => execution.state()
     None => self.detached_state
@@ -204,7 +209,7 @@ pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
 }
 
 ///|
-fn DebugExecution::state(self : DebugExecution) -> DebugSessionState {
+fn DebugExecution::state(self : DebugExecution) -> DapSessionState {
   self.machine.state
 }
 
@@ -296,14 +301,14 @@ async fn DebugExecution::request(
 }
 
 ///|
-pub fn DebugSession::add_source_breakpoint(
-  self : DebugSession,
+fn LegacyDapSession::add_source_breakpoint(
+  self : LegacyDapSession,
   source_path : String,
   line : Int,
-) -> BreakpointSnapshot raise DebugSessionError {
+) -> BreakpointSnapshot raise LegacyDapSessionError {
   let state = self.state()
   guard state is Ready else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state~,
       action="add source breakpoint",
     )
@@ -319,8 +324,8 @@ pub fn DebugSession::add_source_breakpoint(
 }
 
 ///|
-pub fn DebugSession::source_breakpoints(
-  self : DebugSession,
+fn LegacyDapSession::source_breakpoints(
+  self : LegacyDapSession,
 ) -> Array[BreakpointSnapshot] {
   match self.execution {
     Some(execution) =>
@@ -338,15 +343,7 @@ pub fn DebugSession::source_breakpoints(
 }
 
 ///|
-pub fn DebugSession::last_stop_snapshot(self : DebugSession) -> StopSnapshot? {
-  match self.execution {
-    Some(execution) => execution.last_snapshot
-    None => None
-  }
-}
-
-///|
-pub fn DebugSession::take_output(self : DebugSession) -> Array[DebugOutput] {
+fn LegacyDapSession::take_output(self : LegacyDapSession) -> Array[DebugOutput] {
   let output = self.pending_output.copy()
   self.pending_output.clear()
   if self.execution is Some(execution) {
@@ -435,33 +432,34 @@ async fn DebugExecution::find_variable(
   guard self.machine.state is Stopped &&
     self.machine.current_stop_epoch() is Some(epoch) &&
     self.machine.selected_frame_id() is Some(frame_id) else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.machine.state,
       action="inspect a variable",
     )
   }
   self.find_variable_inner(epoch, frame_id, name) catch {
-    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+    error =>
+      raise LegacyDapSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 
 ///|
-pub async fn DebugSession::find_variable(
-  self : DebugSession,
+async fn LegacyDapSession::find_variable(
+  self : LegacyDapSession,
   name : String,
 ) -> VariableLookupResult {
   guard self.execution is Some(execution) else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.detached_state,
       action="inspect a variable",
     )
   }
   execution.find_variable(name) catch {
-    DebugSessionError::AdapterFailure(message) => {
+    LegacyDapSessionError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
       }
-      raise DebugSessionError::AdapterFailure(message)
+      raise LegacyDapSessionError::AdapterFailure(message)
     }
     error => raise error
   }
@@ -766,8 +764,6 @@ async fn DebugExecution::build_stop_snapshot(
   self.machine.select_frame(frame.id)
   StopSnapshot::new(
     self.stop_reason,
-    thread_id,
-    frame.id,
     frame.name,
     frame.source_path,
     frame.line,
@@ -830,26 +826,27 @@ async fn DebugExecution::run(
   breakpoints : Array[LogicalBreakpoint],
 ) -> RunOutcome {
   guard self.machine.state is Ready else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.machine.state,
       action="run the program",
     )
   }
   self.run_transaction(executable, breakpoints) catch {
-    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+    error =>
+      raise LegacyDapSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 
 ///|
-async fn DebugSession::prepared_execution(
-  self : DebugSession,
-) -> DebugExecution raise DebugSessionError {
+async fn LegacyDapSession::prepared_execution(
+  self : LegacyDapSession,
+) -> DebugExecution raise LegacyDapSessionError {
   match self.execution {
     Some(execution) => return execution
     None => ()
   }
   guard self.preparation is Some(preparation) else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.detached_state,
       action="run the program",
     )
@@ -861,7 +858,7 @@ async fn DebugSession::prepared_execution(
       let message = @debug.to_string(error)
       self.preparation = None
       self.begin_preparation()
-      raise DebugSessionError::AdapterFailure(message)
+      raise LegacyDapSessionError::AdapterFailure(message)
     }
   }
   guard completed is Some(execution) else {
@@ -871,7 +868,7 @@ async fn DebugSession::prepared_execution(
       _ => ()
     }
     self.begin_preparation()
-    raise DebugSessionError::AdapterFailure(
+    raise LegacyDapSessionError::AdapterFailure(
       "lldb-dap initialize timed out after \{self.preparation_timeout_ms} ms",
     )
   }
@@ -881,8 +878,8 @@ async fn DebugSession::prepared_execution(
 }
 
 ///|
-fn DebugSession::archive_execution(
-  self : DebugSession,
+fn LegacyDapSession::archive_execution(
+  self : LegacyDapSession,
   execution : DebugExecution,
 ) -> Unit {
   for output in execution.take_output() {
@@ -896,8 +893,8 @@ fn DebugSession::archive_execution(
 }
 
 ///|
-fn DebugSession::complete_finished_execution(
-  self : DebugSession,
+fn LegacyDapSession::complete_finished_execution(
+  self : LegacyDapSession,
   execution : DebugExecution,
 ) -> Unit {
   self.archive_execution(execution)
@@ -907,8 +904,8 @@ fn DebugSession::complete_finished_execution(
 }
 
 ///|
-async fn DebugSession::recover_failed_execution(
-  self : DebugSession,
+async fn LegacyDapSession::recover_failed_execution(
+  self : LegacyDapSession,
   execution : DebugExecution,
   try_disconnect~ : Bool,
 ) -> Unit {
@@ -927,16 +924,16 @@ async fn DebugSession::recover_failed_execution(
 }
 
 ///|
-async fn DebugSession::restart_stopped_execution(
-  self : DebugSession,
+async fn LegacyDapSession::restart_stopped_execution(
+  self : LegacyDapSession,
   execution : DebugExecution,
-) -> Unit raise DebugSessionError {
+) -> Unit raise LegacyDapSessionError {
   execution.disconnect() catch {
     error => {
       self.recover_failed_execution(execution, try_disconnect=false) catch {
         _ => ()
       }
-      raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+      raise LegacyDapSessionError::AdapterFailure(@debug.to_string(error))
     }
   }
   execution.close()
@@ -945,17 +942,22 @@ async fn DebugSession::restart_stopped_execution(
 }
 
 ///|
-pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
+async fn LegacyDapSession::run(self : LegacyDapSession) -> RunOutcome {
+  guard self.executable is Some(executable) else {
+    raise LegacyDapSessionError::AdapterFailure(
+      "the backend received no executable for this launch",
+    )
+  }
   if self.execution is Some(execution) && execution.state() is Stopped {
     self.restart_stopped_execution(execution)
   }
   let execution = self.prepared_execution()
-  let outcome = execution.run(self.executable, self.breakpoints) catch {
-    DebugSessionError::AdapterFailure(message) => {
+  let outcome = execution.run(executable, self.breakpoints) catch {
+    LegacyDapSessionError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
       }
-      raise DebugSessionError::AdapterFailure(message)
+      raise LegacyDapSessionError::AdapterFailure(message)
     }
     error => raise error
   }
@@ -985,34 +987,35 @@ async fn DebugExecution::resume_execution(
 ) -> RunOutcome {
   guard self.machine.state is Stopped &&
     self.machine.selected_thread_id() is Some(thread_id) else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.machine.state,
       action=kind.action(),
     )
   }
   let request = kind.request(thread_id, self.capabilities)
   self.resume_transaction(request) catch {
-    error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
+    error =>
+      raise LegacyDapSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 
 ///|
-async fn DebugSession::resume_execution(
-  self : DebugSession,
+async fn LegacyDapSession::resume_execution(
+  self : LegacyDapSession,
   kind : ExecutionResumeKind,
 ) -> RunOutcome {
   guard self.execution is Some(execution) else {
-    raise DebugSessionError::OperationNotAllowed(
+    raise LegacyDapSessionError::OperationNotAllowed(
       state=self.detached_state,
       action=kind.action(),
     )
   }
   let outcome = execution.resume_execution(kind) catch {
-    DebugSessionError::AdapterFailure(message) => {
+    LegacyDapSessionError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
       }
-      raise DebugSessionError::AdapterFailure(message)
+      raise LegacyDapSessionError::AdapterFailure(message)
     }
     error => raise error
   }
@@ -1023,24 +1026,24 @@ async fn DebugSession::resume_execution(
 }
 
 ///|
-pub async fn DebugSession::continue_execution(
-  self : DebugSession,
+async fn LegacyDapSession::continue_execution(
+  self : LegacyDapSession,
 ) -> RunOutcome {
   self.resume_execution(ContinueExecution)
 }
 
 ///|
-pub async fn DebugSession::next(self : DebugSession) -> RunOutcome {
+async fn LegacyDapSession::next(self : LegacyDapSession) -> RunOutcome {
   self.resume_execution(StepExecution(DapNext))
 }
 
 ///|
-pub async fn DebugSession::step(self : DebugSession) -> RunOutcome {
+async fn LegacyDapSession::step(self : LegacyDapSession) -> RunOutcome {
   self.resume_execution(StepExecution(DapStepIn))
 }
 
 ///|
-pub async fn DebugSession::finish(self : DebugSession) -> RunOutcome {
+async fn LegacyDapSession::finish(self : LegacyDapSession) -> RunOutcome {
   self.resume_execution(StepExecution(DapStepOut))
 }
 
@@ -1081,7 +1084,7 @@ fn DebugExecution::close(self : DebugExecution) -> Unit {
 
 ///|
 /// Requests a graceful shutdown of the current execution.
-pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
+async fn LegacyDapSession::disconnect(self : LegacyDapSession) -> Unit {
   guard self.execution is Some(execution) else { return }
   defer {
     execution.close()
@@ -1096,7 +1099,7 @@ pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
 
 ///|
 /// Closes the current execution and detaches all adapter-scoped resources.
-pub fn DebugSession::close(self : DebugSession) -> Unit {
+fn LegacyDapSession::close(self : LegacyDapSession) -> Unit {
   match self.execution {
     Some(execution) => {
       execution.close()

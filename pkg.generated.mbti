@@ -9,6 +9,11 @@ import {
 // Values
 
 // Errors
+pub suberror DebugBackendError {
+  BackendFailure(String)
+} derive(@debug.Debug)
+pub fn DebugBackendError::to_repr(Self) -> @debug.Repr
+
 pub suberror DebugSessionError {
   OperationNotAllowed(state~ : DebugSessionState, action~ : String)
   AdapterFailure(String)
@@ -39,11 +44,20 @@ pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
 pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
 
 pub struct DebugOutput {
-  category : String?
+  kind : DebugOutputKind
   text : String
 }
-pub fn DebugOutput::category(Self) -> String?
+pub fn DebugOutput::kind(Self) -> DebugOutputKind
 pub fn DebugOutput::text(Self) -> String
+
+pub enum DebugOutputKind {
+  StandardOutput
+  StandardError
+  OtherOutput
+} derive(Eq, @debug.Debug)
+pub fn DebugOutputKind::equal(Self, Self) -> Bool
+pub fn DebugOutputKind::not_equal(Self, Self) -> Bool
+pub fn DebugOutputKind::to_repr(Self) -> @debug.Repr
 
 pub struct DebugSession {
   // private fields
@@ -55,6 +69,7 @@ pub async fn DebugSession::disconnect(Self) -> Unit
 pub async fn DebugSession::find_variable(Self, String) -> VariableLookupResult
 pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
+pub fn DebugSession::new(String, &DebugBackend) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
 pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
@@ -65,8 +80,6 @@ pub fn DebugSession::take_output(Self) -> Array[DebugOutput]
 
 pub enum DebugSessionState {
   Ready
-  Preparing
-  Configuring
   Running
   Stopped
   Exited
@@ -81,22 +94,25 @@ pub enum RunOutcome {
   Exited(Int?)
 }
 
+pub struct SourceBreakpoint {
+  // private fields
+}
+pub fn SourceBreakpoint::id(Self) -> Int
+pub fn SourceBreakpoint::requested_line(Self) -> Int
+pub fn SourceBreakpoint::source_path(Self) -> String
+
 pub struct StopSnapshot {
   reason : String
-  thread_id : Int
-  frame_id : Int
   function_name : String
   source_path : String?
   line : Int?
   column : Int?
 }
 pub fn StopSnapshot::column(Self) -> Int?
-pub fn StopSnapshot::frame_id(Self) -> Int
 pub fn StopSnapshot::function_name(Self) -> String
 pub fn StopSnapshot::line(Self) -> Int?
 pub fn StopSnapshot::reason(Self) -> String
 pub fn StopSnapshot::source_path(Self) -> String?
-pub fn StopSnapshot::thread_id(Self) -> Int
 
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
@@ -107,13 +123,23 @@ pub struct VariableSnapshot {
   name : String
   value : String
   type_name : String?
-  variables_reference : Int
 }
 pub fn VariableSnapshot::name(Self) -> String
 pub fn VariableSnapshot::type_name(Self) -> String?
 pub fn VariableSnapshot::value(Self) -> String
-pub fn VariableSnapshot::variables_reference(Self) -> Int
 
 // Type aliases
 
 // Traits
+pub(open) trait DebugBackend {
+  async fn launch(Self, String, Array[SourceBreakpoint]) -> RunOutcome
+  async fn continue_execution(Self) -> RunOutcome
+  async fn next(Self) -> RunOutcome
+  async fn step(Self) -> RunOutcome
+  async fn finish(Self) -> RunOutcome
+  async fn find_variable(Self, String) -> VariableLookupResult
+  fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
+  fn take_output(Self) -> Array[DebugOutput]
+  async fn disconnect(Self) -> Unit
+  fn close(Self) -> Unit
+}

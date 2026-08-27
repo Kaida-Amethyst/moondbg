@@ -1,17 +1,30 @@
 ///|
+pub enum DebugOutputKind {
+  StandardOutput
+  StandardError
+  OtherOutput
+} derive(Debug, Eq)
+
+///|
+pub extend DebugOutputKind with @debug.Debug::{to_repr}
+
+///|
+pub extend DebugOutputKind with Eq::{equal, not_equal}
+
+///|
 pub struct DebugOutput {
-  category : String?
+  kind : DebugOutputKind
   text : String
 }
 
 ///|
-fn DebugOutput::new(category : String?, text : String) -> DebugOutput {
-  { category, text, }
+fn DebugOutput::new(kind : DebugOutputKind, text : String) -> DebugOutput {
+  { kind, text, }
 }
 
 ///|
-pub fn DebugOutput::category(self : DebugOutput) -> String? {
-  self.category
+pub fn DebugOutput::kind(self : DebugOutput) -> DebugOutputKind {
+  self.kind
 }
 
 ///|
@@ -33,5 +46,10 @@ fn output_from_event(event : DapEvent) -> DebugOutput? {
   guard category != Some("telemetry") && category != Some("console") else {
     return None
   }
-  Some(DebugOutput::new(category, text))
+  let kind = match category {
+    Some("stdout") => StandardOutput
+    Some("stderr") => StandardError
+    _ => OtherOutput
+  }
+  Some(DebugOutput::new(kind, text))
 }

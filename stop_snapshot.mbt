@@ -1,8 +1,6 @@
 ///|
 pub struct StopSnapshot {
   reason : String
-  thread_id : Int
-  frame_id : Int
   function_name : String
   source_path : String?
   line : Int?
@@ -12,29 +10,17 @@ pub struct StopSnapshot {
 ///|
 fn StopSnapshot::new(
   reason : String,
-  thread_id : Int,
-  frame_id : Int,
   function_name : String,
   source_path : String?,
   line : Int?,
   column : Int?,
 ) -> StopSnapshot {
-  { reason, thread_id, frame_id, function_name, source_path, line, column, }
+  { reason, function_name, source_path, line, column, }
 }
 
 ///|
 pub fn StopSnapshot::reason(self : StopSnapshot) -> String {
   self.reason
-}
-
-///|
-pub fn StopSnapshot::thread_id(self : StopSnapshot) -> Int {
-  self.thread_id
-}
-
-///|
-pub fn StopSnapshot::frame_id(self : StopSnapshot) -> Int {
-  self.frame_id
 }
 
 ///|

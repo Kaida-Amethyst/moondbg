@@ -3,7 +3,6 @@ pub struct VariableSnapshot {
   name : String
   value : String
   type_name : String?
-  variables_reference : Int
 }
 
 ///|
@@ -19,11 +18,6 @@ pub fn VariableSnapshot::value(self : VariableSnapshot) -> String {
 ///|
 pub fn VariableSnapshot::type_name(self : VariableSnapshot) -> String? {
   self.type_name
-}
-
-///|
-pub fn VariableSnapshot::variables_reference(self : VariableSnapshot) -> Int {
-  self.variables_reference
 }
 
 ///|
@@ -54,12 +48,7 @@ priv struct DapVariable {
 
 ///|
 fn DapVariable::snapshot(self : DapVariable) -> VariableSnapshot {
-  {
-    name: self.name,
-    value: self.value,
-    type_name: self.type_name,
-    variables_reference: self.variables_reference,
-  }
+  { name: self.name, value: self.value, type_name: self.type_name, }
 }
 
 ///|
