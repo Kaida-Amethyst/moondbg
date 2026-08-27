@@ -2,7 +2,6 @@
 package "Kaida-Amethyst/moondbg"
 
 import {
-  "moonbitlang/async",
   "moonbitlang/core/debug",
 }
 
@@ -12,6 +11,7 @@ import {
 pub suberror DebugBackendError {
   BackendFailure(String)
 } derive(@debug.Debug)
+pub fn DebugBackendError::failure(String) -> Self
 pub fn DebugBackendError::to_repr(Self) -> @debug.Repr
 
 pub suberror DebugSessionError {
@@ -22,17 +22,16 @@ pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct BreakpointSnapshot {
-  id : Int
-  source_path : String
-  requested_line : Int
-  actual_line : Int?
-  status : BreakpointStatus
+  // private fields
 }
 pub fn BreakpointSnapshot::actual_line(Self) -> Int?
 pub fn BreakpointSnapshot::id(Self) -> Int
+pub fn BreakpointSnapshot::pending(Int, String, Int) -> Self
+pub fn BreakpointSnapshot::rejected(Int, String, Int, String) -> Self
 pub fn BreakpointSnapshot::requested_line(Self) -> Int
 pub fn BreakpointSnapshot::source_path(Self) -> String
 pub fn BreakpointSnapshot::status(Self) -> BreakpointStatus
+pub fn BreakpointSnapshot::verified(Int, String, Int, Int?) -> Self
 
 pub enum BreakpointStatus {
   Pending
@@ -44,10 +43,12 @@ pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
 pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
 
 pub struct DebugOutput {
-  kind : DebugOutputKind
-  text : String
+  // private fields
 }
 pub fn DebugOutput::kind(Self) -> DebugOutputKind
+pub fn DebugOutput::other(String) -> Self
+pub fn DebugOutput::standard_error(String) -> Self
+pub fn DebugOutput::standard_output(String) -> Self
 pub fn DebugOutput::text(Self) -> String
 
 pub enum DebugOutputKind {
@@ -73,7 +74,6 @@ pub fn DebugSession::new(String, &DebugBackend) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
 pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
-pub fn[X] DebugSession::start(@async.TaskGroup[X], String, String, preparation_timeout_ms? : Int) -> Self
 pub fn DebugSession::state(Self) -> DebugSessionState
 pub async fn DebugSession::step(Self) -> RunOutcome
 pub fn DebugSession::take_output(Self) -> Array[DebugOutput]
@@ -93,6 +93,8 @@ pub enum RunOutcome {
   Stopped(StopSnapshot)
   Exited(Int?)
 }
+pub fn RunOutcome::exited(Int?) -> Self
+pub fn RunOutcome::stopped(StopSnapshot) -> Self
 
 pub struct SourceBreakpoint {
   // private fields
@@ -102,15 +104,12 @@ pub fn SourceBreakpoint::requested_line(Self) -> Int
 pub fn SourceBreakpoint::source_path(Self) -> String
 
 pub struct StopSnapshot {
-  reason : String
-  function_name : String
-  source_path : String?
-  line : Int?
-  column : Int?
+  // private fields
 }
 pub fn StopSnapshot::column(Self) -> Int?
 pub fn StopSnapshot::function_name(Self) -> String
 pub fn StopSnapshot::line(Self) -> Int?
+pub fn StopSnapshot::new(String, String, String?, Int?, Int?) -> Self
 pub fn StopSnapshot::reason(Self) -> String
 pub fn StopSnapshot::source_path(Self) -> String?
 
@@ -118,13 +117,14 @@ pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
   VariableNotFound(String)
 }
+pub fn VariableLookupResult::found(VariableSnapshot) -> Self
+pub fn VariableLookupResult::not_found(String) -> Self
 
 pub struct VariableSnapshot {
-  name : String
-  value : String
-  type_name : String?
+  // private fields
 }
 pub fn VariableSnapshot::name(Self) -> String
+pub fn VariableSnapshot::new(String, String, String?) -> Self
 pub fn VariableSnapshot::type_name(Self) -> String?
 pub fn VariableSnapshot::value(Self) -> String
 

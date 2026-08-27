@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/lldb_dap"
+
+import {
+  "Kaida-Amethyst/moondbg",
+  "moonbitlang/async",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct LldbDapBackend {
+  // private fields
+}
+pub fn LldbDapBackend::as_debug_backend(Self) -> &@moondbg.DebugBackend
+pub fn[X] LldbDapBackend::start(@async.TaskGroup[X], String, preparation_timeout_ms? : Int) -> Self
+
+// Type aliases
+
+// Traits

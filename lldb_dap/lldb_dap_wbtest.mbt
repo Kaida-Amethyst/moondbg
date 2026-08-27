@@ -1,4 +1,13 @@
 ///|
+fn LogicalBreakpoint::new(
+  id : Int,
+  source_path : String,
+  requested_line : Int,
+) -> LogicalBreakpoint {
+  { id, source_path, requested_line, }
+}
+
+///|
 fn test_event(name : String, body : Json) -> @dap.DapEvent raise {
   guard @dap.classify_message({
       "seq": 10,
@@ -55,7 +64,7 @@ fn test_failed_response(
 }
 
 ///|
-test "P2 resume kinds share request construction and user actions" {
+test "lldb-dap resume kinds share request construction and user actions" {
   let capabilities : Json = { "supportsSteppingGranularity": true }
   let cases = [
     (StepExecution(@dap.DapNext), "next", "step over"),
@@ -85,63 +94,70 @@ test "P2 resume kinds share request construction and user actions" {
 }
 
 ///|
-async test "P2 stepping shares stop epochs snapshots and variable invalidation" {
+async test "lldb-dap stepping shares stop epochs snapshots and variable invalidation" {
   @async.with_task_group(async fn(group) {
     let executable = "/tmp/moondbg-p2-fake-program"
-    let backend = InPackageDebugBackend::start(
+    let backend = LldbDapBackend::start(
       group,
       "tools/fake_dap.py",
       preparation_timeout_ms=10000,
     )
-    let session = DebugSession::new(executable, backend)
+    let session = @moondbg.DebugSession::new(executable, backend)
     defer session.close()
     let rejected = try {
       session.next() |> ignore
       false
     } catch {
-      DebugSessionError::OperationNotAllowed(state~, action~) =>
-        state is Ready && action == "step over"
+      @moondbg.OperationNotAllowed(state~, action~) =>
+        state is @moondbg.Ready && action == "step over"
       _ => false
     }
     assert_true(rejected)
-    guard session.run() is Stopped(_) else {
+    let pending = session.add_source_breakpoint("/tmp/main.mbt", 4)
+    assert_eq(pending.id(), 1)
+    guard session.run() is @moondbg.Stopped(_) else {
       fail("fake execution should stop after launch")
     }
-    assert_eq(backend.legacy.executable, Some(executable))
+    guard backend.legacy.breakpoints is [logical] else {
+      fail("backend should import one stable source breakpoint")
+    }
+    assert_eq(logical.id, pending.id())
+    assert_eq(logical.source_path, "/tmp/main.mbt")
+    assert_eq(logical.requested_line, 4)
     guard backend.legacy.execution is Some(execution) else {
       fail("stopped session should retain its execution")
     }
     assert_eq(execution.machine.stop_epoch, 1)
-    guard session.find_variable("answer") is VariableFound(variable) else {
+    guard session.find_variable("answer") is @moondbg.VariableFound(variable) else {
       fail("fake execution should expose answer")
     }
     assert_eq(variable.value(), "42")
     assert_true(execution.variable_cache.cached_scopes(1) is Some(_))
-    guard session.next() is Stopped(after_next) else {
+    guard session.next() is @moondbg.Stopped(after_next) else {
       fail("next should stop again")
     }
     assert_eq(after_next.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 2)
     assert_true(execution.variable_cache.cached_scopes(1) is None)
-    guard session.step() is Stopped(after_step) else {
+    guard session.step() is @moondbg.Stopped(after_step) else {
       fail("step should stop again")
     }
     assert_eq(after_step.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 3)
-    guard session.finish() is Stopped(after_finish) else {
+    guard session.finish() is @moondbg.Stopped(after_finish) else {
       fail("finish should stop again")
     }
     assert_eq(after_finish.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 4)
     assert_eq(execution.machine.selected_thread_id(), Some(1))
     session.disconnect()
-    assert_true(session.state() is Exited)
+    assert_true(session.state() is @moondbg.Exited)
   })
 }
 
 ///|
 test "initialized and stopped events advance the session state machine" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   assert_true(machine.state is Ready)
   assert_eq(machine.execution_epoch, 0)
   machine.begin_execution()
@@ -159,7 +175,7 @@ test "initialized and stopped events advance the session state machine" {
 
 ///|
 test "a duplicate stable event does not advance the stop epoch twice" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   let stopped = test_event("stopped", { "threadId": 7 })
@@ -171,7 +187,7 @@ test "a duplicate stable event does not advance the stop epoch twice" {
 
 ///|
 test "an early stable event is not lost while its response is still pending" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   let stopped = test_event("stopped", { "threadId": 9 })
@@ -187,7 +203,7 @@ test "an early stable event is not lost while its response is still pending" {
 
 ///|
 test "exited and terminated collapse into one terminal state" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("exited", { "exitCode": 0 }))
@@ -199,7 +215,7 @@ test "exited and terminated collapse into one terminal state" {
 
 ///|
 test "adapter failure enters Failed and clears the current stop context" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
@@ -214,7 +230,7 @@ test "adapter failure enters Failed and clears the current stop context" {
 
 ///|
 test "resuming invalidates frame and variable references from the stop epoch" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
@@ -230,7 +246,7 @@ test "resuming invalidates frame and variable references from the stop epoch" {
 
 ///|
 test "a fallback thread id is retained in the current stop epoch" {
-  let machine = LegacyDapSessionMachine::new()
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", {}))
@@ -260,11 +276,12 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
   assert_eq(first_snapshot.id(), 1)
   assert_eq(first_snapshot.requested_line(), 4)
   assert_eq(first_snapshot.actual_line(), Some(5))
-  assert_true(first_snapshot.status() is Verified)
+  assert_true(first_snapshot.status() is @moondbg.Verified)
   let second_snapshot = state.snapshot(second)
   assert_eq(second_snapshot.id(), 2)
   assert_true(
-    second_snapshot.status() is Rejected("no executable code at this location"),
+    second_snapshot.status()
+    is @moondbg.Rejected("no executable code at this location"),
   )
 }
 
@@ -279,10 +296,11 @@ test "a failed setBreakpoints response rejects the complete source set" {
     test_failed_response(41, 5, "setBreakpoints", "source is unavailable"),
   )
   assert_true(
-    state.snapshot(first).status() is Rejected("source is unavailable"),
+    state.snapshot(first).status() is @moondbg.Rejected("source is unavailable"),
   )
   assert_true(
-    state.snapshot(second).status() is Rejected("source is unavailable"),
+    state.snapshot(second).status()
+    is @moondbg.Rejected("source is unavailable"),
   )
 }
 
@@ -292,8 +310,8 @@ test "adapter breakpoint outcomes are isolated per execution" {
   let first = ExecutionBreakpointState::new()
   let second = ExecutionBreakpointState::new()
   first.verify(breakpoint, Some(5), Some(17))
-  assert_true(first.snapshot(breakpoint).status() is Verified)
-  assert_true(second.snapshot(breakpoint).status() is Pending)
+  assert_true(first.snapshot(breakpoint).status() is @moondbg.Verified)
+  assert_true(second.snapshot(breakpoint).status() is @moondbg.Pending)
   assert_eq(second.snapshot(breakpoint).actual_line(), None)
 }
 
@@ -361,7 +379,7 @@ test "thread fallback selects the first DAP thread" {
 }
 
 ///|
-test "P5 scopes exclude register-only lookup and variables retain DAP fields" {
+test "lldb-dap scopes exclude register-only lookup and variables retain DAP fields" {
   guard parse_scopes({
       "scopes": [
         {
@@ -404,7 +422,7 @@ test "P5 scopes exclude register-only lookup and variables retain DAP fields" {
 }
 
 ///|
-test "P5 variable caches are isolated by stop epoch" {
+test "lldb-dap variable caches are isolated by stop epoch" {
   let cache = StopVariableCache::new()
   let scopes = [
     DapScope::{
@@ -435,14 +453,14 @@ test "P5 variable caches are isolated by stop epoch" {
 }
 
 ///|
-test "P5 output events preserve user text and discard adapter-only output" {
+test "lldb-dap output events preserve user text and discard adapter-only output" {
   guard output_from_event(
       test_event("output", { "category": "stdout", "output": "42\n" }),
     )
     is Some(output) else {
     fail("expected stdout output")
   }
-  assert_true(output.kind() is StandardOutput)
+  assert_true(output.kind() is @moondbg.StandardOutput)
   assert_eq(output.text(), "42\n")
   assert_true(
     output_from_event(
@@ -465,8 +483,8 @@ test "P5 output events preserve user text and discard adapter-only output" {
 }
 
 ///|
-test "P5 a second stop creates a new epoch after resume" {
-  let machine = LegacyDapSessionMachine::new()
+test "lldb-dap a second stop creates a new epoch after resume" {
+  let machine = DapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))

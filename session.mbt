@@ -55,23 +55,6 @@ pub fn DebugSession::new(
 }
 
 ///|
-/// Starts the temporary in-package lldb-dap backend while package extraction
-/// is still in progress.
-pub fn[X] DebugSession::start(
-  group : @async.TaskGroup[X],
-  adapter : String,
-  executable : String,
-  preparation_timeout_ms? : Int = 10000,
-) -> DebugSession {
-  let backend = InPackageDebugBackend::start(
-    group,
-    adapter,
-    preparation_timeout_ms~,
-  )
-  DebugSession::new(executable, backend)
-}
-
-///|
 pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
   self.state
 }

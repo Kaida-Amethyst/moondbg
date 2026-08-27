@@ -1,9 +1,9 @@
 import {
-  "Kaida-Amethyst/moondbg/dap",
-  "moonbitlang/async",
   "moonbitlang/core/debug",
-  "moonbitlang/core/json",
-  "moonbitlang/core/string",
 }
+
+import {
+  "moonbitlang/async",
+} for "wbtest"
 
 supported_targets = "+native"

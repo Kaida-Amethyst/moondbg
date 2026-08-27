@@ -420,11 +420,14 @@ fn print_exit(exit_code : Int?) -> Unit {
 async fn run(executable : String) -> Unit {
   let executable = validate_executable(executable)
   @async.with_task_group(async fn(group) {
-    let session = @moondbg.DebugSession::start(
+    let backend = @lldb_dap.LldbDapBackend::start(
       group,
       adapter_command(),
-      executable,
       preparation_timeout_ms=adapter_preparation_timeout_ms(),
+    )
+    let session = @moondbg.DebugSession::new(
+      executable,
+      backend.as_debug_backend(),
     )
     defer session.close()
     let history = @readline.History::new()

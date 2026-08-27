@@ -1,14 +1,15 @@
 ///|
 pub struct StopSnapshot {
-  reason : String
-  function_name : String
-  source_path : String?
-  line : Int?
-  column : Int?
+  priv reason : String
+  priv function_name : String
+  priv source_path : String?
+  priv line : Int?
+  priv column : Int?
 }
 
 ///|
-fn StopSnapshot::new(
+/// Creates an application-level stopped-location snapshot.
+pub fn StopSnapshot::new(
   reason : String,
   function_name : String,
   source_path : String?,
@@ -47,4 +48,14 @@ pub fn StopSnapshot::column(self : StopSnapshot) -> Int? {
 pub enum RunOutcome {
   Stopped(StopSnapshot)
   Exited(Int?)
+}
+
+///|
+pub fn RunOutcome::stopped(snapshot : StopSnapshot) -> RunOutcome {
+  Stopped(snapshot)
+}
+
+///|
+pub fn RunOutcome::exited(exit_code : Int?) -> RunOutcome {
+  Exited(exit_code)
 }

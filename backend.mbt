@@ -37,13 +37,7 @@ pub fn SourceBreakpoint::requested_line(self : SourceBreakpoint) -> Int {
 fn SourceBreakpoint::pending_snapshot(
   self : SourceBreakpoint,
 ) -> BreakpointSnapshot {
-  {
-    id: self.id,
-    source_path: self.source_path,
-    requested_line: self.requested_line,
-    actual_line: None,
-    status: Pending,
-  }
+  BreakpointSnapshot::pending(self.id, self.source_path, self.requested_line)
 }
 
 ///|
@@ -52,6 +46,12 @@ fn SourceBreakpoint::pending_snapshot(
 pub suberror DebugBackendError {
   BackendFailure(String)
 } derive(Debug)
+
+///|
+/// Creates a backend failure after an adapter has removed protocol details.
+pub fn DebugBackendError::failure(message : String) -> DebugBackendError {
+  BackendFailure(message)
+}
 
 ///|
 pub extend DebugBackendError with @debug.Debug::{to_repr}

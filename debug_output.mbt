@@ -13,13 +13,26 @@ pub extend DebugOutputKind with Eq::{equal, not_equal}
 
 ///|
 pub struct DebugOutput {
-  kind : DebugOutputKind
-  text : String
+  priv kind : DebugOutputKind
+  priv text : String
 }
 
 ///|
-fn DebugOutput::new(kind : DebugOutputKind, text : String) -> DebugOutput {
-  { kind, text, }
+/// Creates standard output after an adapter has classified its channel.
+pub fn DebugOutput::standard_output(text : String) -> DebugOutput {
+  { kind: StandardOutput, text, }
+}
+
+///|
+/// Creates standard error after an adapter has classified its channel.
+pub fn DebugOutput::standard_error(text : String) -> DebugOutput {
+  { kind: StandardError, text, }
+}
+
+///|
+/// Creates output which is neither stdout nor stderr.
+pub fn DebugOutput::other(text : String) -> DebugOutput {
+  { kind: OtherOutput, text, }
 }
 
 ///|
@@ -30,26 +43,4 @@ pub fn DebugOutput::kind(self : DebugOutput) -> DebugOutputKind {
 ///|
 pub fn DebugOutput::text(self : DebugOutput) -> String {
   self.text
-}
-
-///|
-fn output_from_event(event : @dap.DapEvent) -> DebugOutput? {
-  guard event.name() == "output" &&
-    event.body() is { "output": String(text), .. } &&
-    text != "" else {
-    return None
-  }
-  let category = match event.body() {
-    { "category": String(category), .. } => Some(category)
-    _ => None
-  }
-  guard category != Some("telemetry") && category != Some("console") else {
-    return None
-  }
-  let kind = match category {
-    Some("stdout") => StandardOutput
-    Some("stderr") => StandardError
-    _ => OtherOutput
-  }
-  Some(DebugOutput::new(kind, text))
 }

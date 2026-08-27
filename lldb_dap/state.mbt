@@ -18,9 +18,10 @@ priv struct StopEpochContext {
 }
 
 ///|
-// P4 and P5 consume the epochs and recorded failure through structured results.
+// Failure details remain private to the adapter and are retained for state
+// diagnostics and whitebox lifecycle tests.
 #warnings("-unused_field")
-priv struct LegacyDapSessionMachine {
+priv struct DapSessionMachine {
   mut state : DapSessionState
   mut execution_epoch : Int
   mut stop_epoch : Int
@@ -29,7 +30,7 @@ priv struct LegacyDapSessionMachine {
 }
 
 ///|
-fn LegacyDapSessionMachine::new() -> LegacyDapSessionMachine {
+fn DapSessionMachine::new() -> DapSessionMachine {
   {
     state: Ready,
     execution_epoch: 0,
@@ -41,8 +42,8 @@ fn LegacyDapSessionMachine::new() -> LegacyDapSessionMachine {
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::begin_execution(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::begin_execution(
+  self : DapSessionMachine,
 ) -> Unit raise DapSessionError {
   guard self.state is Ready else {
     raise InvalidSessionTransition(state=self.state, action="begin execution")
@@ -55,8 +56,8 @@ fn LegacyDapSessionMachine::begin_execution(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::mark_running(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::mark_running(
+  self : DapSessionMachine,
 ) -> Unit raise DapSessionError {
   guard self.state is Preparing || self.state is Configuring else {
     raise InvalidSessionTransition(state=self.state, action="mark running")
@@ -74,8 +75,8 @@ fn stopped_thread_id(event : @dap.DapEvent) -> Int? {
 }
 
 ///|
-fn LegacyDapSessionMachine::accept_event(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::accept_event(
+  self : DapSessionMachine,
   event : @dap.DapEvent,
 ) -> Unit raise DapSessionError {
   match event.name() {
@@ -112,8 +113,8 @@ fn LegacyDapSessionMachine::accept_event(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::mark_resumed(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::mark_resumed(
+  self : DapSessionMachine,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped else {
     raise InvalidSessionTransition(state=self.state, action="resume")
@@ -123,8 +124,8 @@ fn LegacyDapSessionMachine::mark_resumed(
 }
 
 ///|
-fn LegacyDapSessionMachine::select_thread(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::select_thread(
+  self : DapSessionMachine,
   thread_id : Int,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped && self.stop_context is Some(context) else {
@@ -135,8 +136,8 @@ fn LegacyDapSessionMachine::select_thread(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::select_frame(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::select_frame(
+  self : DapSessionMachine,
   frame_id : Int,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped && self.stop_context is Some(context) else {
@@ -147,8 +148,8 @@ fn LegacyDapSessionMachine::select_frame(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::remember_variable_reference(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::remember_variable_reference(
+  self : DapSessionMachine,
   reference : Int,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped && self.stop_context is Some(context) else {
@@ -162,8 +163,8 @@ fn LegacyDapSessionMachine::remember_variable_reference(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::has_current_frame(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::has_current_frame(
+  self : DapSessionMachine,
   frame_id : Int,
 ) -> Bool {
   self.stop_context is Some(context) &&
@@ -173,8 +174,8 @@ fn LegacyDapSessionMachine::has_current_frame(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::has_current_variable_reference(
-  self : LegacyDapSessionMachine,
+fn DapSessionMachine::has_current_variable_reference(
+  self : DapSessionMachine,
   reference : Int,
 ) -> Bool {
   self.stop_context is Some(context) &&
@@ -184,9 +185,7 @@ fn LegacyDapSessionMachine::has_current_variable_reference(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::selected_thread_id(
-  self : LegacyDapSessionMachine,
-) -> Int? {
+fn DapSessionMachine::selected_thread_id(self : DapSessionMachine) -> Int? {
   match self.stop_context {
     Some(context) if context.epoch == self.stop_epoch => context.thread_id
     _ => None
@@ -195,9 +194,7 @@ fn LegacyDapSessionMachine::selected_thread_id(
 
 ///|
 #warnings("-unused_value")
-fn LegacyDapSessionMachine::selected_frame_id(
-  self : LegacyDapSessionMachine,
-) -> Int? {
+fn DapSessionMachine::selected_frame_id(self : DapSessionMachine) -> Int? {
   match self.stop_context {
     Some(context) if context.epoch == self.stop_epoch => context.frame_id
     _ => None
@@ -205,9 +202,7 @@ fn LegacyDapSessionMachine::selected_frame_id(
 }
 
 ///|
-fn LegacyDapSessionMachine::current_stop_epoch(
-  self : LegacyDapSessionMachine,
-) -> Int? {
+fn DapSessionMachine::current_stop_epoch(self : DapSessionMachine) -> Int? {
   match self.stop_context {
     Some(context) if context.epoch == self.stop_epoch => Some(context.epoch)
     _ => None
@@ -215,7 +210,7 @@ fn LegacyDapSessionMachine::current_stop_epoch(
 }
 
 ///|
-fn LegacyDapSessionMachine::finish(self : LegacyDapSessionMachine) -> Unit {
+fn DapSessionMachine::finish(self : DapSessionMachine) -> Unit {
   self.stop_context = None
   if !(self.state is Failed) {
     self.state = Exited
@@ -223,10 +218,7 @@ fn LegacyDapSessionMachine::finish(self : LegacyDapSessionMachine) -> Unit {
 }
 
 ///|
-fn LegacyDapSessionMachine::fail(
-  self : LegacyDapSessionMachine,
-  message : String,
-) -> Unit {
+fn DapSessionMachine::fail(self : DapSessionMachine, message : String) -> Unit {
   self.stop_context = None
   self.failure_message = Some(message)
   self.state = Failed
