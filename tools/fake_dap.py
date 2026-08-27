@@ -38,6 +38,23 @@ class FakeAdapter:
             os.environ.get("MOONDBG_FAKE_DAP_DUPLICATE_TERMINATED") == "1"
         )
         self.late_output = os.environ.get("MOONDBG_FAKE_DAP_LATE_OUTPUT") == "1"
+        self.thread_id = int(os.environ.get("MOONDBG_FAKE_DAP_THREAD_ID", "1"))
+        self.step_outcome = os.environ.get(
+            "MOONDBG_FAKE_DAP_STEP_OUTCOME", "stopped"
+        )
+        if self.step_outcome not in {
+            "stopped",
+            "exited",
+            "terminated",
+            "adapter-failure",
+        }:
+            raise ProtocolError(
+                "MOONDBG_FAKE_DAP_STEP_OUTCOME must be stopped, exited, "
+                "terminated, or adapter-failure"
+            )
+        self.step_exit_code = int(
+            os.environ.get("MOONDBG_FAKE_DAP_STEP_EXIT_CODE", "0")
+        )
         self.source = os.environ.get("MOONDBG_FAKE_DAP_SOURCE", __file__)
         self.source_line = int(os.environ.get("MOONDBG_FAKE_DAP_SOURCE_LINE", "1"))
         trace_value = os.environ.get("MOONDBG_FAKE_DAP_TRACE")
@@ -89,11 +106,58 @@ class FakeAdapter:
     def event(self, name: str, body: dict[str, Any] | None = None) -> None:
         self.send({"type": "event", "event": name, "body": body or {}})
 
+    def reject(self, request: dict[str, Any], message: str) -> None:
+        self.send(
+            {
+                "type": "response",
+                "request_seq": request["seq"],
+                "command": request["command"],
+                "success": False,
+                "message": message,
+                "body": {},
+            }
+        )
+
+    def handle_step(self, request: dict[str, Any]) -> bool:
+        arguments = request.get("arguments")
+        if not isinstance(arguments, dict):
+            self.reject(request, "stepping request arguments must be an object")
+            return True
+        thread_id = arguments.get("threadId")
+        if type(thread_id) is not int or thread_id != self.thread_id:
+            self.reject(
+                request,
+                f"expected threadId {self.thread_id}, got {thread_id!r}",
+            )
+            return True
+        granularity = arguments.get("granularity")
+        if granularity not in (None, "statement", "line", "instruction"):
+            self.reject(request, f"invalid stepping granularity {granularity!r}")
+            return True
+        if self.step_outcome == "adapter-failure":
+            self.forced_failure = True
+            self.trace("forced-exit", point=request["command"])
+            return False
+        self.respond(request)
+        if self.step_outcome == "stopped":
+            self.event("stopped", {"reason": "step", "threadId": self.thread_id})
+        elif self.step_outcome == "exited":
+            self.event("exited", {"exitCode": self.step_exit_code})
+            self.event("terminated")
+        else:
+            self.event("terminated")
+        return True
+
     def handle(self, request: dict[str, Any]) -> bool:
         command = request.get("command")
         if request.get("type") != "request" or not isinstance(command, str):
             raise ProtocolError(f"expected DAP request, got {request!r}")
-        self.trace("request", command=command, request_seq=request.get("seq"))
+        self.trace(
+            "request",
+            command=command,
+            request_seq=request.get("seq"),
+            arguments=request.get("arguments") or {},
+        )
         if self.should_fail_once(command):
             return False
         if command == "initialize":
@@ -130,9 +194,15 @@ class FakeAdapter:
             self.respond(request, {"breakpoints": breakpoints})
         elif command == "configurationDone":
             self.respond(request)
-            self.event("stopped", {"reason": "breakpoint", "threadId": 1})
+            self.event(
+                "stopped",
+                {"reason": "breakpoint", "threadId": self.thread_id},
+            )
         elif command == "threads":
-            self.respond(request, {"threads": [{"id": 1, "name": "main"}]})
+            self.respond(
+                request,
+                {"threads": [{"id": self.thread_id, "name": "main"}]},
+            )
         elif command == "stackTrace":
             self.respond(
                 request,
@@ -191,20 +261,13 @@ class FakeAdapter:
                         "output": "late-output-should-not-render\n",
                     },
                 )
+        elif command in ("next", "stepIn", "stepOut"):
+            return self.handle_step(request)
         elif command == "disconnect":
             self.respond(request)
             return False
         else:
-            self.send(
-                {
-                    "type": "response",
-                    "request_seq": request["seq"],
-                    "command": command,
-                    "success": False,
-                    "message": f"fake adapter does not support {command}",
-                    "body": {},
-                }
-            )
+            self.reject(request, f"fake adapter does not support {command}")
         return True
 
     def run(self) -> int:

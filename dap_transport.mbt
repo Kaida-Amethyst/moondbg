@@ -80,12 +80,7 @@ async fn DapTransport::send_request(
 ) -> Int {
   let seq = self.next_seq
   self.next_seq = seq + 1
-  let message : Json = {
-    "seq": seq,
-    "type": "request",
-    "command": command,
-    "arguments": arguments,
-  }
+  let message = request_message(seq, { command, arguments, })
   self.writer.write(frame_message(message.stringify()))
   seq
 }

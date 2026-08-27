@@ -1,4 +1,52 @@
 ///|
+priv struct DapRequest {
+  command : String
+  arguments : Json
+}
+
+///|
+#warnings("-unused_constructor")
+priv enum DapStepKind {
+  DapNext
+  DapStepIn
+  DapStepOut
+}
+
+///|
+fn DapStepKind::command(self : DapStepKind) -> String {
+  match self {
+    DapNext => "next"
+    DapStepIn => "stepIn"
+    DapStepOut => "stepOut"
+  }
+}
+
+///|
+#warnings("-unused_value")
+fn stepping_request(
+  kind : DapStepKind,
+  thread_id : Int,
+  supports_stepping_granularity~ : Bool,
+) -> DapRequest {
+  let arguments : Json = if supports_stepping_granularity {
+    { "threadId": thread_id, "granularity": "line" }
+  } else {
+    { "threadId": thread_id }
+  }
+  { command: kind.command(), arguments, }
+}
+
+///|
+fn request_message(seq : Int, request : DapRequest) -> Json {
+  {
+    "seq": seq,
+    "type": "request",
+    "command": request.command,
+    "arguments": request.arguments,
+  }
+}
+
+///|
 priv struct DapEvent {
   seq : Int
   name : String

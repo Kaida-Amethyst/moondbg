@@ -34,6 +34,75 @@ fn test_response(
 }
 
 ///|
+test "stepping requests encode DAP commands thread ids and line granularity" {
+  let cases = [
+    (DapStepKind::DapNext, "next"),
+    (DapStepKind::DapStepIn, "stepIn"),
+    (DapStepKind::DapStepOut, "stepOut"),
+  ]
+  for _, case in cases {
+    let (kind, command) = case
+    let request = stepping_request(kind, 41, supports_stepping_granularity=true)
+    assert_eq(request.command, command)
+    assert_true(
+      request.arguments
+      is { "threadId": Number(41, ..), "granularity": String("line"), .. },
+    )
+    guard request_message(8, request)
+      is {
+        "seq": Number(8, ..),
+        "type": String("request"),
+        "command": String(encoded_command),
+        "arguments": {
+          "threadId": Number(41, ..),
+          "granularity": String("line"),
+          ..
+        },
+        ..
+      } else {
+      fail("expected a complete stepping request")
+    }
+    assert_eq(encoded_command, command)
+  }
+  let request = stepping_request(
+    DapNext,
+    42,
+    supports_stepping_granularity=false,
+  )
+  assert_true(request.arguments is { "threadId": Number(42, ..), .. })
+  assert_false(request.arguments.stringify().contains("granularity"))
+}
+
+///|
+test "stepping responses pair by request seq without losing a stop event" {
+  let cases = [
+    (DapStepKind::DapNext, "next"),
+    (DapStepKind::DapStepIn, "stepIn"),
+    (DapStepKind::DapStepOut, "stepOut"),
+  ]
+  for index, case in cases {
+    let (_, command) = case
+    let request_seq = 70 + index
+    let inbox = DapInbox::new()
+    let stopped = test_event("stopped", { "reason": "step", "threadId": 41 })
+    guard inbox.route(Event(stopped), request_seq) is SessionEvent(event) else {
+      fail("step stop event should be routed to the session")
+    }
+    assert_eq(event.name, "stopped")
+    assert_true(
+      event.body is { "reason": String("step"), "threadId": Number(41, ..), .. },
+    )
+    let response = test_response(80 + index, request_seq, command, {})
+    guard inbox.route(Response(response), request_seq) is Matched(matched) else {
+      fail("step response should match its request")
+    }
+    assert_eq(matched.request_seq, request_seq)
+    assert_eq(matched.command, Some(command))
+    validate_response(matched, command) |> ignore
+  }
+}
+
+///|
 test "DAP framing counts UTF-8 bytes" {
   assert_eq(frame_message("hi"), "Content-Length: 2\r\n\r\nhi")
   assert_eq(frame_message("月"), "Content-Length: 3\r\n\r\n月")
