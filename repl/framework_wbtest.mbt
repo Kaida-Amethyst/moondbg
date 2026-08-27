@@ -248,15 +248,8 @@ test "P5 quit and exit require exact lowercase command words" {
 }
 
 ///|
-async test "P5 legacy bridge receives run stepping print and list actions" {
+async test "P6 legacy bridge only retains print and list actions" {
   let context = framework_test_context()
-  assert_true(
-    execute_framework_command(context, "run").legacy_action is Some(LegacyRun),
-  )
-  assert_true(
-    execute_framework_command(context, "n").legacy_action
-    is Some(LegacyStepExecution(LegacyStepOver)),
-  )
   assert_true(
     execute_framework_command(context, "p answer").legacy_action
     is Some(LegacyPrintVariable("answer")),
@@ -265,46 +258,6 @@ async test "P5 legacy bridge receives run stepping print and list actions" {
     execute_framework_command(context, "list --count 12").legacy_action
     is Some(LegacyList(12)),
   )
-}
-
-///|
-async test "P5 legacy no-argument commands retain full names and aliases" {
-  let context = framework_test_context()
-  for command in ["run", "r"] {
-    assert_true(
-      execute_framework_command(context, command).legacy_action
-      is Some(LegacyRun),
-      msg=command,
-    )
-  }
-  for command in ["continue", "c"] {
-    assert_true(
-      execute_framework_command(context, command).legacy_action
-      is Some(LegacyContinue),
-      msg=command,
-    )
-  }
-  for command in ["next", "n"] {
-    assert_true(
-      execute_framework_command(context, command).legacy_action
-      is Some(LegacyStepExecution(LegacyStepOver)),
-      msg=command,
-    )
-  }
-  for command in ["step", "s"] {
-    assert_true(
-      execute_framework_command(context, command).legacy_action
-      is Some(LegacyStepExecution(LegacyStepInto)),
-      msg=command,
-    )
-  }
-  for command in ["finish", "fin"] {
-    assert_true(
-      execute_framework_command(context, command).legacy_action
-      is Some(LegacyStepExecution(LegacyStepOut)),
-      msg=command,
-    )
-  }
 }
 
 ///|
@@ -342,27 +295,12 @@ async test "P5 legacy variable parser retains simple names" {
 }
 
 ///|
-async test "P5 legacy breakpoint parser keeps the final colon separator" {
-  let context = framework_test_context()
-  assert_true(
-    execute_framework_command(context, "break main/main.mbt:4").legacy_action
-    is Some(LegacyBreak("main/main.mbt", 4)),
-  )
-  assert_true(
-    execute_framework_command(context, "b C:/project/main.mbt:12").legacy_action
-    is Some(LegacyBreak("C:/project/main.mbt", 12)),
-  )
-}
-
-///|
-test "P5 legacy factories retain local validation" {
+test "P6 remaining legacy factories retain local validation" {
   let registry = default_command_registry()
   let commands = [
-    "break", "b main.mbt", "break :4", "break main.mbt:0", "break main.mbt:nope",
-    "run now", "continue now", "next now", "n now", "step 1", "s 1", "finish frame",
-    "fin frame", "p", "print", "p point.x", "p items[3]", "p answer + 1", "p 42",
-    "list -c", "list --count", "list -c 0", "list -c -1", "list -c ten", "list -c 10 more",
-    "list 10", "list --lines 10", "list around",
+    "p", "print", "p point.x", "p items[3]", "p answer + 1", "p 42", "list -c", "list --count",
+    "list -c 0", "list -c -1", "list -c ten", "list -c 10 more", "list 10", "list --lines 10",
+    "list around",
   ]
   for command in commands {
     assert_true(registry.parse_line(command) is RegistryInvalid(_), msg=command)

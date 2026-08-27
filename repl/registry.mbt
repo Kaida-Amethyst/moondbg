@@ -109,12 +109,12 @@ fn CommandRegistry::parse_line(
 ///|
 fn default_command_registry() -> CommandRegistry raise CommandRegistryError {
   CommandRegistry::new([
-    legacy_break_command_spec(),
-    legacy_run_command_spec(),
-    legacy_continue_command_spec(),
-    legacy_next_command_spec(),
-    legacy_step_command_spec(),
-    legacy_finish_command_spec(),
+    break_command_spec(),
+    run_command_spec(),
+    continue_command_spec(),
+    next_command_spec(),
+    step_command_spec(),
+    finish_command_spec(),
     legacy_print_command_spec(),
     legacy_list_command_spec(),
     help_command_spec(),

@@ -28,7 +28,27 @@ fn CommandHelpEntry::alias_usage(self : CommandHelpEntry) -> String {
 ///|
 priv enum PresentationEvent {
   HelpPresentation(Array[CommandHelpEntry])
-  ErrorPresentation(String)
+  UserErrorPresentation(String)
+  DebuggeeOutputPresentation(Array[@moondbg.DebugOutput])
+  ProgramRestartingPresentation
+  BreakpointPendingPresentation(Int, String, Int)
+  BreakpointUpdatePresentation(@moondbg.BreakpointSnapshot)
+  BreakpointErrorPresentation(BreakpointCommandError)
+  StopPresentation(@moondbg.StopSnapshot)
+  ProcessExitPresentation(Int?)
+  OperationNotAllowedPresentation(@moondbg.DebugSessionState, String)
+  AdapterFailurePresentation(String)
+}
+
+///|
+/// Errors specific to the user-facing source breakpoint command. Keeping the
+/// cases semantic lets non-human renderers distinguish invalid paths from
+/// debugger-state failures without parsing terminal text.
+priv enum BreakpointCommandError {
+  BreakpointSourceNotFound(String)
+  BreakpointSourceNotAFile(String)
+  BreakpointOperationNotAllowed(@moondbg.DebugSessionState, String)
+  BreakpointUnexpectedFailure(String)
 }
 
 ///|

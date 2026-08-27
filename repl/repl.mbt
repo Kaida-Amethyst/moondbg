@@ -6,10 +6,12 @@ async fn command_result_from_line(
   match context.registry.parse_line(line) {
     RegistryCommand(command) => command.execute(context)
     RegistryInvalid(message) =>
-      CommandResult::continuing(events=[ErrorPresentation("Error: \{message}")])
+      CommandResult::continuing(events=[
+        UserErrorPresentation("Error: \{message}"),
+      ])
     RegistryUnknown =>
       CommandResult::continuing(events=[
-        ErrorPresentation("Unknown command. Type 'help' for help."),
+        UserErrorPresentation("Unknown command. Type 'help' for help."),
       ])
   }
 }
