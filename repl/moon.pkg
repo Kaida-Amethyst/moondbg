@@ -1,5 +1,6 @@
 import {
   "Kaida-Amethyst/moondbg",
+  "Kaida-Amethyst/moondbg/render",
   "Kaida-Amethyst/readline",
   "moonbitlang/async",
   "moonbitlang/async/fs",

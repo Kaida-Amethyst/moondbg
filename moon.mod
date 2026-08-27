@@ -15,6 +15,7 @@ version = "0.1.0"
 
 import {
   "moonbitlang/async@0.21.0",
+  "moonbitlang/lexer@0.3.15",
   "Kaida-Amethyst/readline@0.1.2",
 }
 

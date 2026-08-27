@@ -1,0 +1,94 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/render"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn render_mbt(StringView, theme? : Theme) -> String
+
+pub fn render_mbt_lines(StringView, theme? : Theme) -> Array[String]
+
+// Errors
+
+// Types and methods
+pub(all) enum Ansi16Color {
+  Black
+  Red
+  Green
+  Yellow
+  Blue
+  Magenta
+  Cyan
+  White
+  BrightBlack
+  BrightRed
+  BrightGreen
+  BrightYellow
+  BrightBlue
+  BrightMagenta
+  BrightCyan
+  BrightWhite
+} derive(Eq, @debug.Debug)
+pub fn Ansi16Color::equal(Self, Self) -> Bool
+pub fn Ansi16Color::not_equal(Self, Self) -> Bool
+pub fn Ansi16Color::to_repr(Self) -> @debug.Repr
+
+pub(all) enum Color {
+  Ansi16(Ansi16Color)
+  Ansi256(Byte)
+  Rgb(Byte, Byte, Byte)
+} derive(Eq, @debug.Debug)
+pub fn Color::equal(Self, Self) -> Bool
+pub fn Color::not_equal(Self, Self) -> Bool
+pub fn Color::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Style {
+  foreground : Color?
+  bold : Bool
+  italic : Bool
+  underline : Bool
+} derive(Eq, @debug.Debug)
+pub fn Style::default() -> Self
+pub fn Style::equal(Self, Self) -> Bool
+pub fn Style::foreground(Color) -> Self
+pub fn Style::not_equal(Self, Self) -> Bool
+pub fn Style::plain() -> Self
+pub fn Style::to_repr(Self) -> @debug.Repr
+pub impl Default for Style
+
+pub(all) struct Theme {
+  emit_color : Bool
+  keyword : Style
+  lower_identifier : Style
+  upper_identifier : Style
+  package_name : Style
+  label : Style
+  number : Style
+  string : Style
+  character : Style
+  boolean : Style
+  comment : Style
+  attribute : Style
+  operator : Style
+  punctuation : Style
+} derive(Eq, @debug.Debug)
+pub fn Theme::default() -> Self
+pub fn Theme::dracula() -> Self
+pub fn Theme::equal(Self, Self) -> Bool
+pub fn Theme::gruvbox_dark() -> Self
+pub fn Theme::monokai() -> Self
+pub fn Theme::none() -> Self
+pub fn Theme::nord() -> Self
+pub fn Theme::not_equal(Self, Self) -> Bool
+pub fn Theme::one_dark() -> Self
+pub fn Theme::solarized_dark() -> Self
+pub fn Theme::solarized_light() -> Self
+pub fn Theme::to_repr(Self) -> @debug.Repr
+pub fn Theme::tokyo_night() -> Self
+pub impl Default for Theme
+
+// Type aliases
+
+// Traits
