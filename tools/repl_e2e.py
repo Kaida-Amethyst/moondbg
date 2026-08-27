@@ -523,6 +523,11 @@ def test_fake_stepping_commands(
     )
 
     def drive(session: PtyProcess) -> None:
+        session.send("help")
+        session.expect("next                 n")
+        session.expect("step                 s")
+        session.expect("finish               fin")
+        session.expect("(moondbg) ")
         session.send("next")
         session.expect("Cannot step over while the debugger is Ready.")
         session.expect("(moondbg) ")
@@ -535,7 +540,7 @@ def test_fake_stepping_commands(
         session.send("run")
         session.expect("Stopped (breakpoint) in fake.main")
         session.expect("(moondbg) ")
-        for command in ("next", "step", "finish"):
+        for command in ("n", "s", "fin"):
             session.send(command)
             session.expect("Stopped (step) in fake.main")
             session.expect("(moondbg) ")

@@ -128,14 +128,29 @@ fn parse_repl_command(line : StringView) -> ReplCommand {
     Some(_) => return Invalid("next does not accept arguments")
     None => ()
   }
+  match command_arguments(input, "n") {
+    Some("") => return StepExecution(StepOver)
+    Some(_) => return Invalid("n does not accept arguments")
+    None => ()
+  }
   match command_arguments(input, "step") {
     Some("") => return StepExecution(StepInto)
     Some(_) => return Invalid("step does not accept arguments")
     None => ()
   }
+  match command_arguments(input, "s") {
+    Some("") => return StepExecution(StepInto)
+    Some(_) => return Invalid("s does not accept arguments")
+    None => ()
+  }
   match command_arguments(input, "finish") {
     Some("") => return StepExecution(StepOut)
     Some(_) => return Invalid("finish does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "fin") {
+    Some("") => return StepExecution(StepOut)
+    Some(_) => return Invalid("fin does not accept arguments")
     None => ()
   }
   match command_arguments(input, "print") {
@@ -209,14 +224,20 @@ test "P5 variable command rejects expressions and missing names" {
 }
 
 ///|
-test "T-04 stepping commands accept only full names without arguments" {
+test "T-04 stepping commands accept full names and fixed aliases" {
   assert_true(parse_repl_command("next") is StepExecution(StepOver))
+  assert_true(parse_repl_command("n") is StepExecution(StepOver))
   assert_true(parse_repl_command(" step\t") is StepExecution(StepInto))
+  assert_true(parse_repl_command(" s\t") is StepExecution(StepInto))
   assert_true(parse_repl_command("finish  ") is StepExecution(StepOut))
-  for command in ["next now", "step 1", "finish frame"] {
+  assert_true(parse_repl_command("fin  ") is StepExecution(StepOut))
+  for
+    command in [
+      "next now", "n now", "step 1", "s 1", "finish frame", "fin frame",
+    ] {
     assert_true(parse_repl_command(command) is Invalid(_), msg=command)
   }
-  for command in ["n", "s", "f", "nexted", "stepping", "finished"] {
+  for command in ["f", "nexted", "stepping", "finished"] {
     assert_true(parse_repl_command(command) is Unknown, msg=command)
   }
 }

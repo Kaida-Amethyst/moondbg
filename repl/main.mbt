@@ -132,9 +132,9 @@ fn print_help() -> Unit {
     #|  break <file>:<line>  b <file>:<line>  Set a source breakpoint
     #|  run                  r                Run or restart the program
     #|  continue             c                Continue the stopped program
-    #|  next                                  Step over the current source line
-    #|  step                                  Step into a called function
-    #|  finish                                Step out of the current function
+    #|  next                 n                Step over the current source line
+    #|  step                 s                Step into a called function
+    #|  finish               fin              Step out of the current function
     #|  print <name>         p <name>         Show a simple variable
     #|  list                                  Show the current source location
     #|  help                                  Show this help
