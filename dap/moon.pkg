@@ -1,7 +1,9 @@
 import {
-  "Kaida-Amethyst/moondbg/dap",
   "moonbitlang/async",
+  "moonbitlang/async/io",
+  "moonbitlang/async/process",
   "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/json",
   "moonbitlang/core/string",
 }

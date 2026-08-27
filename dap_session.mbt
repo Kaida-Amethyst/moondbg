@@ -3,8 +3,6 @@ priv suberror DapSessionError {
   InvalidMessage(Json)
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
-  DuplicateResponse(Int)
-  InvalidSequence(Int)
   MismatchedResponseCommand(expected~ : String, actual~ : String)
   InvalidSessionTransition(state~ : DapSessionState, action~ : String)
 } derive(Debug)
@@ -17,21 +15,21 @@ priv suberror LegacyDapSessionError {
 
 ///|
 fn validate_response(
-  response : DapResponse,
+  response : @dap.DapResponse,
   command : String,
-) -> DapResponse raise DapSessionError {
-  guard response.command is None || response.command == Some(command) else {
+) -> @dap.DapResponse raise DapSessionError {
+  guard response.command() is None || response.command() == Some(command) else {
     raise MismatchedResponseCommand(
       expected=command,
-      actual=response.command.unwrap(),
+      actual=response.command().unwrap(),
     )
   }
-  guard response.success else {
+  guard response.success() else {
     raise RequestFailed(
       command~,
-      message=response.message.unwrap_or(
-        "the adapter did not provide an error message",
-      ),
+      message=response
+        .message()
+        .unwrap_or("the adapter did not provide an error message"),
     )
   }
   response
@@ -39,13 +37,13 @@ fn validate_response(
 
 ///|
 fn validate_response_command(
-  response : DapResponse,
+  response : @dap.DapResponse,
   command : String,
-) -> DapResponse raise DapSessionError {
-  guard response.command is None || response.command == Some(command) else {
+) -> @dap.DapResponse raise DapSessionError {
+  guard response.command() is None || response.command() == Some(command) else {
     raise MismatchedResponseCommand(
       expected=command,
-      actual=response.command.unwrap(),
+      actual=response.command().unwrap(),
     )
   }
   response
@@ -54,16 +52,16 @@ fn validate_response_command(
 ///|
 priv enum ExecutionResumeKind {
   ContinueExecution
-  StepExecution(DapStepKind)
+  StepExecution(@dap.DapStepKind)
 }
 
 ///|
 fn ExecutionResumeKind::action(self : ExecutionResumeKind) -> String {
   match self {
     ContinueExecution => "continue execution"
-    StepExecution(DapNext) => "step over"
-    StepExecution(DapStepIn) => "step into"
-    StepExecution(DapStepOut) => "step out"
+    StepExecution(@dap.DapNext) => "step over"
+    StepExecution(@dap.DapStepIn) => "step into"
+    StepExecution(@dap.DapStepOut) => "step out"
   }
 }
 
@@ -72,18 +70,18 @@ fn ExecutionResumeKind::request(
   self : ExecutionResumeKind,
   thread_id : Int,
   capabilities : Json,
-) -> DapRequest {
+) -> @dap.DapRequest {
   match self {
     ContinueExecution =>
-      {
-        command: "continue",
-        arguments: { "threadId": thread_id, "singleThread": false },
-      }
+      @dap.DapRequest::new("continue", {
+        "threadId": thread_id,
+        "singleThread": false,
+      })
     StepExecution(kind) =>
-      stepping_request(
+      @dap.stepping_request(
         kind,
         thread_id,
-        supports_stepping_granularity=supports_stepping_granularity(
+        supports_stepping_granularity=@dap.supports_stepping_granularity(
           capabilities,
         ),
       )
@@ -94,9 +92,9 @@ fn ExecutionResumeKind::request(
 // Owns adapter-scoped resources and protocol state for one execution.
 #warnings("-unused_field")
 priv struct DebugExecution {
-  dispatcher : DapDispatcher
+  dispatcher : @dap.DapDispatcher
   machine : LegacyDapSessionMachine
-  events : Array[DapEvent]
+  events : Array[@dap.DapEvent]
   mut capabilities : Json
   mut stop_reason : String
   mut exit_code : Int?
@@ -129,7 +127,7 @@ async fn[X] DebugExecution::prepare(
   group : @async.TaskGroup[X],
   adapter : String,
 ) -> DebugExecution {
-  let dispatcher = DapDispatcher::start(group, adapter)
+  let dispatcher = @dap.DapDispatcher::start(group, adapter)
   let execution = {
     dispatcher,
     machine: LegacyDapSessionMachine::new(),
@@ -153,7 +151,7 @@ async fn[X] DebugExecution::prepare(
     "supportsRunInTerminalRequest": false,
     "supportsVariableType": true,
   })
-  execution.capabilities = initialize.body
+  execution.capabilities = initialize.body()
   execution
 }
 
@@ -216,27 +214,27 @@ fn DebugExecution::state(self : DebugExecution) -> DapSessionState {
 ///|
 fn DebugExecution::accept_event(
   self : DebugExecution,
-  event : DapEvent,
+  event : @dap.DapEvent,
 ) -> Unit raise DapSessionError {
   if output_from_event(event) is Some(output) {
     self.pending_output.push(output)
   }
-  match event.name {
+  match event.name() {
     "stopped" =>
-      self.stop_reason = match event.body {
+      self.stop_reason = match event.body() {
         { "description": String(description), .. } => description
         { "reason": String(reason), .. } => reason
         _ => "stopped"
       }
     "exited" =>
-      self.exit_code = match event.body {
+      self.exit_code = match event.body() {
         { "exitCode": Number(code, ..), .. } => Some(code.to_int())
         _ => None
       }
     _ => ()
   }
   self.machine.accept_event(event)
-  match event.name {
+  match event.name() {
     "stopped" => {
       self.last_snapshot = None
       if self.machine.current_stop_epoch() is Some(epoch) {
@@ -258,31 +256,31 @@ async fn DebugExecution::wait_for_response_inner(
   request_seq : Int,
   command : String,
   terminal_event_completes? : Bool = false,
-) -> DapResponse? {
+) -> @dap.DapResponse? {
   for ;; {
     let routed = self.dispatcher.next_for_request(request_seq) catch {
-      AdapterClosed => {
+      @dap.AdapterClosed => {
         if terminal_event_completes {
           self.machine.finish()
           return None
         }
-        raise AdapterClosed
+        raise @dap.AdapterClosed
       }
       error => raise error
     }
     match routed {
-      Matched(response) =>
+      @dap.Matched(response) =>
         return Some(validate_response_command(response, command))
-      BufferedResponse => continue
-      SessionEvent(event) => {
+      @dap.BufferedResponse => continue
+      @dap.SessionEvent(event) => {
         self.accept_event(event)
         if terminal_event_completes &&
-          (event.name == "exited" || event.name == "terminated") {
+          (event.name() == "exited" || event.name() == "terminated") {
           return None
         }
       }
-      AdapterRequest(request) =>
-        raise UnsupportedAdapterRequest(request.command)
+      @dap.AdapterRequest(request) =>
+        raise UnsupportedAdapterRequest(request.command())
     }
   }
 }
@@ -292,7 +290,7 @@ async fn DebugExecution::request(
   self : DebugExecution,
   command : String,
   arguments : Json,
-) -> DapResponse {
+) -> @dap.DapResponse {
   let seq = self.dispatcher.send_request(command, arguments)
   guard self.wait_for_response(seq, command) is Some(response) else {
     raise RequestFailed(command~, message="adapter exited before responding")
@@ -372,8 +370,8 @@ async fn DebugExecution::load_scopes(
     None => ()
   }
   let response = self.request("scopes", { "frameId": frame_id })
-  guard parse_scopes(response.body) is Some(scopes) else {
-    raise InvalidMessage(response.body)
+  guard parse_scopes(response.body()) is Some(scopes) else {
+    raise InvalidMessage(response.body())
   }
   for scope in scopes {
     self.machine.remember_variable_reference(scope.variables_reference)
@@ -393,8 +391,8 @@ async fn DebugExecution::load_variables(
     None => ()
   }
   let response = self.request("variables", { "variablesReference": reference })
-  guard parse_variables(response.body) is Some(variables) else {
-    raise InvalidMessage(response.body)
+  guard parse_variables(response.body()) is Some(variables) else {
+    raise InvalidMessage(response.body())
   }
   for variable in variables {
     if variable.variables_reference > 0 {
@@ -466,8 +464,8 @@ async fn LegacyDapSession::find_variable(
 }
 
 ///|
-fn breakpoint_response_message(response : DapResponse) -> String {
-  response.message.unwrap_or("lldb-dap rejected the source breakpoints")
+fn breakpoint_response_message(response : @dap.DapResponse) -> String {
+  response.message().unwrap_or("lldb-dap rejected the source breakpoints")
 }
 
 ///|
@@ -526,9 +524,9 @@ fn reject_breakpoints(
 fn apply_breakpoint_response(
   breakpoint_state : ExecutionBreakpointState,
   breakpoints : Array[LogicalBreakpoint],
-  response : DapResponse,
+  response : @dap.DapResponse,
 ) -> Unit {
-  guard response.success else {
+  guard response.success() else {
     reject_breakpoints(
       breakpoint_state,
       breakpoints,
@@ -536,7 +534,7 @@ fn apply_breakpoint_response(
     )
     return
   }
-  guard response.body is { "breakpoints": Array(results), .. } else {
+  guard response.body() is { "breakpoints": Array(results), .. } else {
     reject_breakpoints(
       breakpoint_state, breakpoints, "lldb-dap returned no breakpoint results",
     )
@@ -622,16 +620,16 @@ async fn DebugExecution::configure_breakpoints(
 async fn DebugExecution::wait_for_initialized(
   self : DebugExecution,
   launch_seq : Int,
-) -> DapResponse? {
-  let mut launch_response : DapResponse? = None
+) -> @dap.DapResponse? {
+  let mut launch_response : @dap.DapResponse? = None
   while self.machine.state is Preparing {
     match self.dispatcher.next_for_request(launch_seq) {
-      Matched(response) =>
+      @dap.Matched(response) =>
         launch_response = Some(validate_response(response, "launch"))
-      BufferedResponse => continue
-      SessionEvent(event) => self.accept_event(event)
-      AdapterRequest(request) =>
-        raise UnsupportedAdapterRequest(request.command)
+      @dap.BufferedResponse => continue
+      @dap.SessionEvent(event) => self.accept_event(event)
+      @dap.AdapterRequest(request) =>
+        raise UnsupportedAdapterRequest(request.command())
     }
   }
   launch_response
@@ -641,20 +639,20 @@ async fn DebugExecution::wait_for_initialized(
 async fn DebugExecution::wait_until_stable(self : DebugExecution) -> Unit {
   while self.machine.state is Running {
     let routed = self.dispatcher.next() catch {
-      AdapterClosed => {
+      @dap.AdapterClosed => {
         if self.machine.state is Exited {
           return
         }
-        raise AdapterClosed
+        raise @dap.AdapterClosed
       }
       error => raise error
     }
     match routed {
-      Matched(_) => continue
-      BufferedResponse => continue
-      SessionEvent(event) => self.accept_event(event)
-      AdapterRequest(request) =>
-        raise UnsupportedAdapterRequest(request.command)
+      @dap.Matched(_) => continue
+      @dap.BufferedResponse => continue
+      @dap.SessionEvent(event) => self.accept_event(event)
+      @dap.AdapterRequest(request) =>
+        raise UnsupportedAdapterRequest(request.command())
     }
   }
 }
@@ -739,8 +737,8 @@ async fn DebugExecution::resolve_stopped_thread(self : DebugExecution) -> Int {
     Some(thread_id) => thread_id
     None => {
       let response = self.request("threads", {})
-      guard first_thread_id(response.body) is Some(thread_id) else {
-        raise InvalidMessage(response.body)
+      guard first_thread_id(response.body()) is Some(thread_id) else {
+        raise InvalidMessage(response.body())
       }
       self.machine.select_thread(thread_id)
       thread_id
@@ -758,8 +756,8 @@ async fn DebugExecution::build_stop_snapshot(
     "startFrame": 0,
     "levels": 20,
   })
-  guard select_stack_frame(response.body) is Some(frame) else {
-    raise InvalidMessage(response.body)
+  guard select_stack_frame(response.body()) is Some(frame) else {
+    raise InvalidMessage(response.body())
   }
   self.machine.select_frame(frame.id)
   StopSnapshot::new(
@@ -970,13 +968,13 @@ async fn LegacyDapSession::run(self : LegacyDapSession) -> RunOutcome {
 ///|
 async fn DebugExecution::resume_transaction(
   self : DebugExecution,
-  request : DapRequest,
+  request : @dap.DapRequest,
 ) -> RunOutcome {
-  errdefer self.machine.fail("\{request.command} transaction failed")
+  errdefer self.machine.fail("\{request.command()} transaction failed")
   self.machine.mark_resumed()
   self.last_snapshot = None
   self.variable_cache.reset(0)
-  self.request(request.command, request.arguments) |> ignore
+  self.request(request.command(), request.arguments()) |> ignore
   self.complete_execution()
 }
 
@@ -1034,17 +1032,17 @@ async fn LegacyDapSession::continue_execution(
 
 ///|
 async fn LegacyDapSession::next(self : LegacyDapSession) -> RunOutcome {
-  self.resume_execution(StepExecution(DapNext))
+  self.resume_execution(StepExecution(@dap.DapNext))
 }
 
 ///|
 async fn LegacyDapSession::step(self : LegacyDapSession) -> RunOutcome {
-  self.resume_execution(StepExecution(DapStepIn))
+  self.resume_execution(StepExecution(@dap.DapStepIn))
 }
 
 ///|
 async fn LegacyDapSession::finish(self : LegacyDapSession) -> RunOutcome {
-  self.resume_execution(StepExecution(DapStepOut))
+  self.resume_execution(StepExecution(@dap.DapStepOut))
 }
 
 ///|
@@ -1053,7 +1051,7 @@ async fn DebugExecution::wait_for_response(
   request_seq : Int,
   command : String,
   terminal_event_completes? : Bool = false,
-) -> DapResponse? {
+) -> @dap.DapResponse? {
   errdefer self.machine.fail("DAP request failed")
   self.wait_for_response_inner(request_seq, command, terminal_event_completes~)
 }

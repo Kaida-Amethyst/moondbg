@@ -1,11 +1,26 @@
 ///|
-priv struct DapRequest {
-  command : String
-  arguments : Json
+pub struct DapRequest {
+  priv command : String
+  priv arguments : Json
 }
 
 ///|
-priv enum DapStepKind {
+pub fn DapRequest::new(command : String, arguments : Json) -> DapRequest {
+  { command, arguments, }
+}
+
+///|
+pub fn DapRequest::command(self : DapRequest) -> String {
+  self.command
+}
+
+///|
+pub fn DapRequest::arguments(self : DapRequest) -> Json {
+  self.arguments
+}
+
+///|
+pub(all) enum DapStepKind {
   DapNext
   DapStepIn
   DapStepOut
@@ -21,7 +36,7 @@ fn DapStepKind::command(self : DapStepKind) -> String {
 }
 
 ///|
-fn stepping_request(
+pub fn stepping_request(
   kind : DapStepKind,
   thread_id : Int,
   supports_stepping_granularity~ : Bool,
@@ -35,7 +50,7 @@ fn stepping_request(
 }
 
 ///|
-fn supports_stepping_granularity(capabilities : Json) -> Bool {
+pub fn supports_stepping_granularity(capabilities : Json) -> Bool {
   capabilities is { "supportsSteppingGranularity": True, .. }
 }
 
@@ -50,35 +65,70 @@ fn request_message(seq : Int, request : DapRequest) -> Json {
 }
 
 ///|
-priv struct DapEvent {
-  seq : Int
-  name : String
-  body : Json
+pub struct DapEvent {
+  priv seq : Int
+  priv name : String
+  priv body : Json
 }
 
 ///|
-// The response body is consumed by commands added in P4 and P5.
+pub fn DapEvent::name(self : DapEvent) -> String {
+  self.name
+}
+
+///|
+pub fn DapEvent::body(self : DapEvent) -> Json {
+  self.body
+}
+
+///|
+// The raw response body is interpreted by the adapter layer.
 #warnings("-unused_field")
-priv struct DapResponse {
-  seq : Int
-  request_seq : Int
-  command : String?
-  success : Bool
-  message : String?
-  body : Json
+pub struct DapResponse {
+  priv seq : Int
+  priv request_seq : Int
+  priv command : String?
+  priv success : Bool
+  priv message : String?
+  priv body : Json
+}
+
+///|
+pub fn DapResponse::command(self : DapResponse) -> String? {
+  self.command
+}
+
+///|
+pub fn DapResponse::success(self : DapResponse) -> Bool {
+  self.success
+}
+
+///|
+pub fn DapResponse::message(self : DapResponse) -> String? {
+  self.message
+}
+
+///|
+pub fn DapResponse::body(self : DapResponse) -> Json {
+  self.body
 }
 
 ///|
 // Adapter request arguments are retained for future runInTerminal support.
 #warnings("-unused_field")
-priv struct DapAdapterRequest {
-  seq : Int
-  command : String
-  arguments : Json
+pub struct DapAdapterRequest {
+  priv seq : Int
+  priv command : String
+  priv arguments : Json
 }
 
 ///|
-priv enum IncomingMessage {
+pub fn DapAdapterRequest::command(self : DapAdapterRequest) -> String {
+  self.command
+}
+
+///|
+pub enum IncomingMessage {
   Event(DapEvent)
   Response(DapResponse)
   Request(DapAdapterRequest)
@@ -126,7 +176,7 @@ fn response_message(message : Json) -> String? {
 }
 
 ///|
-fn classify_message(message : Json) -> IncomingMessage raise DapSessionError {
+pub fn classify_message(message : Json) -> IncomingMessage raise DapClientError {
   match message {
     {
       "seq": Number(seq, ..),

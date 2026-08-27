@@ -66,8 +66,8 @@ fn LegacyDapSessionMachine::mark_running(
 }
 
 ///|
-fn stopped_thread_id(event : DapEvent) -> Int? {
-  match event.body {
+fn stopped_thread_id(event : @dap.DapEvent) -> Int? {
+  match event.body() {
     { "threadId": Number(thread_id, ..), .. } => Some(thread_id.to_int())
     _ => None
   }
@@ -76,9 +76,9 @@ fn stopped_thread_id(event : DapEvent) -> Int? {
 ///|
 fn LegacyDapSessionMachine::accept_event(
   self : LegacyDapSessionMachine,
-  event : DapEvent,
+  event : @dap.DapEvent,
 ) -> Unit raise DapSessionError {
-  match event.name {
+  match event.name() {
     "initialized" =>
       match self.state {
         Preparing => self.state = Configuring

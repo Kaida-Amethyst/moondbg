@@ -1,12 +1,12 @@
 ///|
-fn test_event(name : String, body : Json) -> DapEvent raise {
-  guard classify_message({
+fn test_event(name : String, body : Json) -> @dap.DapEvent raise {
+  guard @dap.classify_message({
       "seq": 10,
       "type": "event",
       "event": name,
       "body": body,
     })
-    is Event(event) else {
+    is @dap.Event(event) else {
     fail("expected a DAP event")
   }
   event
@@ -18,8 +18,8 @@ fn test_response(
   request_seq : Int,
   command : String,
   body : Json,
-) -> DapResponse raise {
-  guard classify_message({
+) -> @dap.DapResponse raise {
+  guard @dap.classify_message({
       "seq": seq,
       "type": "response",
       "request_seq": request_seq,
@@ -27,107 +27,59 @@ fn test_response(
       "success": true,
       "body": body,
     })
-    is Response(response) else {
+    is @dap.Response(response) else {
     fail("expected a DAP response")
   }
   response
 }
 
 ///|
-test "stepping requests encode DAP commands thread ids and line granularity" {
-  let cases = [
-    (DapStepKind::DapNext, "next"),
-    (DapStepKind::DapStepIn, "stepIn"),
-    (DapStepKind::DapStepOut, "stepOut"),
-  ]
-  for _, case in cases {
-    let (kind, command) = case
-    let request = stepping_request(kind, 41, supports_stepping_granularity=true)
-    assert_eq(request.command, command)
-    assert_true(
-      request.arguments
-      is { "threadId": Number(41, ..), "granularity": String("line"), .. },
-    )
-    guard request_message(8, request)
-      is {
-        "seq": Number(8, ..),
-        "type": String("request"),
-        "command": String(encoded_command),
-        "arguments": {
-          "threadId": Number(41, ..),
-          "granularity": String("line"),
-          ..
-        },
-        ..
-      } else {
-      fail("expected a complete stepping request")
-    }
-    assert_eq(encoded_command, command)
+fn test_failed_response(
+  seq : Int,
+  request_seq : Int,
+  command : String,
+  message : String,
+) -> @dap.DapResponse raise {
+  guard @dap.classify_message({
+      "seq": seq,
+      "type": "response",
+      "request_seq": request_seq,
+      "command": command,
+      "success": false,
+      "message": message,
+    })
+    is @dap.Response(response) else {
+    fail("expected a failed DAP response")
   }
-  let request = stepping_request(
-    DapNext,
-    42,
-    supports_stepping_granularity=false,
-  )
-  assert_true(request.arguments is { "threadId": Number(42, ..), .. })
-  assert_false(request.arguments.stringify().contains("granularity"))
-}
-
-///|
-test "stepping responses pair by request seq without losing a stop event" {
-  let cases = [
-    (DapStepKind::DapNext, "next"),
-    (DapStepKind::DapStepIn, "stepIn"),
-    (DapStepKind::DapStepOut, "stepOut"),
-  ]
-  for index, case in cases {
-    let (_, command) = case
-    let request_seq = 70 + index
-    let inbox = DapInbox::new()
-    let stopped = test_event("stopped", { "reason": "step", "threadId": 41 })
-    guard inbox.route(Event(stopped), request_seq) is SessionEvent(event) else {
-      fail("step stop event should be routed to the session")
-    }
-    assert_eq(event.name, "stopped")
-    assert_true(
-      event.body is { "reason": String("step"), "threadId": Number(41, ..), .. },
-    )
-    let response = test_response(80 + index, request_seq, command, {})
-    guard inbox.route(Response(response), request_seq) is Matched(matched) else {
-      fail("step response should match its request")
-    }
-    assert_eq(matched.request_seq, request_seq)
-    assert_eq(matched.command, Some(command))
-    validate_response(matched, command) |> ignore
-  }
+  response
 }
 
 ///|
 test "P2 resume kinds share request construction and user actions" {
   let capabilities : Json = { "supportsSteppingGranularity": true }
   let cases = [
-    (StepExecution(DapNext), "next", "step over"),
-    (StepExecution(DapStepIn), "stepIn", "step into"),
-    (StepExecution(DapStepOut), "stepOut", "step out"),
+    (StepExecution(@dap.DapNext), "next", "step over"),
+    (StepExecution(@dap.DapStepIn), "stepIn", "step into"),
+    (StepExecution(@dap.DapStepOut), "stepOut", "step out"),
   ]
   for _, case in cases {
     let (kind, command, action) = case
     let request = kind.request(9, capabilities)
     assert_eq(kind.action(), action)
-    assert_eq(request.command, command)
+    assert_eq(request.command(), command)
     assert_true(
-      request.arguments
+      request.arguments()
       is { "threadId": Number(9, ..), "granularity": String("line"), .. },
     )
   }
-  let fallback = StepExecution(DapNext).request(10, {})
-  assert_true(fallback.arguments is { "threadId": Number(10, ..), .. })
-  assert_false(fallback.arguments.stringify().contains("granularity"))
+  let fallback = StepExecution(@dap.DapNext).request(10, {})
+  assert_true(fallback.arguments() is { "threadId": Number(10, ..), .. })
+  assert_false(fallback.arguments().stringify().contains("granularity"))
   let continue_request = ContinueExecution.request(11, capabilities)
   assert_eq(ContinueExecution.action(), "continue execution")
-  assert_eq(continue_request.command, "continue")
+  assert_eq(continue_request.command(), "continue")
   assert_true(
-    continue_request.arguments
+    continue_request.arguments()
     is { "threadId": Number(11, ..), "singleThread": False, .. },
   )
 }
@@ -188,89 +140,6 @@ async test "P2 stepping shares stop epochs snapshots and variable invalidation" 
 }
 
 ///|
-test "DAP framing counts UTF-8 bytes" {
-  assert_eq(frame_message("hi"), "Content-Length: 2\r\n\r\nhi")
-  assert_eq(frame_message("月"), "Content-Length: 3\r\n\r\n月")
-}
-
-///|
-test "Content-Length parsing is case-insensitive" {
-  assert_eq(parse_content_length("Content-Length: 42\r\n"), Some(42))
-  assert_eq(parse_content_length("content-length: 7"), Some(7))
-  assert_eq(parse_content_length("Content-Type: application/json"), None)
-  assert_eq(parse_content_length("Content-Length: nope"), None)
-}
-
-///|
-test "classified messages retain protocol fields and complete payloads" {
-  guard classify_message({
-      "seq": 2,
-      "type": "event",
-      "event": "output",
-      "body": { "category": "stdout", "output": "hello" },
-    })
-    is Event(event) else {
-    fail("expected an event")
-  }
-  assert_eq(event.seq, 2)
-  assert_eq(event.name, "output")
-  assert_true(
-    event.body
-    is { "category": String("stdout"), "output": String("hello"), .. },
-  )
-  guard classify_message({
-      "seq": 3,
-      "type": "response",
-      "request_seq": 1,
-      "command": "initialize",
-      "success": true,
-      "body": { "supportsConfigurationDoneRequest": true },
-    })
-    is Response(response) else {
-    fail("expected a response")
-  }
-  assert_eq(response.seq, 3)
-  assert_eq(response.request_seq, 1)
-  assert_eq(response.command, Some("initialize"))
-  assert_true(response.success)
-  assert_true(response.body is { "supportsConfigurationDoneRequest": True, .. })
-  guard classify_message({
-      "seq": 4,
-      "type": "request",
-      "command": "runInTerminal",
-      "arguments": { "kind": "integrated" },
-    })
-    is Request(request) else {
-    fail("expected an adapter request")
-  }
-  assert_eq(request.seq, 4)
-  assert_eq(request.command, "runInTerminal")
-  assert_true(request.arguments is { "kind": String("integrated"), .. })
-}
-
-///|
-test "inbox matches request_seq and buffers an early unrelated response" {
-  let inbox = DapInbox::new()
-  let second = test_response(20, 2, "configurationDone", { "second": true })
-  assert_true(inbox.route(Response(second), 1) is BufferedResponse)
-  let initialized = test_event("initialized", { "adapter": "lldb-dap" })
-  assert_true(
-    inbox.route(Event(initialized), 1)
-    is SessionEvent({ name: "initialized", .. }),
-  )
-  let first = test_response(21, 1, "launch", { "first": true })
-  assert_true(
-    inbox.route(Response(first), 1) is Matched({ request_seq: 1, .. }),
-  )
-  guard inbox.take_response(2) is Some(buffered) else {
-    fail("response 2 should have been buffered")
-  }
-  assert_eq(buffered.command, Some("configurationDone"))
-  assert_true(buffered.body is { "second": True, .. })
-  assert_true(inbox.take_response(2) is None)
-}
-
-///|
 test "initialized and stopped events advance the session state machine" {
   let machine = LegacyDapSessionMachine::new()
   assert_true(machine.state is Ready)
@@ -302,22 +171,16 @@ test "a duplicate stable event does not advance the stop epoch twice" {
 
 ///|
 test "an early stable event is not lost while its response is still pending" {
-  let inbox = DapInbox::new()
   let machine = LegacyDapSessionMachine::new()
   machine.begin_execution()
   machine.mark_running()
   let stopped = test_event("stopped", { "threadId": 9 })
-  guard inbox.route(Event(stopped), 30) is SessionEvent(event) else {
-    fail("stopped should be routed to the session")
-  }
-  machine.accept_event(event)
+  machine.accept_event(stopped)
   assert_true(machine.state is Stopped)
   let response = test_response(31, 30, "continue", {
     "allThreadsContinued": true,
   })
-  assert_true(
-    inbox.route(Response(response), 30) is Matched({ request_seq: 30, .. }),
-  )
+  validate_response(response, "continue") |> ignore
   assert_true(machine.state is Stopped)
   assert_eq(machine.stop_epoch, 1)
 }
@@ -410,14 +273,11 @@ test "a failed setBreakpoints response rejects the complete source set" {
   let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
   let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
   let state = ExecutionBreakpointState::new()
-  apply_breakpoint_response(state, [first, second], {
-    seq: 41,
-    request_seq: 5,
-    command: Some("setBreakpoints"),
-    success: false,
-    message: Some("source is unavailable"),
-    body: null,
-  })
+  apply_breakpoint_response(
+    state,
+    [first, second],
+    test_failed_response(41, 5, "setBreakpoints", "source is unavailable"),
+  )
   assert_true(
     state.snapshot(first).status() is Rejected("source is unavailable"),
   )

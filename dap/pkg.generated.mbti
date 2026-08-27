@@ -1,0 +1,84 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/dap"
+
+import {
+  "moonbitlang/async",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn classify_message(Json) -> IncomingMessage raise DapClientError
+
+pub fn stepping_request(DapStepKind, Int, supports_stepping_granularity~ : Bool) -> DapRequest
+
+pub fn supports_stepping_granularity(Json) -> Bool
+
+// Errors
+pub(all) suberror DapClientError {
+  AdapterClosed
+  MissingContentLength
+  InvalidContentLength(String)
+  InvalidMessage(Json)
+  DuplicateResponse(Int)
+  InvalidSequence(Int)
+} derive(@debug.Debug)
+pub fn DapClientError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct DapAdapterRequest {
+  // private fields
+}
+pub fn DapAdapterRequest::command(Self) -> String
+
+pub struct DapDispatcher {
+  // private fields
+}
+pub fn DapDispatcher::close(Self) -> Unit
+pub async fn DapDispatcher::next(Self) -> RoutedMessage
+pub async fn DapDispatcher::next_for_request(Self, Int) -> RoutedMessage
+pub async fn DapDispatcher::send_request(Self, String, Json) -> Int
+pub async fn[X] DapDispatcher::start(@async.TaskGroup[X], String) -> Self
+
+pub struct DapEvent {
+  // private fields
+}
+pub fn DapEvent::body(Self) -> Json
+pub fn DapEvent::name(Self) -> String
+
+pub struct DapRequest {
+  // private fields
+}
+pub fn DapRequest::arguments(Self) -> Json
+pub fn DapRequest::command(Self) -> String
+pub fn DapRequest::new(String, Json) -> Self
+
+pub struct DapResponse {
+  // private fields
+}
+pub fn DapResponse::body(Self) -> Json
+pub fn DapResponse::command(Self) -> String?
+pub fn DapResponse::message(Self) -> String?
+pub fn DapResponse::success(Self) -> Bool
+
+pub(all) enum DapStepKind {
+  DapNext
+  DapStepIn
+  DapStepOut
+}
+
+pub enum IncomingMessage {
+  Event(DapEvent)
+  Response(DapResponse)
+  Request(DapAdapterRequest)
+}
+
+pub enum RoutedMessage {
+  Matched(DapResponse)
+  BufferedResponse
+  SessionEvent(DapEvent)
+  AdapterRequest(DapAdapterRequest)
+}
+
+// Type aliases
+
+// Traits

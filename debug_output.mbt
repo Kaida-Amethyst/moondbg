@@ -33,13 +33,13 @@ pub fn DebugOutput::text(self : DebugOutput) -> String {
 }
 
 ///|
-fn output_from_event(event : DapEvent) -> DebugOutput? {
-  guard event.name == "output" &&
-    event.body is { "output": String(text), .. } &&
+fn output_from_event(event : @dap.DapEvent) -> DebugOutput? {
+  guard event.name() == "output" &&
+    event.body() is { "output": String(text), .. } &&
     text != "" else {
     return None
   }
-  let category = match event.body {
+  let category = match event.body() {
     { "category": String(category), .. } => Some(category)
     _ => None
   }

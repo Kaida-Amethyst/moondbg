@@ -1,5 +1,5 @@
 ///|
-priv enum RoutedMessage {
+pub enum RoutedMessage {
   Matched(DapResponse)
   BufferedResponse
   SessionEvent(DapEvent)
@@ -27,7 +27,7 @@ fn DapInbox::take_response(self : DapInbox, request_seq : Int) -> DapResponse? {
 fn DapInbox::buffer_response(
   self : DapInbox,
   response : DapResponse,
-) -> Unit raise DapSessionError {
+) -> Unit raise DapClientError {
   guard self.responses.get(response.request_seq) is None else {
     raise DuplicateResponse(response.request_seq)
   }
@@ -39,7 +39,7 @@ fn DapInbox::route(
   self : DapInbox,
   incoming : IncomingMessage,
   request_seq : Int,
-) -> RoutedMessage raise DapSessionError {
+) -> RoutedMessage raise DapClientError {
   match incoming {
     Response(response) if response.request_seq == request_seq =>
       Matched(response)
@@ -53,13 +53,13 @@ fn DapInbox::route(
 }
 
 ///|
-priv struct DapDispatcher {
-  transport : DapTransport
-  inbox : DapInbox
+pub struct DapDispatcher {
+  priv transport : DapTransport
+  priv inbox : DapInbox
 }
 
 ///|
-async fn[X] DapDispatcher::start(
+pub async fn[X] DapDispatcher::start(
   group : @async.TaskGroup[X],
   adapter : String,
 ) -> DapDispatcher {
@@ -67,7 +67,7 @@ async fn[X] DapDispatcher::start(
 }
 
 ///|
-async fn DapDispatcher::send_request(
+pub async fn DapDispatcher::send_request(
   self : DapDispatcher,
   command : String,
   arguments : Json,
@@ -76,7 +76,7 @@ async fn DapDispatcher::send_request(
 }
 
 ///|
-async fn DapDispatcher::next_for_request(
+pub async fn DapDispatcher::next_for_request(
   self : DapDispatcher,
   request_seq : Int,
 ) -> RoutedMessage {
@@ -90,13 +90,13 @@ async fn DapDispatcher::next_for_request(
 }
 
 ///|
-async fn DapDispatcher::next(self : DapDispatcher) -> RoutedMessage {
+pub async fn DapDispatcher::next(self : DapDispatcher) -> RoutedMessage {
   let incoming = classify_message(self.transport.receive())
   guard incoming.seq() >= 0 else { raise InvalidSequence(incoming.seq()) }
   self.inbox.route(incoming, -1)
 }
 
 ///|
-fn DapDispatcher::close(self : DapDispatcher) -> Unit {
+pub fn DapDispatcher::close(self : DapDispatcher) -> Unit {
   self.transport.close()
 }
