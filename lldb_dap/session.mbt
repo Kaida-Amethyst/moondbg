@@ -159,6 +159,7 @@ async fn LldbDapSession::run(
 async fn LldbDapSession::resume_execution(
   self : LldbDapSession,
   kind : ExecutionResumeKind,
+  thread : @moondbg.ThreadSelection,
 ) -> @moondbg.RunOutcome {
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
@@ -166,7 +167,7 @@ async fn LldbDapSession::resume_execution(
       action=kind.action(),
     )
   }
-  let outcome = execution.resume_execution(kind) catch {
+  let outcome = execution.resume_execution(kind, thread) catch {
     LldbDapBackendError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
@@ -184,23 +185,33 @@ async fn LldbDapSession::resume_execution(
 ///|
 async fn LldbDapSession::continue_execution(
   self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
 ) -> @moondbg.RunOutcome {
-  self.resume_execution(ContinueExecution)
+  self.resume_execution(ContinueExecution, thread)
 }
 
 ///|
-async fn LldbDapSession::next(self : LldbDapSession) -> @moondbg.RunOutcome {
-  self.resume_execution(StepExecution(@dap.DapNext))
+async fn LldbDapSession::next(
+  self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
+) -> @moondbg.RunOutcome {
+  self.resume_execution(StepExecution(@dap.DapNext), thread)
 }
 
 ///|
-async fn LldbDapSession::step(self : LldbDapSession) -> @moondbg.RunOutcome {
-  self.resume_execution(StepExecution(@dap.DapStepIn))
+async fn LldbDapSession::step(
+  self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
+) -> @moondbg.RunOutcome {
+  self.resume_execution(StepExecution(@dap.DapStepIn), thread)
 }
 
 ///|
-async fn LldbDapSession::finish(self : LldbDapSession) -> @moondbg.RunOutcome {
-  self.resume_execution(StepExecution(@dap.DapStepOut))
+async fn LldbDapSession::finish(
+  self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
+) -> @moondbg.RunOutcome {
+  self.resume_execution(StepExecution(@dap.DapStepOut), thread)
 }
 
 ///|

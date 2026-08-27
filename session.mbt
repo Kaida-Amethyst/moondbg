@@ -1,32 +1,4 @@
 ///|
-/// User-visible debugger state owned by DebugSession.
-///
-/// Adapter initialization and protocol configuration states intentionally do
-/// not appear here.
-pub enum DebugSessionState {
-  Ready
-  Running
-  Stopped
-  Exited
-  Failed
-} derive(Debug, Eq)
-
-///|
-pub extend DebugSessionState with @debug.Debug::{to_repr}
-
-///|
-pub extend DebugSessionState with Eq::{equal, not_equal}
-
-///|
-pub suberror DebugSessionError {
-  OperationNotAllowed(state~ : DebugSessionState, action~ : String)
-  AdapterFailure(String)
-} derive(Debug)
-
-///|
-pub extend DebugSessionError with @debug.Debug::{to_repr}
-
-///|
 /// Owns debugger configuration and application state for one frontend
 /// session. Adapter resources and protocol state are held behind backend.
 pub struct DebugSession {
@@ -34,8 +6,7 @@ pub struct DebugSession {
   priv breakpoints : Array[SourceBreakpoint]
   priv mut next_breakpoint_id : Int
   priv backend : &DebugBackend
-  priv mut state : DebugSessionState
-  priv mut last_stop : StopSnapshot?
+  priv application : DebugApplicationState
 }
 
 ///|
@@ -49,14 +20,33 @@ pub fn DebugSession::new(
     breakpoints: [],
     next_breakpoint_id: 1,
     backend,
-    state: Ready,
-    last_stop: None,
+    application: DebugApplicationState::new(),
   }
 }
 
 ///|
 pub fn DebugSession::state(self : DebugSession) -> DebugSessionState {
-  self.state
+  self.application.phase
+}
+
+///|
+pub fn DebugSession::execution_epoch(self : DebugSession) -> ExecutionEpoch? {
+  self.application.execution_epoch()
+}
+
+///|
+pub fn DebugSession::stop_epoch(self : DebugSession) -> StopEpoch? {
+  self.application.stop_epoch()
+}
+
+///|
+pub fn DebugSession::selected_thread(self : DebugSession) -> ThreadSelection? {
+  self.application.selected_thread()
+}
+
+///|
+pub fn DebugSession::selected_frame(self : DebugSession) -> FrameSelection? {
+  self.application.selected_frame()
 }
 
 ///|
@@ -65,8 +55,11 @@ pub fn DebugSession::add_source_breakpoint(
   source_path : String,
   line : Int,
 ) -> BreakpointSnapshot raise DebugSessionError {
-  guard self.state is Ready else {
-    raise OperationNotAllowed(state=self.state, action="add source breakpoint")
+  guard self.application.phase is Ready else {
+    raise OperationNotAllowed(
+      state=self.application.phase,
+      action="add source breakpoint",
+    )
   }
   let breakpoint = SourceBreakpoint::new(
     self.next_breakpoint_id,
@@ -97,7 +90,7 @@ pub fn DebugSession::source_breakpoints(
 
 ///|
 pub fn DebugSession::last_stop_snapshot(self : DebugSession) -> StopSnapshot? {
-  self.last_stop
+  self.application.last_stop_snapshot()
 }
 
 ///|
@@ -110,16 +103,7 @@ fn DebugSession::accept_outcome(
   self : DebugSession,
   outcome : RunOutcome,
 ) -> RunOutcome {
-  match outcome {
-    Stopped(snapshot) => {
-      self.state = Stopped
-      self.last_stop = Some(snapshot)
-    }
-    Exited(_) => {
-      self.state = Ready
-      self.last_stop = None
-    }
-  }
+  self.application.accept_outcome(outcome)
   outcome
 }
 
@@ -129,21 +113,19 @@ fn[A] DebugSession::backend_failed(
   message : String,
   next_state~ : DebugSessionState,
 ) -> A raise DebugSessionError {
-  self.state = next_state
-  self.last_stop = None
+  self.application.transition_without_stop(next_state)
   raise AdapterFailure(message)
 }
 
 ///|
 pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
-  guard self.state is Ready || self.state is Stopped else {
+  guard self.application.phase is Ready || self.application.phase is Stopped else {
     raise DebugSessionError::OperationNotAllowed(
-      state=self.state,
+      state=self.application.phase,
       action="run the program",
     )
   }
-  self.state = Running
-  self.last_stop = None
+  self.application.begin_execution()
   let outcome = self.backend.launch(self.executable, self.breakpoints) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
@@ -156,14 +138,17 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
 async fn DebugSession::resume_execution(
   self : DebugSession,
   action : String,
-  operation : async () -> RunOutcome,
+  operation : async (ThreadSelection) -> RunOutcome,
 ) -> RunOutcome {
-  guard self.state is Stopped else {
-    raise DebugSessionError::OperationNotAllowed(state=self.state, action~)
+  guard self.application.phase is Stopped &&
+    self.application.selected_thread() is Some(thread) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.application.phase,
+      action~,
+    )
   }
-  self.state = Running
-  self.last_stop = None
-  let outcome = operation() catch {
+  self.application.begin_resume()
+  let outcome = operation(thread) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
     error => self.backend_failed(@debug.to_string(error), next_state=Failed)
@@ -175,24 +160,24 @@ async fn DebugSession::resume_execution(
 pub async fn DebugSession::continue_execution(
   self : DebugSession,
 ) -> RunOutcome {
-  self.resume_execution("continue execution", () => {
-    self.backend.continue_execution()
+  self.resume_execution("continue execution", thread => {
+    self.backend.continue_execution(thread)
   })
 }
 
 ///|
 pub async fn DebugSession::next(self : DebugSession) -> RunOutcome {
-  self.resume_execution("step over", () => self.backend.next())
+  self.resume_execution("step over", thread => self.backend.next(thread))
 }
 
 ///|
 pub async fn DebugSession::step(self : DebugSession) -> RunOutcome {
-  self.resume_execution("step into", () => self.backend.step())
+  self.resume_execution("step into", thread => self.backend.step(thread))
 }
 
 ///|
 pub async fn DebugSession::finish(self : DebugSession) -> RunOutcome {
-  self.resume_execution("step out", () => self.backend.finish())
+  self.resume_execution("step out", thread => self.backend.finish(thread))
 }
 
 ///|
@@ -200,13 +185,15 @@ pub async fn DebugSession::find_variable(
   self : DebugSession,
   name : String,
 ) -> VariableLookupResult {
-  guard self.state is Stopped else {
+  guard self.application.phase is Stopped &&
+    self.application.selected_thread() is Some(thread) &&
+    self.application.selected_frame() is Some(frame) else {
     raise DebugSessionError::OperationNotAllowed(
-      state=self.state,
+      state=self.application.phase,
       action="inspect a variable",
     )
   }
-  self.backend.find_variable(name) catch {
+  self.backend.find_variable(thread, frame, name) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
     error => self.backend_failed(@debug.to_string(error), next_state=Failed)
@@ -218,13 +205,11 @@ pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
   self.backend.disconnect() catch {
     _ => ()
   }
-  self.state = Exited
-  self.last_stop = None
+  self.application.transition_without_stop(Exited)
 }
 
 ///|
 pub fn DebugSession::close(self : DebugSession) -> Unit {
   self.backend.close()
-  self.state = Exited
-  self.last_stop = None
+  self.application.transition_without_stop(Exited)
 }

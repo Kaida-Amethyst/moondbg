@@ -49,8 +49,11 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(self) {
-  self.legacy.continue_execution() catch {
+impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(
+  self,
+  thread,
+) {
+  self.legacy.continue_execution(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -58,8 +61,8 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(self) {
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn next(self) {
-  self.legacy.next() catch {
+impl @moondbg.DebugBackend for LldbDapBackend with fn next(self, thread) {
+  self.legacy.next(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -67,8 +70,8 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn next(self) {
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn step(self) {
-  self.legacy.step() catch {
+impl @moondbg.DebugBackend for LldbDapBackend with fn step(self, thread) {
+  self.legacy.step(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -76,8 +79,8 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn step(self) {
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self) {
-  self.legacy.finish() catch {
+impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self, thread) {
+  self.legacy.finish(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
@@ -85,8 +88,13 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self) {
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(self, name) {
-  self.legacy.find_variable(name) catch {
+impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
+  self,
+  thread,
+  frame,
+  name,
+) {
+  self.legacy.find_variable(thread, frame, name) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))

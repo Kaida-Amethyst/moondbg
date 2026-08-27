@@ -67,15 +67,19 @@ pub fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnaps
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit
+pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
 pub async fn DebugSession::find_variable(Self, String) -> VariableLookupResult
 pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
 pub fn DebugSession::new(String, &DebugBackend) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
+pub fn DebugSession::selected_frame(Self) -> FrameSelection?
+pub fn DebugSession::selected_thread(Self) -> ThreadSelection?
 pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
 pub fn DebugSession::state(Self) -> DebugSessionState
 pub async fn DebugSession::step(Self) -> RunOutcome
+pub fn DebugSession::stop_epoch(Self) -> StopEpoch?
 pub fn DebugSession::take_output(Self) -> Array[DebugOutput]
 
 pub enum DebugSessionState {
@@ -88,6 +92,22 @@ pub enum DebugSessionState {
 pub fn DebugSessionState::equal(Self, Self) -> Bool
 pub fn DebugSessionState::not_equal(Self, Self) -> Bool
 pub fn DebugSessionState::to_repr(Self) -> @debug.Repr
+
+pub struct ExecutionEpoch {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn ExecutionEpoch::equal(Self, Self) -> Bool
+pub fn ExecutionEpoch::not_equal(Self, Self) -> Bool
+pub fn ExecutionEpoch::number(Self) -> Int
+pub fn ExecutionEpoch::to_repr(Self) -> @debug.Repr
+
+pub struct FrameSelection {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn FrameSelection::equal(Self, Self) -> Bool
+pub fn FrameSelection::index(Self) -> Int
+pub fn FrameSelection::not_equal(Self, Self) -> Bool
+pub fn FrameSelection::to_repr(Self) -> @debug.Repr
 
 pub enum RunOutcome {
   Stopped(StopSnapshot)
@@ -103,6 +123,15 @@ pub fn SourceBreakpoint::id(Self) -> Int
 pub fn SourceBreakpoint::requested_line(Self) -> Int
 pub fn SourceBreakpoint::source_path(Self) -> String
 
+pub struct StopEpoch {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn StopEpoch::equal(Self, Self) -> Bool
+pub fn StopEpoch::execution(Self) -> ExecutionEpoch
+pub fn StopEpoch::not_equal(Self, Self) -> Bool
+pub fn StopEpoch::number(Self) -> Int
+pub fn StopEpoch::to_repr(Self) -> @debug.Repr
+
 pub struct StopSnapshot {
   // private fields
 }
@@ -112,6 +141,14 @@ pub fn StopSnapshot::line(Self) -> Int?
 pub fn StopSnapshot::new(String, String, String?, Int?, Int?) -> Self
 pub fn StopSnapshot::reason(Self) -> String
 pub fn StopSnapshot::source_path(Self) -> String?
+
+pub struct ThreadSelection {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn ThreadSelection::equal(Self, Self) -> Bool
+pub fn ThreadSelection::index(Self) -> Int
+pub fn ThreadSelection::not_equal(Self, Self) -> Bool
+pub fn ThreadSelection::to_repr(Self) -> @debug.Repr
 
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
@@ -133,11 +170,11 @@ pub fn VariableSnapshot::value(Self) -> String
 // Traits
 pub(open) trait DebugBackend {
   async fn launch(Self, String, Array[SourceBreakpoint]) -> RunOutcome
-  async fn continue_execution(Self) -> RunOutcome
-  async fn next(Self) -> RunOutcome
-  async fn step(Self) -> RunOutcome
-  async fn finish(Self) -> RunOutcome
-  async fn find_variable(Self, String) -> VariableLookupResult
+  async fn continue_execution(Self, ThreadSelection) -> RunOutcome
+  async fn next(Self, ThreadSelection) -> RunOutcome
+  async fn step(Self, ThreadSelection) -> RunOutcome
+  async fn finish(Self, ThreadSelection) -> RunOutcome
+  async fn find_variable(Self, ThreadSelection, FrameSelection, String) -> VariableLookupResult
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
   fn take_output(Self) -> Array[DebugOutput]
   async fn disconnect(Self) -> Unit

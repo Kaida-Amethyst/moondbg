@@ -107,6 +107,45 @@ fn DebugExecution::state(self : DebugExecution) -> DapSessionState {
 }
 
 ///|
+/// Maps the application-owned logical thread selection to the temporary DAP
+/// thread id for this execution. Only the initial selection exists until the
+/// application exposes thread navigation.
+fn DebugExecution::selected_thread_id(
+  self : DebugExecution,
+  selection : @moondbg.ThreadSelection,
+  action : String,
+) -> Int raise LldbDapBackendError {
+  guard self.machine.state is Stopped &&
+    selection.index() == 0 &&
+    self.machine.selected_thread_id() is Some(thread_id) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state=self.machine.state,
+      action~,
+    )
+  }
+  thread_id
+}
+
+///|
+/// Maps the application-owned logical frame selection to the current
+/// execution's temporary DAP frame id.
+fn DebugExecution::selected_frame_id(
+  self : DebugExecution,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
+  action : String,
+) -> Int raise LldbDapBackendError {
+  self.selected_thread_id(thread, action) |> ignore
+  guard frame.index() == 0 && self.machine.selected_frame_id() is Some(frame_id) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state=self.machine.state,
+      action~,
+    )
+  }
+  frame_id
+}
+
+///|
 fn DebugExecution::accept_event(
   self : DebugExecution,
   event : @dap.DapEvent,
@@ -244,14 +283,9 @@ async fn DebugExecution::resume_transaction(
 async fn DebugExecution::resume_execution(
   self : DebugExecution,
   kind : ExecutionResumeKind,
+  thread : @moondbg.ThreadSelection,
 ) -> @moondbg.RunOutcome {
-  guard self.machine.state is Stopped &&
-    self.machine.selected_thread_id() is Some(thread_id) else {
-    raise LldbDapBackendError::OperationNotAllowed(
-      state=self.machine.state,
-      action=kind.action(),
-    )
-  }
+  let thread_id = self.selected_thread_id(thread, kind.action())
   let request = kind.request(thread_id, self.capabilities)
   self.resume_transaction(request) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))

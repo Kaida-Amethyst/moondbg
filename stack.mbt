@@ -1,4 +1,50 @@
 ///|
+/// A zero-based logical thread selection inside the current stable stop.
+/// Backend-specific thread identifiers never appear in this value.
+pub struct ThreadSelection {
+  priv index : Int
+} derive(Debug, Eq)
+
+///|
+pub extend ThreadSelection with @debug.Debug::{to_repr}
+
+///|
+pub extend ThreadSelection with Eq::{equal, not_equal}
+
+///|
+fn ThreadSelection::initial() -> ThreadSelection {
+  { index: 0, }
+}
+
+///|
+pub fn ThreadSelection::index(self : ThreadSelection) -> Int {
+  self.index
+}
+
+///|
+/// A zero-based logical user-frame selection inside the selected thread.
+/// Backend-specific stack-frame identifiers never appear in this value.
+pub struct FrameSelection {
+  priv index : Int
+} derive(Debug, Eq)
+
+///|
+pub extend FrameSelection with @debug.Debug::{to_repr}
+
+///|
+pub extend FrameSelection with Eq::{equal, not_equal}
+
+///|
+fn FrameSelection::initial() -> FrameSelection {
+  { index: 0, }
+}
+
+///|
+pub fn FrameSelection::index(self : FrameSelection) -> Int {
+  self.index
+}
+
+///|
 pub struct StopSnapshot {
   priv reason : String
   priv function_name : String

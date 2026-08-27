@@ -204,16 +204,18 @@ async fn DebugExecution::find_variable_inner(
 ///|
 async fn DebugExecution::find_variable(
   self : DebugExecution,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
   name : String,
 ) -> @moondbg.VariableLookupResult {
   guard self.machine.state is Stopped &&
-    self.machine.current_stop_epoch() is Some(epoch) &&
-    self.machine.selected_frame_id() is Some(frame_id) else {
+    self.machine.current_stop_epoch() is Some(epoch) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.machine.state,
       action="inspect a variable",
     )
   }
+  let frame_id = self.selected_frame_id(thread, frame, "inspect a variable")
   self.find_variable_inner(epoch, frame_id, name) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
   }
@@ -222,6 +224,8 @@ async fn DebugExecution::find_variable(
 ///|
 async fn LldbDapSession::find_variable(
   self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
   name : String,
 ) -> @moondbg.VariableLookupResult {
   guard self.execution is Some(execution) else {
@@ -230,7 +234,7 @@ async fn LldbDapSession::find_variable(
       action="inspect a variable",
     )
   }
-  execution.find_variable(name) catch {
+  execution.find_variable(thread, frame, name) catch {
     LldbDapBackendError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()

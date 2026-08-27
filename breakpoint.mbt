@@ -1,4 +1,46 @@
 ///|
+/// A source breakpoint configured by the application layer.
+///
+/// Its id is stable for the lifetime of a DebugSession. Backend-specific
+/// breakpoint identifiers must not be stored in this value.
+pub struct SourceBreakpoint {
+  priv id : Int
+  priv source_path : String
+  priv requested_line : Int
+}
+
+///|
+fn SourceBreakpoint::new(
+  id : Int,
+  source_path : String,
+  requested_line : Int,
+) -> SourceBreakpoint {
+  { id, source_path, requested_line, }
+}
+
+///|
+pub fn SourceBreakpoint::id(self : SourceBreakpoint) -> Int {
+  self.id
+}
+
+///|
+pub fn SourceBreakpoint::source_path(self : SourceBreakpoint) -> String {
+  self.source_path
+}
+
+///|
+pub fn SourceBreakpoint::requested_line(self : SourceBreakpoint) -> Int {
+  self.requested_line
+}
+
+///|
+fn SourceBreakpoint::pending_snapshot(
+  self : SourceBreakpoint,
+) -> BreakpointSnapshot {
+  BreakpointSnapshot::pending(self.id, self.source_path, self.requested_line)
+}
+
+///|
 pub enum BreakpointStatus {
   Pending
   Verified
