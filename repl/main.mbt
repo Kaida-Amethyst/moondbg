@@ -110,6 +110,7 @@ async fn run_repl(
             add_source_breakpoint(session, source, source_line)
           Run => run_debuggee(session)
           Continue => continue_debuggee(session)
+          StepExecution(kind) => step_debuggee(session, kind)
           PrintVariable(name) => inspect_variable(session, name)
           List =>
             match session.last_stop_snapshot() {
@@ -131,6 +132,9 @@ fn print_help() -> Unit {
     #|  break <file>:<line>  b <file>:<line>  Set a source breakpoint
     #|  run                  r                Run or restart the program
     #|  continue             c                Continue the stopped program
+    #|  next                                  Step over the current source line
+    #|  step                                  Step into a called function
+    #|  finish                                Step out of the current function
     #|  print <name>         p <name>         Show a simple variable
     #|  list                                  Show the current source location
     #|  help                                  Show this help
@@ -194,6 +198,39 @@ async fn run_debuggee(session : @moondbg.DebugSession) -> Unit {
 ///|
 async fn continue_debuggee(session : @moondbg.DebugSession) -> Unit {
   let outcome = session.continue_execution() catch {
+    @moondbg.OperationNotAllowed(state~, action~) => {
+      render_operation_not_allowed(state, action)
+      return
+    }
+    @moondbg.AdapterFailure(message) => {
+      render_debug_output(session)
+      println("moondbg: debugger adapter failed: \{message}")
+      return
+    }
+    error => raise error
+  }
+  render_debug_output(session)
+  render_execution_outcome(outcome)
+}
+
+///|
+async fn request_step(
+  session : @moondbg.DebugSession,
+  kind : ReplStepKind,
+) -> @moondbg.RunOutcome {
+  match kind {
+    StepOver => session.next()
+    StepInto => session.step()
+    StepOut => session.finish()
+  }
+}
+
+///|
+async fn step_debuggee(
+  session : @moondbg.DebugSession,
+  kind : ReplStepKind,
+) -> Unit {
+  let outcome = request_step(session, kind) catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       render_operation_not_allowed(state, action)
       return

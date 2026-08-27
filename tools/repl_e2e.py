@@ -504,6 +504,59 @@ def test_fake_adapter_flow(
         raise ReplError("a late event leaked across executions\n\n" + transcript)
 
 
+def test_fake_stepping_commands(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-stepping-commands.jsonl"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("next")
+        session.expect("Cannot step over while the debugger is Ready.")
+        session.expect("(moondbg) ")
+        session.send("step")
+        session.expect("Cannot step into while the debugger is Ready.")
+        session.expect("(moondbg) ")
+        session.send("finish")
+        session.expect("Cannot step out while the debugger is Ready.")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        for command in ("next", "step", "finish"):
+            session.send(command)
+            session.expect("Stopped (step) in fake.main")
+            session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    commands = traced_commands(trace)
+    for command in ("next", "stepIn", "stepOut"):
+        if commands.count(command) != 1:
+            raise ReplError(
+                f"REPL did not dispatch exactly one {command} request: {commands!r}"
+            )
+
+
 def test_fake_adapter_failure(
     moondbg: Path,
     executable: Path,
@@ -916,6 +969,9 @@ def main() -> int:
                 test_fake_adapter_flow(
                     moondbg, executable, env, args.timeout, test_directory
                 )
+                test_fake_stepping_commands(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
                 test_fake_adapter_failure(
                     moondbg, executable, env, args.timeout, test_directory
                 )
@@ -947,8 +1003,8 @@ def main() -> int:
         return 1
     if args.fake_only:
         print(
-            "repl e2e passed: prompt prewarm, fake adapter flow, early quit, "
-            "failure recovery, timeout, terminal controls"
+            "repl e2e passed: prompt prewarm, fake adapter flow, stepping, "
+            "early quit, failure recovery, timeout, terminal controls"
         )
     elif args.real_only:
         print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")

@@ -1,10 +1,18 @@
 ///|
+priv enum ReplStepKind {
+  StepOver
+  StepInto
+  StepOut
+}
+
+///|
 priv enum ReplCommand {
   Quit
   Help
   Run
   Break(String, Int)
   Continue
+  StepExecution(ReplStepKind)
   PrintVariable(String)
   List
   Invalid(String)
@@ -115,6 +123,21 @@ fn parse_repl_command(line : StringView) -> ReplCommand {
     Some(_) => return Invalid("c does not accept arguments")
     None => ()
   }
+  match command_arguments(input, "next") {
+    Some("") => return StepExecution(StepOver)
+    Some(_) => return Invalid("next does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "step") {
+    Some("") => return StepExecution(StepInto)
+    Some(_) => return Invalid("step does not accept arguments")
+    None => ()
+  }
+  match command_arguments(input, "finish") {
+    Some("") => return StepExecution(StepOut)
+    Some(_) => return Invalid("finish does not accept arguments")
+    None => ()
+  }
   match command_arguments(input, "print") {
     Some(arguments) => return parse_variable_name(arguments)
     None => ()
@@ -182,6 +205,19 @@ test "P5 variable command rejects expressions and missing names" {
   ]
   for command in commands {
     assert_true(parse_repl_command(command) is Invalid(_), msg=command)
+  }
+}
+
+///|
+test "T-04 stepping commands accept only full names without arguments" {
+  assert_true(parse_repl_command("next") is StepExecution(StepOver))
+  assert_true(parse_repl_command(" step\t") is StepExecution(StepInto))
+  assert_true(parse_repl_command("finish  ") is StepExecution(StepOut))
+  for command in ["next now", "step 1", "finish frame"] {
+    assert_true(parse_repl_command(command) is Invalid(_), msg=command)
+  }
+  for command in ["n", "s", "f", "nexted", "stepping", "finished"] {
+    assert_true(parse_repl_command(command) is Unknown, msg=command)
   }
 }
 
