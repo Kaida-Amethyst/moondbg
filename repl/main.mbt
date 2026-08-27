@@ -84,65 +84,6 @@ fn adapter_preparation_timeout_ms() -> Int {
 }
 
 ///|
-async fn run_repl(
-  editor : @readline.LineEditor,
-  history : @readline.History,
-  session : @moondbg.DebugSession,
-) -> Unit {
-  for ;; {
-    let input = editor.read_line(prompt="(moondbg) ") catch {
-      @readline.Interrupted => {
-        println("")
-        continue
-      }
-      error => raise error
-    }
-    match input {
-      None => break
-      Some(line) => {
-        if line != "" {
-          history.add(line)
-        }
-        match parse_repl_command(line) {
-          Quit => return
-          Help => print_help()
-          Break(source, source_line) =>
-            add_source_breakpoint(session, source, source_line)
-          Run => run_debuggee(session)
-          Continue => continue_debuggee(session)
-          StepExecution(kind) => step_debuggee(session, kind)
-          PrintVariable(name) => inspect_variable(session, name)
-          List(line_count) =>
-            match session.last_stop_snapshot() {
-              Some(snapshot) => render_stop_snapshot(snapshot, line_count~)
-              None => println("No stopped source location is available.")
-            }
-          Invalid(message) => println("Error: \{message}")
-          Unknown => println("Unknown command. Type 'help' for help.")
-        }
-      }
-    }
-  }
-}
-
-///|
-fn print_help() -> Unit {
-  let help =
-    #|Commands:
-    #|  break <file>:<line>  b <file>:<line>  Set a source breakpoint
-    #|  run                  r                Run or restart the program
-    #|  continue             c                Continue the stopped program
-    #|  next                 n                Step over the current source line
-    #|  step                 s                Step into a called function
-    #|  finish               fin              Step out of the current function
-    #|  print <name>         p <name>         Show a simple variable
-    #|  list [-c|--count <count>]             Show source context (default: 5 lines)
-    #|  help                                  Show this help
-    #|  quit                  q, exit          Exit moondbg
-  println(help)
-}
-
-///|
 fn render_operation_not_allowed(
   state : @moondbg.DebugSessionState,
   action : String,
@@ -216,19 +157,19 @@ async fn continue_debuggee(session : @moondbg.DebugSession) -> Unit {
 ///|
 async fn request_step(
   session : @moondbg.DebugSession,
-  kind : ReplStepKind,
+  kind : LegacyStepKind,
 ) -> @moondbg.RunOutcome {
   match kind {
-    StepOver => session.next()
-    StepInto => session.step()
-    StepOut => session.finish()
+    LegacyStepOver => session.next()
+    LegacyStepInto => session.step()
+    LegacyStepOut => session.finish()
   }
 }
 
 ///|
 async fn step_debuggee(
   session : @moondbg.DebugSession,
-  kind : ReplStepKind,
+  kind : LegacyStepKind,
 ) -> Unit {
   let outcome = request_step(session, kind) catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
@@ -244,6 +185,29 @@ async fn step_debuggee(
   }
   render_debug_output(session)
   render_execution_outcome(outcome)
+}
+
+///|
+/// Temporary P5 bridge. P6/P7 replace each branch with a dedicated command
+/// implementation returning structured presentation events.
+async fn execute_legacy_action(
+  context : ReplContext,
+  action : LegacyAction,
+) -> Unit {
+  let session = context.session
+  match action {
+    LegacyBreak(source, source_line) =>
+      add_source_breakpoint(session, source, source_line)
+    LegacyRun => run_debuggee(session)
+    LegacyContinue => continue_debuggee(session)
+    LegacyStepExecution(kind) => step_debuggee(session, kind)
+    LegacyPrintVariable(name) => inspect_variable(session, name)
+    LegacyList(line_count) =>
+      match session.last_stop_snapshot() {
+        Some(snapshot) => render_stop_snapshot(snapshot, line_count~)
+        None => println("No stopped source location is available.")
+      }
+  }
 }
 
 ///|
@@ -432,7 +396,10 @@ async fn run(executable : String) -> Unit {
     defer session.close()
     let history = @readline.History::new()
     let editor = @readline.LineEditor::open(history~)
-    run_repl(editor, history, session)
+    let registry = default_command_registry()
+    let renderer = HumanRenderer::new()
+    let context = ReplContext::new(session, registry, renderer)
+    run_repl(editor, history, context)
     session.disconnect()
     println("Debugger exited.")
   })
