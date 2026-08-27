@@ -55,6 +55,45 @@ fn validate_response_command(
 }
 
 ///|
+priv enum ExecutionResumeKind {
+  ContinueExecution
+  StepExecution(DapStepKind)
+}
+
+///|
+fn ExecutionResumeKind::action(self : ExecutionResumeKind) -> String {
+  match self {
+    ContinueExecution => "continue execution"
+    StepExecution(DapNext) => "step over"
+    StepExecution(DapStepIn) => "step into"
+    StepExecution(DapStepOut) => "step out"
+  }
+}
+
+///|
+fn ExecutionResumeKind::request(
+  self : ExecutionResumeKind,
+  thread_id : Int,
+  capabilities : Json,
+) -> DapRequest {
+  match self {
+    ContinueExecution =>
+      {
+        command: "continue",
+        arguments: { "threadId": thread_id, "singleThread": false },
+      }
+    StepExecution(kind) =>
+      stepping_request(
+        kind,
+        thread_id,
+        supports_stepping_granularity=supports_stepping_granularity(
+          capabilities,
+        ),
+      )
+  }
+}
+
+///|
 // Owns adapter-scoped resources and protocol state for one execution.
 #warnings("-unused_field")
 priv struct DebugExecution {
@@ -705,6 +744,7 @@ async fn DebugExecution::resolve_stopped_thread(self : DebugExecution) -> Int {
       guard first_thread_id(response.body) is Some(thread_id) else {
         raise InvalidMessage(response.body)
       }
+      self.machine.select_thread(thread_id)
       thread_id
     }
   }
@@ -926,46 +966,48 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
 }
 
 ///|
-async fn DebugExecution::continue_transaction(
+async fn DebugExecution::resume_transaction(
   self : DebugExecution,
-  thread_id : Int,
+  request : DapRequest,
 ) -> RunOutcome {
-  errdefer self.machine.fail("continue transaction failed")
+  errdefer self.machine.fail("\{request.command} transaction failed")
   self.machine.mark_resumed()
   self.last_snapshot = None
   self.variable_cache.reset(0)
-  self.request("continue", { "threadId": thread_id, "singleThread": false })
-  |> ignore
+  self.request(request.command, request.arguments) |> ignore
   self.complete_execution()
 }
 
 ///|
-async fn DebugExecution::continue_execution(
+async fn DebugExecution::resume_execution(
   self : DebugExecution,
+  kind : ExecutionResumeKind,
 ) -> RunOutcome {
   guard self.machine.state is Stopped &&
     self.machine.selected_thread_id() is Some(thread_id) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.machine.state,
-      action="continue execution",
+      action=kind.action(),
     )
   }
-  self.continue_transaction(thread_id) catch {
+  let request = kind.request(thread_id, self.capabilities)
+  self.resume_transaction(request) catch {
     error => raise DebugSessionError::AdapterFailure(@debug.to_string(error))
   }
 }
 
 ///|
-pub async fn DebugSession::continue_execution(
+async fn DebugSession::resume_execution(
   self : DebugSession,
+  kind : ExecutionResumeKind,
 ) -> RunOutcome {
   guard self.execution is Some(execution) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.detached_state,
-      action="continue execution",
+      action=kind.action(),
     )
   }
-  let outcome = execution.continue_execution() catch {
+  let outcome = execution.resume_execution(kind) catch {
     DebugSessionError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
@@ -978,6 +1020,28 @@ pub async fn DebugSession::continue_execution(
     self.complete_finished_execution(execution)
   }
   outcome
+}
+
+///|
+pub async fn DebugSession::continue_execution(
+  self : DebugSession,
+) -> RunOutcome {
+  self.resume_execution(ContinueExecution)
+}
+
+///|
+pub async fn DebugSession::next(self : DebugSession) -> RunOutcome {
+  self.resume_execution(StepExecution(DapNext))
+}
+
+///|
+pub async fn DebugSession::step(self : DebugSession) -> RunOutcome {
+  self.resume_execution(StepExecution(DapStepIn))
+}
+
+///|
+pub async fn DebugSession::finish(self : DebugSession) -> RunOutcome {
+  self.resume_execution(StepExecution(DapStepOut))
 }
 
 ///|

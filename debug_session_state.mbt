@@ -18,7 +18,7 @@ pub extend DebugSessionState with Eq::{equal, not_equal}
 ///|
 priv struct StopEpochContext {
   epoch : Int
-  thread_id : Int?
+  mut thread_id : Int?
   mut frame_id : Int?
   variable_references : Map[Int, Bool]
 }
@@ -126,6 +126,17 @@ fn DebugSessionMachine::mark_resumed(
   }
   self.stop_context = None
   self.state = Running
+}
+
+///|
+fn DebugSessionMachine::select_thread(
+  self : DebugSessionMachine,
+  thread_id : Int,
+) -> Unit raise DapSessionError {
+  guard self.state is Stopped && self.stop_context is Some(context) else {
+    raise InvalidSessionTransition(state=self.state, action="select thread")
+  }
+  context.thread_id = Some(thread_id)
 }
 
 ///|

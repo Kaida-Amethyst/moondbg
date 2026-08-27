@@ -5,7 +5,6 @@ priv struct DapRequest {
 }
 
 ///|
-#warnings("-unused_constructor")
 priv enum DapStepKind {
   DapNext
   DapStepIn
@@ -22,7 +21,6 @@ fn DapStepKind::command(self : DapStepKind) -> String {
 }
 
 ///|
-#warnings("-unused_value")
 fn stepping_request(
   kind : DapStepKind,
   thread_id : Int,
@@ -34,6 +32,11 @@ fn stepping_request(
     { "threadId": thread_id }
   }
   { command: kind.command(), arguments, }
+}
+
+///|
+fn supports_stepping_granularity(capabilities : Json) -> Bool {
+  capabilities is { "supportsSteppingGranularity": True, .. }
 }
 
 ///|

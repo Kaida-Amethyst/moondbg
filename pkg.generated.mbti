@@ -53,11 +53,14 @@ pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit
 pub async fn DebugSession::find_variable(Self, String) -> VariableLookupResult
+pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
+pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
 pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
 pub fn[X] DebugSession::start(@async.TaskGroup[X], String, String, preparation_timeout_ms? : Int) -> Self
 pub fn DebugSession::state(Self) -> DebugSessionState
+pub async fn DebugSession::step(Self) -> RunOutcome
 pub fn DebugSession::take_output(Self) -> Array[DebugOutput]
 
 pub enum DebugSessionState {

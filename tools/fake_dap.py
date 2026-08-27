@@ -170,6 +170,7 @@ class FakeAdapter:
                 request,
                 {
                     "supportsConfigurationDoneRequest": True,
+                    "supportsSteppingGranularity": True,
                     "supportsTerminateRequest": True,
                 },
             )

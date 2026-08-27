@@ -94,7 +94,7 @@ granularity fallback、request/response 配对和 response 前到达的 stop eve
 
 ### P2. 实现单步执行生命周期
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 在 `DebugExecution` 和 `DebugSession` 中实现可复用的单步状态转换，并保证所有
 DAP 临时引用按 stop epoch 隔离。
@@ -109,6 +109,23 @@ DAP 临时引用按 stop epoch 隔离。
    逻辑，避免形成另一套生命周期；
 5. 增加白盒测试，验证非 `Stopped` 状态拒绝单步、旧 frame/variable reference 失效、
    三种操作使用正确 request，以及停止、退出和失败后的最终状态。
+
+**实施结果：** 新增内部 `ExecutionResumeKind`，把 `continue` 和三种单步统一到同一条
+resume transaction：先校验当前 stop 与 thread ID，随后清除 `StopSnapshot`、stop context
+和变量缓存，发送对应 request，并通过现有 `complete_execution` 等待新的 stop 或退出。
+session 层同样共用 adapter failure 恢复、execution 归档、正常退出和下一 adapter 预热
+路径，没有为 stepping 建立第二套生命周期。
+
+`DebugSession` 对外新增 `next`、`step`、`finish` 三个 async 方法。step request 根据
+initialize capabilities 决定是否显式发送 `granularity: line`。stop event 未提供 thread ID
+时，已有 `threads` fallback 得到的 ID 现在会写回当前 stop epoch，保证后续 resume 使用同一
+线程；恢复运行后该 ID 与 frame、scope、`variablesReference` 一起失效。
+
+新增纯协议/状态白盒测试和真实启动 fake adapter 的 async 白盒测试。测试覆盖 Ready 状态
+拒绝单步、run 后连续执行 `next → step → finish`、stop reason 与 thread ID、stop epoch 从
+1 增长到 4、旧变量缓存失效、每次重新构建 snapshot，以及最终 disconnect 清理。`moon
+info` 的预期公开接口变化只有三个新方法；`moon check` 无警告，75 个 MoonBit 测试和原有
+fake REPL 端到端回归均通过。
 
 **完成条件：** 三种单步都能从同一执行路径得到 `Stopped` 或 `Exited` 结果；不存在跨 stop
 使用旧 DAP 引用、重复处理终止事件或 adapter failure 后破坏外层 REPL 的情况。

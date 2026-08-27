@@ -103,6 +103,88 @@ test "stepping responses pair by request seq without losing a stop event" {
 }
 
 ///|
+test "P2 resume kinds share request construction and user actions" {
+  let capabilities : Json = { "supportsSteppingGranularity": true }
+  let cases = [
+    (StepExecution(DapNext), "next", "step over"),
+    (StepExecution(DapStepIn), "stepIn", "step into"),
+    (StepExecution(DapStepOut), "stepOut", "step out"),
+  ]
+  for _, case in cases {
+    let (kind, command, action) = case
+    let request = kind.request(9, capabilities)
+    assert_eq(kind.action(), action)
+    assert_eq(request.command, command)
+    assert_true(
+      request.arguments
+      is { "threadId": Number(9, ..), "granularity": String("line"), .. },
+    )
+  }
+  let fallback = StepExecution(DapNext).request(10, {})
+  assert_true(fallback.arguments is { "threadId": Number(10, ..), .. })
+  assert_false(fallback.arguments.stringify().contains("granularity"))
+  let continue_request = ContinueExecution.request(11, capabilities)
+  assert_eq(ContinueExecution.action(), "continue execution")
+  assert_eq(continue_request.command, "continue")
+  assert_true(
+    continue_request.arguments
+    is { "threadId": Number(11, ..), "singleThread": False, .. },
+  )
+}
+
+///|
+async test "P2 stepping shares stop epochs snapshots and variable invalidation" {
+  @async.with_task_group(async fn(group) {
+    let session = DebugSession::start(
+      group, "tools/fake_dap.py", "/tmp/moondbg-p2-fake-program",
+    )
+    defer session.close()
+    let rejected = try {
+      session.next() |> ignore
+      false
+    } catch {
+      DebugSessionError::OperationNotAllowed(state~, action~) =>
+        state is Ready && action == "step over"
+      _ => false
+    }
+    assert_true(rejected)
+    guard session.run() is Stopped(initial) else {
+      fail("fake execution should stop after launch")
+    }
+    assert_eq(initial.thread_id(), 1)
+    guard session.execution is Some(execution) else {
+      fail("stopped session should retain its execution")
+    }
+    assert_eq(execution.machine.stop_epoch, 1)
+    guard session.find_variable("answer") is VariableFound(variable) else {
+      fail("fake execution should expose answer")
+    }
+    assert_eq(variable.value(), "42")
+    assert_true(execution.variable_cache.cached_scopes(1) is Some(_))
+    guard session.next() is Stopped(after_next) else {
+      fail("next should stop again")
+    }
+    assert_eq(after_next.reason(), "step")
+    assert_eq(after_next.thread_id(), 1)
+    assert_eq(execution.machine.stop_epoch, 2)
+    assert_true(execution.variable_cache.cached_scopes(1) is None)
+    guard session.step() is Stopped(after_step) else {
+      fail("step should stop again")
+    }
+    assert_eq(after_step.reason(), "step")
+    assert_eq(execution.machine.stop_epoch, 3)
+    guard session.finish() is Stopped(after_finish) else {
+      fail("finish should stop again")
+    }
+    assert_eq(after_finish.reason(), "step")
+    assert_eq(execution.machine.stop_epoch, 4)
+    assert_eq(execution.machine.selected_thread_id(), Some(1))
+    session.disconnect()
+    assert_true(session.state() is Exited)
+  })
+}
+
+///|
 test "DAP framing counts UTF-8 bytes" {
   assert_eq(frame_message("hi"), "Content-Length: 2\r\n\r\nhi")
   assert_eq(frame_message("月"), "Content-Length: 3\r\n\r\n月")
@@ -278,6 +360,19 @@ test "resuming invalidates frame and variable references from the stop epoch" {
   assert_true(machine.state is Running)
   assert_false(machine.has_current_frame(42))
   assert_false(machine.has_current_variable_reference(99))
+}
+
+///|
+test "a fallback thread id is retained in the current stop epoch" {
+  let machine = DebugSessionMachine::new()
+  machine.begin_execution()
+  machine.mark_running()
+  machine.accept_event(test_event("stopped", {}))
+  assert_eq(machine.selected_thread_id(), None)
+  machine.select_thread(13)
+  assert_eq(machine.selected_thread_id(), Some(13))
+  machine.mark_resumed()
+  assert_eq(machine.selected_thread_id(), None)
 }
 
 ///|
