@@ -135,7 +135,7 @@ fake REPL 端到端回归均通过。
 
 ### P3. 接入 REPL 命令与用户反馈
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 让用户可以通过 `next`、`step` 和 `finish` 完成源码级单步闭环。
 
@@ -148,6 +148,22 @@ fake REPL 端到端回归均通过。
 4. 单步停止后依次呈现 debuggee output、停止原因、函数与源码位置以及高亮源码卡片；
 5. 单步导致程序退出时复用当前退出反馈并恢复持久 REPL，不增加特殊询问；
 6. 增加命令解析和 REPL 行为测试，覆盖空参数、额外参数、非法状态和正常结果。
+
+**实施结果：** REPL 命令模型新增统一的 stepping 命令及 `StepOver`、`StepInto`、
+`StepOut` 三种内部语义，只接受无参数的完整命令名 `next`、`step` 和 `finish`；缩写、近似
+前缀保持为未知命令，额外参数会在本地解析阶段报错。`help` 已补充三个命令的越过、进入和
+跳出说明。
+
+三个命令通过同一个 REPL stepping 分派入口分别调用 `DebugSession::next`、`step` 和
+`finish`。非 `Stopped` 状态继续显示 session 提供的统一 `OperationNotAllowed` 反馈；成功
+后沿用现有顺序打印 debuggee output，再显示 stop snapshot 或退出结果，因此不会在请求
+完成前提前出现 prompt，也没有引入新的 readline 异步输出要求。
+
+命令单元测试覆盖三个完整名称、前后空白、额外参数、缩写和近似前缀。新增独立 fake REPL
+流程，先在 `Ready` 状态验证三个动作分别被拒绝，再运行到停点并连续执行
+`next → step → finish`；测试核对三次 `Stopped (step)` 反馈、每次 prompt 恢复，以及 trace
+中恰好各有一个 `next`、`stepIn` 和 `stepOut` request。最终 `moon check` 无警告，76 个
+MoonBit 测试和全部 fake REPL 端到端回归通过。
 
 **完成条件：** 三个命令的名称、帮助文本、非法状态反馈和停止/退出输出一致；命令执行
 期间不会提前显示 prompt，也不会要求 readline 支持编辑中异步打印。
