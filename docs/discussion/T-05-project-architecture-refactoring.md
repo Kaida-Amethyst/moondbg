@@ -235,9 +235,9 @@ readline 编辑期间的真正异步消息将来可以通过 event sink 进入 f
 架构重构完成后，再单独迁移为 D6 确认的 MoonBit-first 分层测试体系；测试迁移不与本轮
 package、backend、session 和 REPL 重组交叉进行。
 
-## 任务划分（确认）
+## 已确认任务划分
 
-以下任务划分等待用户 review。P1 至 P8 完成本次架构重构，P9 在架构完成后单独迁移测试
+以下任务划分已经用户确认。P1 至 P8 完成本次架构重构，P9 在架构完成后单独迁移测试
 体系。每个阶段完成后都暂停 review，并保持 `moon check`、MoonBit 测试和已有 Python fake
 REPL 端到端回归通过；不采用先删除旧实现、最后再恢复功能的 big-bang rewrite。
 
