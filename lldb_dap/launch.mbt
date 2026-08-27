@@ -3,7 +3,17 @@ async fn[X] DebugExecution::prepare(
   group : @async.TaskGroup[X],
   adapter : String,
 ) -> DebugExecution {
-  let dispatcher = @dap.DapDispatcher::start(group, adapter)
+  DebugExecution::prepare_with_dispatcher(
+    @dap.DapDispatcher::start(group, adapter),
+  )
+}
+
+///|
+/// Private construction seam used by the process adapter and whitebox
+/// scripted sessions alike.
+async fn DebugExecution::prepare_with_dispatcher(
+  dispatcher : @dap.DapDispatcher,
+) -> DebugExecution {
   let execution = {
     dispatcher,
     machine: DapSessionMachine::new(),
@@ -30,6 +40,23 @@ async fn[X] DebugExecution::prepare(
 }
 
 ///|
+fn LldbDapSession::new_with_preparation(
+  spawn_preparation : () -> @async.Task[DebugExecution],
+  preparation_timeout_ms : Int,
+) -> LldbDapSession {
+  {
+    breakpoints: [],
+    spawn_preparation,
+    preparation: Some(spawn_preparation()),
+    preparation_timeout_ms,
+    execution: None,
+    detached_state: Ready,
+    last_breakpoint_snapshots: Map([]),
+    pending_output: [],
+  }
+}
+
+///|
 /// Starts preparing lldb-dap in the background without creating a target.
 /// Local REPL commands can use the returned session immediately; a later
 /// `run` waits for and consumes this exact preparation result.
@@ -43,16 +70,28 @@ fn[X] LldbDapSession::start(
       DebugExecution::prepare(group, adapter)
     })
   }
-  {
-    breakpoints: [],
-    spawn_preparation,
-    preparation: Some(spawn_preparation()),
-    preparation_timeout_ms,
-    execution: None,
-    detached_state: Ready,
-    last_breakpoint_snapshots: Map([]),
-    pending_output: [],
+  LldbDapSession::new_with_preparation(
+    spawn_preparation, preparation_timeout_ms,
+  )
+}
+
+///|
+/// Whitebox-friendly factory that keeps scripted transports out of the
+/// production backend API.
+#warnings("-unused_value")
+fn[X] LldbDapSession::start_with_dispatcher_factory(
+  group : @async.TaskGroup[X],
+  dispatcher_factory : () -> @dap.DapDispatcher,
+  preparation_timeout_ms? : Int = 10000,
+) -> LldbDapSession {
+  let spawn_preparation = () => {
+    group.spawn(allow_failure=true, () => {
+      DebugExecution::prepare_with_dispatcher(dispatcher_factory())
+    })
   }
+  LldbDapSession::new_with_preparation(
+    spawn_preparation, preparation_timeout_ms,
+  )
 }
 
 ///|

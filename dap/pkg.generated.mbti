@@ -34,6 +34,7 @@ pub struct DapDispatcher {
   // private fields
 }
 pub fn DapDispatcher::close(Self) -> Unit
+pub fn DapDispatcher::from_transport(&DapTransport) -> Self
 pub async fn DapDispatcher::next(Self) -> RoutedMessage
 pub async fn DapDispatcher::next_for_request(Self, Int) -> RoutedMessage
 pub async fn DapDispatcher::send_request(Self, String, Json) -> Int
@@ -82,3 +83,8 @@ pub enum RoutedMessage {
 // Type aliases
 
 // Traits
+pub(open) trait DapTransport {
+  async fn send_message(Self, Json) -> Unit
+  async fn receive_message(Self) -> Json
+  fn close(Self) -> Unit
+}

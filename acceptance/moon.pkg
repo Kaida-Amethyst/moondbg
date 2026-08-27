@@ -1,0 +1,11 @@
+import {
+  "Kaida-Amethyst/moondbg/testkit/pty" @pty_testkit,
+  "moonbitlang/async",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/io",
+  "moonbitlang/async/process",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+} for "wbtest"
+
+supported_targets = "+native"

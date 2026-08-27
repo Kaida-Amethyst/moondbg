@@ -64,6 +64,137 @@ fn test_failed_response(
 }
 
 ///|
+fn scripted_response(
+  seq : Int,
+  request_seq : Int,
+  command : String,
+  body : Json,
+) -> @dap_testkit.ScriptedInput {
+  @dap_testkit.ScriptedMessage({
+    "seq": seq,
+    "type": "response",
+    "request_seq": request_seq,
+    "command": command,
+    "success": true,
+    "body": body,
+  })
+}
+
+///|
+fn scripted_failed_response(
+  seq : Int,
+  request_seq : Int,
+  command : String,
+  message : String,
+) -> @dap_testkit.ScriptedInput {
+  @dap_testkit.ScriptedMessage({
+    "seq": seq,
+    "type": "response",
+    "request_seq": request_seq,
+    "command": command,
+    "success": false,
+    "message": message,
+  })
+}
+
+///|
+fn scripted_event(
+  seq : Int,
+  name : String,
+  body : Json,
+) -> @dap_testkit.ScriptedInput {
+  @dap_testkit.ScriptedMessage({
+    "seq": seq,
+    "type": "event",
+    "event": name,
+    "body": body,
+  })
+}
+
+///|
+fn scripted_stack_body(frame_id : Int, line : Int) -> Json {
+  {
+    "stackFrames": [
+      {
+        "id": frame_id,
+        "name": "main.inspect_value",
+        "source": { "path": "/tmp/main.mbt" },
+        "line": line,
+        "column": 3,
+      },
+    ],
+  }
+}
+
+///|
+fn lifecycle_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(100, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsSteppingGranularity": true,
+    }),
+    scripted_event(101, "initialized", {}),
+    scripted_response(102, 3, "setBreakpoints", {
+      "breakpoints": [{ "id": 17, "verified": true, "line": 4 }],
+    }),
+    scripted_response(103, 4, "configurationDone", {}),
+    scripted_response(104, 2, "launch", {}),
+    scripted_event(105, "output", {
+      "category": "stdout",
+      "output": "hello from debuggee\n",
+    }),
+    scripted_event(106, "output", {
+      "category": "telemetry",
+      "output": "adapter metrics",
+    }),
+    scripted_event(107, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(108, 5, "stackTrace", scripted_stack_body(10, 4)),
+    scripted_response(109, 6, "scopes", {
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 100,
+        },
+        {
+          "name": "Registers",
+          "presentationHint": "registers",
+          "variablesReference": 200,
+        },
+      ],
+    }),
+    scripted_response(110, 7, "variables", {
+      "variables": [
+        {
+          "name": "answer",
+          "type": "int",
+          "value": "42",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_event(111, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(112, 8, "next", {}),
+    scripted_response(113, 9, "stackTrace", scripted_stack_body(11, 5)),
+    scripted_response(114, 10, "stepIn", {}),
+    scripted_event(115, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(116, 11, "stackTrace", scripted_stack_body(12, 6)),
+    scripted_response(117, 12, "stepOut", {}),
+    scripted_event(118, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(119, 13, "stackTrace", scripted_stack_body(13, 7)),
+    scripted_event(120, "terminated", {}),
+  ]
+}
+
+///|
+fn sent_command(message : Json) -> String? {
+  match message {
+    { "command": String(command), .. } => Some(command)
+    _ => None
+  }
+}
+
+///|
 test "lldb-dap resume kinds share request construction and user actions" {
   let capabilities : Json = { "supportsSteppingGranularity": true }
   let cases = [
@@ -94,14 +225,19 @@ test "lldb-dap resume kinds share request construction and user actions" {
 }
 
 ///|
-async test "lldb-dap stepping shares stop epochs snapshots and variable invalidation" {
+async test "scripted lldb-dap lifecycle preserves mappings epochs output and caches" {
   @async.with_task_group(async fn(group) {
-    let executable = "/tmp/moondbg-p2-fake-program"
-    let backend = LldbDapBackend::start(
+    let executable = "/tmp/moondbg-scripted-program"
+    let transport = @dap_testkit.ScriptedTransport::new(lifecycle_script())
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
       group,
-      "tools/fake_dap.py",
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_breakpoints: 0,
+    }
     let session = @moondbg.DebugSession::new(executable, backend)
     defer session.close()
     let rejected = try {
@@ -116,7 +252,7 @@ async test "lldb-dap stepping shares stop epochs snapshots and variable invalida
     let pending = session.add_source_breakpoint("/tmp/main.mbt", 4)
     assert_eq(pending.id(), 1)
     guard session.run() is @moondbg.Stopped(_) else {
-      fail("fake execution should stop after launch")
+      fail("scripted execution should stop after launch")
     }
     guard backend.session.breakpoints is [logical] else {
       fail("backend should import one stable source breakpoint")
@@ -128,8 +264,13 @@ async test "lldb-dap stepping shares stop epochs snapshots and variable invalida
       fail("stopped session should retain its execution")
     }
     assert_eq(execution.machine.stop_epoch, 1)
+    guard session.take_output() is [output] else {
+      fail("only user-visible debuggee output should be retained")
+    }
+    assert_true(output.kind() is @moondbg.StandardOutput)
+    assert_eq(output.text(), "hello from debuggee\n")
     guard session.find_variable("answer") is @moondbg.VariableFound(variable) else {
-      fail("fake execution should expose answer")
+      fail("scripted execution should expose answer")
     }
     assert_eq(variable.value(), "42")
     assert_true(execution.variable_cache.cached_scopes(1) is Some(_))
@@ -150,8 +291,132 @@ async test "lldb-dap stepping shares stop epochs snapshots and variable invalida
     assert_eq(after_finish.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 4)
     assert_eq(execution.machine.selected_thread_id(), Some(1))
+    guard session.source_breakpoints() is [verified] else {
+      fail("expected one stable logical breakpoint")
+    }
+    assert_eq(verified.id(), pending.id())
+    assert_eq(verified.actual_line(), Some(4))
+    assert_true(verified.status() is @moondbg.Verified)
     session.disconnect()
     assert_true(session.state() is @moondbg.Exited)
+    assert_true(transport.is_closed())
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "setBreakpoints", "configurationDone", "stackTrace",
+      "scopes", "variables", "next", "stackTrace", "stepIn", "stackTrace", "stepOut",
+      "stackTrace", "disconnect",
+    ])
+  })
+}
+
+///|
+async test "scripted launch failure is recovered by a fresh prepared execution" {
+  @async.with_task_group(async fn(group) {
+    let failed_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(200, 1, "initialize", {}),
+      scripted_event(201, "initialized", {}),
+      scripted_failed_response(202, 2, "launch", "launch rejected"),
+      scripted_response(203, 3, "configurationDone", {}),
+      scripted_event(204, "terminated", {}),
+    ])
+    let recovered_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(300, 1, "initialize", {}),
+      scripted_event(301, "initialized", {}),
+      scripted_response(302, 3, "configurationDone", {}),
+      scripted_response(303, 2, "launch", {}),
+      scripted_event(304, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(305, 4, "stackTrace", scripted_stack_body(20, 4)),
+    ])
+    let transports = [failed_transport, recovered_transport]
+    let mut factory_index = 0
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => {
+        let transport = transports[factory_index]
+        factory_index += 1
+        @dap.DapDispatcher::from_transport(transport.as_transport())
+      },
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/moondbg-recovery-program", backend,
+    )
+    defer session.close()
+    let failed = try {
+      session.run() |> ignore
+      false
+    } catch {
+      @moondbg.AdapterFailure(message) => message.contains("launch rejected")
+      _ => false
+    }
+    assert_true(failed)
+    assert_true(session.state() is @moondbg.Ready)
+    assert_true(failed_transport.is_closed())
+    guard session.run() is @moondbg.Stopped(snapshot) else {
+      fail("replacement scripted execution should stop")
+    }
+    assert_eq(snapshot.line(), Some(4))
+    assert_eq(factory_index, 2)
+    assert_eq(failed_transport.remaining_inputs(), 0)
+    assert_eq(recovered_transport.remaining_inputs(), 0)
+  })
+}
+
+///|
+async test "scripted preparation failure is recovered before the next run" {
+  @async.with_task_group(async fn(group) {
+    let failed_transport = @dap_testkit.ScriptedTransport::new([
+      @dap_testkit.ScriptedFailure("initialize unavailable"),
+    ])
+    let recovered_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(400, 1, "initialize", {}),
+      scripted_event(401, "initialized", {}),
+      scripted_response(402, 3, "configurationDone", {}),
+      scripted_response(403, 2, "launch", {}),
+      scripted_event(404, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(405, 4, "stackTrace", scripted_stack_body(30, 4)),
+    ])
+    let transports = [failed_transport, recovered_transport]
+    let mut factory_index = 0
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => {
+        let transport = transports[factory_index]
+        factory_index += 1
+        @dap.DapDispatcher::from_transport(transport.as_transport())
+      },
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/moondbg-preparation-recovery-program", backend,
+    )
+    defer session.close()
+    let failed = try {
+      session.run() |> ignore
+      false
+    } catch {
+      @moondbg.AdapterFailure(message) =>
+        message.contains("initialize unavailable")
+      _ => false
+    }
+    assert_true(failed)
+    assert_true(session.state() is @moondbg.Ready)
+    assert_true(failed_transport.is_closed())
+    guard session.run() is @moondbg.Stopped(snapshot) else {
+      fail("replacement preparation should produce a stopped execution")
+    }
+    assert_eq(snapshot.line(), Some(4))
+    assert_eq(factory_index, 2)
+    assert_eq(failed_transport.remaining_inputs(), 0)
+    assert_eq(recovered_transport.remaining_inputs(), 0)
   })
 }
 

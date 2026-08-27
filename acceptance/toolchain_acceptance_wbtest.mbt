@@ -1,0 +1,79 @@
+///|
+fn toolchain_acceptance_enabled() -> Bool {
+  @env.get_env_var("MOONDBG_TOOLCHAIN_ACCEPTANCE") == Some("1")
+}
+
+///|
+async fn collect_text(executable : String, arguments : Array[String]) -> String {
+  let (status, output) = @process.collect_stdout(
+    executable,
+    arguments,
+    inherit_env=true,
+  )
+  assert_eq(status, 0)
+  output.text()
+}
+
+///|
+async fn require_development_tool(moon_home : String, name : String) -> String {
+  let path = "\{moon_home}/bin/\{name}"
+  assert_true(@fs.kind(path, follow_symlink=false) is @fs.SymLink)
+  assert_true(@fs.exists(path))
+  assert_true(@fs.can_execute(path))
+  path
+}
+
+///|
+async fn require_development_toolchain() -> (String, String) {
+  guard @env.get_env_var("MOON_HOME") is Some(moon_home) &&
+    @env.get_env_var("HOME") is Some(home) else {
+    fail("MOON_HOME and HOME must be set")
+  }
+  assert_eq(moon_home, "\{home}/.moon_dev")
+  let moonc = require_development_tool(moon_home, "moonc")
+  let moon = require_development_tool(moon_home, "moon")
+  require_development_tool(moon_home, "moondbg") |> ignore
+  let build_package_help = collect_text(moonc, ["build-package", "-help"])
+  assert_true(build_package_help.contains("-debug-info {none|minimal|full}"))
+  let link_core_help = collect_text(moonc, ["link-core", "-help"])
+  assert_true(link_core_help.contains("-debug-info {none|minimal|full}"))
+  let debug_help = collect_text(moon, ["debug", "--help"])
+  assert_true(debug_help.contains("moon debug [OPTIONS] <PACKAGE>"))
+  (moon, moon_home)
+}
+
+///|
+async test "development toolchain drives the MoonBit DWARF REPL closure" {
+  // The default test suite returns before reading paths or starting processes.
+  guard toolchain_acceptance_enabled() else { return }
+  let (moon, _moon_home) = require_development_toolchain()
+  let repository = @fs.realpath(".")
+  let fixture = "\{repository}/testdata/dwarf_probe"
+  assert_true(@fs.exists("\{fixture}/main/main.mbt"))
+  let process = @pty_testkit.PtyProcess::spawn_debug(moon, fixture)
+  defer process.close()
+  assert_eq(process.status(), 0)
+  guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
+    process.wait(timeout_ms=100) |> ignore
+    fail("moon debug did not open a prompt (PTY status \{process.status()})")
+  }
+  assert_true(process.write(b"break main/main.mbt:4\r"))
+  assert_true(process.expect(b"Breakpoint 1 pending at main/main.mbt:4"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"Breakpoint 1 verified at", timeout_ms=20000))
+  assert_true(process.expect(b"Stopped (breakpoint", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"print answer\r"))
+  assert_true(process.expect(b"answer: int = 42", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"next\r"))
+  assert_true(process.expect(b"Stopped (step over)", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"list\r"))
+  assert_true(process.expect(b"MOONDBG_BREAKPOINT", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"quit\r"))
+  assert_true(process.expect(b"Debugger exited."))
+  assert_true(process.wait(timeout_ms=10000))
+}

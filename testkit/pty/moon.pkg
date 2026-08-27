@@ -1,0 +1,15 @@
+supported_targets = "+native"
+
+import {
+  "moonbitlang/core/encoding/utf8",
+}
+
+options(
+  "native-stub": [ "pty.c" ],
+  link: {
+    "native": {
+      "stub-cc": "cc",
+      "stub-cc-flags": "-std=c11 -Wall -Wextra -Werror -Wpedantic",
+    },
+  },
+)

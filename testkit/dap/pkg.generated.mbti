@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/testkit/dap"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+pub(all) suberror ScriptedTransportError {
+  ScriptedTransportFailure(String)
+} derive(@debug.Debug)
+pub fn ScriptedTransportError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) enum ScriptedInput {
+  ScriptedMessage(Json)
+  ScriptedClosed
+  ScriptedFailure(String)
+}
+
+pub struct ScriptedTransport {
+  // private fields
+}
+pub fn ScriptedTransport::as_transport(Self) -> &@Kaida-Amethyst/moondbg/dap.DapTransport
+pub fn ScriptedTransport::is_closed(Self) -> Bool
+pub fn ScriptedTransport::new(Array[ScriptedInput]) -> Self
+pub fn ScriptedTransport::remaining_inputs(Self) -> Int
+pub fn ScriptedTransport::sent_messages(Self) -> Array[Json]
+
+// Type aliases
+
+// Traits

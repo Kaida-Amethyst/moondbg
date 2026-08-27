@@ -7,4 +7,8 @@ import {
   "moonbitlang/core/string",
 }
 
+import {
+  "Kaida-Amethyst/moondbg/testkit/dap" @dap_testkit,
+} for "wbtest"
+
 supported_targets = "+native"

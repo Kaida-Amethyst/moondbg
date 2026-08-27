@@ -54,8 +54,9 @@ fn DapInbox::route(
 
 ///|
 pub struct DapDispatcher {
-  priv transport : DapTransport
+  priv transport : &DapTransport
   priv inbox : DapInbox
+  priv mut next_seq : Int
 }
 
 ///|
@@ -63,7 +64,16 @@ pub async fn[X] DapDispatcher::start(
   group : @async.TaskGroup[X],
   adapter : String,
 ) -> DapDispatcher {
-  { transport: DapTransport::start(group, adapter), inbox: DapInbox::new(), }
+  DapDispatcher::from_transport(ProcessDapTransport::start(group, adapter))
+}
+
+///|
+/// Creates a dispatcher over a complete-message transport. This is the
+/// composition seam used by embedders and deterministic in-memory tests.
+pub fn DapDispatcher::from_transport(
+  transport : &DapTransport,
+) -> DapDispatcher {
+  { transport, inbox: DapInbox::new(), next_seq: 1, }
 }
 
 ///|
@@ -72,7 +82,10 @@ pub async fn DapDispatcher::send_request(
   command : String,
   arguments : Json,
 ) -> Int {
-  self.transport.send_request(command, arguments)
+  let seq = self.next_seq
+  self.next_seq = seq + 1
+  self.transport.send_message(request_message(seq, { command, arguments, }))
+  seq
 }
 
 ///|
@@ -84,14 +97,14 @@ pub async fn DapDispatcher::next_for_request(
     Some(response) => return Matched(response)
     None => ()
   }
-  let incoming = classify_message(self.transport.receive())
+  let incoming = classify_message(self.transport.receive_message())
   guard incoming.seq() >= 0 else { raise InvalidSequence(incoming.seq()) }
   self.inbox.route(incoming, request_seq)
 }
 
 ///|
 pub async fn DapDispatcher::next(self : DapDispatcher) -> RoutedMessage {
-  let incoming = classify_message(self.transport.receive())
+  let incoming = classify_message(self.transport.receive_message())
   guard incoming.seq() >= 0 else { raise InvalidSequence(incoming.seq()) }
   self.inbox.route(incoming, -1)
 }

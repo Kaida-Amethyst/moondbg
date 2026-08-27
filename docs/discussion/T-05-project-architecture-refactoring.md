@@ -235,11 +235,11 @@ readline 编辑期间的真正异步消息将来可以通过 event sink 进入 f
 架构重构完成后，再单独迁移为 D6 确认的 MoonBit-first 分层测试体系；测试迁移不与本轮
 package、backend、session 和 REPL 重组交叉进行。
 
-## P1-P8 实施结果
+## P1-P9 实施结果
 
-截至 2026-08-27，P1 至 P8 已完成并经过逐阶段 review；项目架构重构已经封口。P9 的
-MoonBit-first 测试体系迁移仍待单独实施，现有 Python fake adapter、PTY E2E 和 capability
-probe 继续作为等价迁移基线保留。
+截至 2026-08-27，P1 至 P9 已完成；项目架构重构及 MoonBit-first 测试体系迁移均已封口。
+P9 没有把项目改成 MoonBit-only：Python fake E2E 与 capability probe 仍作为显式诊断基线
+保留，但默认 `moon test` 已不再依赖它们。
 
 最终 package 依赖方向为：
 
@@ -291,11 +291,51 @@ migration bridge、compat 分支、被替代旧文件和空初始化脚手架；
   到第 45 行，`print x` 得到 `x: int = 3`，`list` 正常显示高亮源码，`quit` 正常退出；
 - `git diff --check` 与 `git fsck --full` 通过；工作区只有本阶段待 review 的预期变更。
 
+### P9 MoonBit-first 测试体系
+
+P9 在 `dap` 建立了可注入的 `DapTransport` port。生产 `ProcessDapTransport` 与
+`testkit/dap` 的进程内 `ScriptedTransport` 实现同一个 contract；sequence 和完整 request
+构造归 `DapDispatcher` 所有。scripted dispatcher 测试覆盖连续 seq、完整 request、乱序
+response 缓冲、response 之前的 event、adapter request、非法 seq、重复 response、EOF、
+transport error 和 close。测试 seam 是有意义的 DAP transport 边界；fake 本身只位于
+`testkit`，没有进入 debugger core 或 lldb backend 的产品 API。
+
+`lldb_dap` 原来跨 Python fake adapter 的 async 测试已经迁移为进程内 scripted DAP 会话，
+覆盖 initialize → launch → setBreakpoints → configurationDone → stop → stack/scopes/variables
+→ next/step/finish → disconnect 的完整顺序，同时检查稳定 breakpoint ID、stop epoch、变量
+cache 失效、debuggee output filtering，以及 preparation/launch failure 后用全新 execution
+恢复。dispatcher factory 只作为 `lldb_dap` whitebox 私有 seam，不出现在公共 `.mbti`。
+
+新增 `testkit/pty`：MoonBit 负责断言与驱动，极小 native C stub 只负责 PTY、子进程和 PID
+清理。测试重新执行当前 MoonBit test binary，实际进入 `run_repl` 和 readline，并让该二进制
+的非 TTY 角色充当阻塞 adapter；因此默认测试无需 Python 或 lldb-dap，仍能覆盖提示符立即
+出现、本地 help 不等待 adapter、quit/exit、Ctrl-C 重绘、Ctrl-D/EOF 和 adapter 子进程
+清理。独立 `acceptance` whitebox suite 受 `MOONDBG_TOOLCHAIN_ACCEPTANCE=1` 控制；默认在
+读取路径或探测能力之前返回，显式开启后检查开发工具链接和 capability，并在
+`testdata/dwarf_probe` 实际完成 breakpoint/run/print/next/list/quit 的 MoonBit DWARF 闭环。
+
+完整分层、运行命令和 coverage matrix 记录在 [`docs/testing.md`](../testing.md)。Python
+`tools/repl_e2e.py` 与 `tools/fake_dap.py` 没有被默认 MoonBit package 引用；它们暂时保留，
+因为仍额外覆盖独立 fake 进程 trace、running/continue failure、真实 wall-clock timeout、
+异常退出和进程组资源回收。`tools/dap_capability_probe.py` 是真实 adapter 原始协议诊断工具，
+也不机械删除。
+
+P9 最终验收结果为：
+
+- `moon info && moon fmt`、`moon check` 和默认 `moon test` 通过，共 115 项测试；
+- 在 PATH 前置失败版 `moon`、`moondbg`、`python`、`python3`、`lldb-dap`，并关闭 acceptance
+  的隔离环境中，默认 115 项仍全部通过；
+- MoonBit+C PTY suite 5 项通过；显式 toolchain acceptance 1 项通过；
+- 保留的 Python fake-only 与 real-only E2E 均通过，作为跨进程对照基线；
+- P9 新增的公开边界只包括 `DapTransport` contract 和从 transport 组装 dispatcher 的入口，
+  core、`lldb_dap` 与 `repl` 的公共领域 API 没有重新暴露 DAP 临时状态；
+- `git diff --check` 与 `git fsck --full` 通过，工作区只有 P9 待 review 的预期变更。
+
 ## 已确认任务划分
 
-以下任务划分已经用户确认。P1 至 P8 完成本次架构重构，P9 在架构完成后单独迁移测试
-体系。每个阶段完成后都暂停 review，并保持 `moon check`、MoonBit 测试和已有 Python fake
-REPL 端到端回归通过；不采用先删除旧实现、最后再恢复功能的 big-bang rewrite。
+以下任务划分已经用户确认并全部完成。P1 至 P8 完成项目架构重构，P9 在架构完成后单独
+迁移测试体系。各阶段均逐步 review，并保持 `moon check`、MoonBit 测试和已有 Python fake
+REPL 端到端回归通过；没有采用先删除旧实现、最后再恢复功能的 big-bang rewrite。
 
 ### P1. 建立 core port 与迁移桥
 
@@ -385,15 +425,15 @@ output、process exit 和 user error 收敛为可渲染事件。human renderer �
 
 ### P9. 迁移 MoonBit-first 测试体系
 
-**实施状态：待实施。**
+**实施状态：已完成。**
 
-在 P8 完成后，按 D6 将 session、command 和 DAP 行为下沉到纯 MoonBit fake backend、内存
-client/transport 和结构化结果测试；使用 MoonBit 测试代码配合极小 native C PTY stub
+在 P8 完成后，已按 D6 将 session、command 和 DAP 行为下沉到纯 MoonBit fake backend、
+内存 client/transport 和结构化结果测试；使用 MoonBit 测试代码配合极小 native C PTY stub
 覆盖真实 readline 交互，并把真实 `moon debug main` 保留为独立 capability-gated acceptance
 suite。
 
-迁移期间 Python E2E 继续作为行为基线。只有等价场景已被新测试覆盖后，才删除对应 Python
-fake adapter 或 E2E 驱动；开发诊断脚本不因测试迁移而被机械删除。
+Python E2E 在迁移期间作为行为基线，并继续保留其尚未被进程内层取代的跨进程诊断场景；
+默认 `moon test` 不调用 Python。开发诊断脚本没有因测试迁移而被机械删除。
 
 ## 已确认决策
 
