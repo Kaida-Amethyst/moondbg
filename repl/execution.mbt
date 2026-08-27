@@ -24,7 +24,14 @@ fn append_execution_outcome(
   outcome : @moondbg.RunOutcome,
 ) -> Unit {
   match outcome {
-    @moondbg.Stopped(snapshot) => events.push(StopPresentation(snapshot))
+    @moondbg.Stopped(snapshot) => {
+      events.push(StopPresentation(snapshot))
+      events.push(
+        SourceViewPresentation(
+          SourceView::from_stop(snapshot, line_count=DEFAULT_SOURCE_LINE_COUNT),
+        ),
+      )
+    }
     @moondbg.Exited(exit_code) =>
       events.push(ProcessExitPresentation(exit_code))
   }

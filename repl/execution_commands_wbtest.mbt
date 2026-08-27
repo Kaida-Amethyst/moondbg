@@ -158,11 +158,14 @@ async fn execute_stopped_command(
 ///|
 fn assert_stopped_command_result(result : CommandResult) -> Unit raise {
   assert_true(result.control is ContinueRepl)
-  assert_true(result.legacy_action is None)
-  guard result.events is [StopPresentation(snapshot)] else {
-    fail("expected one semantic stop event")
+  guard result.events
+    is [StopPresentation(snapshot), SourceViewPresentation(source_view)] else {
+    fail("expected independent stop and source-view events")
   }
   assert_eq(snapshot.reason(), "test-stop")
+  assert_eq(source_view.source_path, Some("/tmp/test.mbt"))
+  assert_eq(source_view.line, Some(4))
+  assert_eq(source_view.line_count, DEFAULT_SOURCE_LINE_COUNT)
 }
 
 ///|
@@ -224,7 +227,6 @@ async test "P6 break and b call the session and return pending events" {
     fail("break should return its pending breakpoint event")
   }
   assert_eq(source, "repl/main.mbt")
-  assert_true(first.legacy_action is None)
   let second = execute_framework_command(context, "b repl/main.mbt:7")
   guard second.events is [BreakpointPendingPresentation(2, _, 7)] else {
     fail("b should use the same breakpoint command factory")
@@ -286,12 +288,12 @@ async test "P6 run and r call launch and preserve ordered events" {
   backend.output.push(@moondbg.DebugOutput::standard_output("program-output"))
   let first = execute_framework_command(context, "run")
   assert_eq(backend.launches, 1)
-  assert_true(first.legacy_action is None)
   guard first.events
     is [
       DebuggeeOutputPresentation(output),
       BreakpointUpdatePresentation(breakpoint),
       StopPresentation(snapshot),
+      SourceViewPresentation(source_view),
     ] else {
     fail("run should return output, breakpoint update and stop in order")
   }
@@ -299,6 +301,7 @@ async test "P6 run and r call launch and preserve ordered events" {
   assert_eq(item.text(), "program-output")
   assert_true(breakpoint.status() is @moondbg.Verified)
   assert_eq(snapshot.reason(), "test-stop")
+  assert_eq(source_view.line_count, DEFAULT_SOURCE_LINE_COUNT)
   let restarted = execute_framework_command(context, "r")
   assert_eq(backend.launches, 2)
   guard restarted.events
@@ -306,6 +309,7 @@ async test "P6 run and r call launch and preserve ordered events" {
       ProgramRestartingPresentation,
       BreakpointUpdatePresentation(_),
       StopPresentation(_),
+      SourceViewPresentation(_),
     ] else {
     fail("r should return restart, breakpoint update and stop in order")
   }
@@ -316,7 +320,6 @@ async test "P6 continue and c call the session and return process exit" {
   let (full_backend, full) = execute_stopped_command("continue")
   assert_eq(full_backend.continues, 1)
   assert_true(full.events is [ProcessExitPresentation(Some(0))])
-  assert_true(full.legacy_action is None)
   let (alias_backend, command_alias) = execute_stopped_command("c")
   assert_eq(alias_backend.continues, 1)
   assert_true(command_alias.events is [ProcessExitPresentation(Some(0))])

@@ -115,8 +115,8 @@ fn default_command_registry() -> CommandRegistry raise CommandRegistryError {
     next_command_spec(),
     step_command_spec(),
     finish_command_spec(),
-    legacy_print_command_spec(),
-    legacy_list_command_spec(),
+    print_command_spec(),
+    list_command_spec(),
     help_command_spec(),
     quit_command_spec(),
   ])

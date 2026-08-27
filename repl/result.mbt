@@ -5,6 +5,9 @@ priv enum ReplControlFlow {
 }
 
 ///|
+const DEFAULT_SOURCE_LINE_COUNT : Int = 5
+
+///|
 priv struct CommandHelpEntry {
   name : String
   aliases : Array[String]
@@ -35,9 +38,30 @@ priv enum PresentationEvent {
   BreakpointUpdatePresentation(@moondbg.BreakpointSnapshot)
   BreakpointErrorPresentation(BreakpointCommandError)
   StopPresentation(@moondbg.StopSnapshot)
+  SourceViewPresentation(SourceView)
+  VariablePresentation(@moondbg.VariableSnapshot)
+  VariableNotFoundPresentation(String)
+  NoStoppedSourcePresentation
   ProcessExitPresentation(Int?)
   OperationNotAllowedPresentation(@moondbg.DebugSessionState, String)
   AdapterFailurePresentation(String)
+}
+
+///|
+/// A renderer-independent request for source context around one line. Source
+/// loading and MoonBit highlighting remain presentation responsibilities.
+priv struct SourceView {
+  source_path : String?
+  line : Int?
+  line_count : Int
+}
+
+///|
+fn SourceView::from_stop(
+  snapshot : @moondbg.StopSnapshot,
+  line_count~ : Int,
+) -> SourceView {
+  { source_path: snapshot.source_path(), line: snapshot.line(), line_count, }
 }
 
 ///|
@@ -52,29 +76,22 @@ priv enum BreakpointCommandError {
 }
 
 ///|
-/// Result returned by every command. LegacyAction is a temporary bridge which
-/// P6/P7 remove as commands gain their own structured events.
+/// Result returned by every command.
 priv struct CommandResult {
   control : ReplControlFlow
   events : Array[PresentationEvent]
-  legacy_action : LegacyAction?
 }
 
 ///|
 fn CommandResult::continuing(
   events? : Array[PresentationEvent] = [],
 ) -> CommandResult {
-  { control: ContinueRepl, events, legacy_action: None, }
+  { control: ContinueRepl, events, }
 }
 
 ///|
 fn CommandResult::exiting() -> CommandResult {
-  { control: ExitRepl, events: [], legacy_action: None, }
-}
-
-///|
-fn CommandResult::legacy(action : LegacyAction) -> CommandResult {
-  { control: ContinueRepl, events: [], legacy_action: Some(action), }
+  { control: ExitRepl, events: [], }
 }
 
 ///|

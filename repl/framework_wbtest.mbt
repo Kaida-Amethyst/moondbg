@@ -147,7 +147,7 @@ test "P5 registry lookup resolves fixed aliases to their canonical specs" {
 }
 
 ///|
-test "P5 registry resolves every legacy alias through command specs" {
+test "P7 registry resolves every fixed alias through command specs" {
   let registry = default_command_registry()
   for
     entry in [
@@ -199,7 +199,6 @@ async test "P5 help command returns structured registry help" {
   let context = framework_test_context()
   let result = execute_framework_command(context, "help")
   assert_true(result.control is ContinueRepl)
-  assert_true(result.legacy_action is None)
   guard result.events is [HelpPresentation(entries)] else {
     fail("help should return one structured presentation event")
   }
@@ -225,7 +224,6 @@ async test "P5 quit and exit accept leading whitespace and ignored arguments" {
     let result = execute_framework_command(context, command)
     assert_true(result.control is ExitRepl, msg=command)
     assert_eq(result.events.length(), 0)
-    assert_true(result.legacy_action is None)
   }
 }
 
@@ -248,67 +246,7 @@ test "P5 quit and exit require exact lowercase command words" {
 }
 
 ///|
-async test "P6 legacy bridge only retains print and list actions" {
-  let context = framework_test_context()
-  assert_true(
-    execute_framework_command(context, "p answer").legacy_action
-    is Some(LegacyPrintVariable("answer")),
-  )
-  assert_true(
-    execute_framework_command(context, "list --count 12").legacy_action
-    is Some(LegacyList(12)),
-  )
-}
-
-///|
-async test "P5 legacy list retains default and LLDB count options" {
-  let context = framework_test_context()
-  assert_true(
-    execute_framework_command(context, "list").legacy_action
-    is Some(LegacyList(5)),
-  )
-  assert_true(
-    execute_framework_command(context, " list -c 10\t").legacy_action
-    is Some(LegacyList(10)),
-  )
-  assert_true(
-    execute_framework_command(context, "list --count\t12").legacy_action
-    is Some(LegacyList(12)),
-  )
-}
-
-///|
-async test "P5 legacy variable parser retains simple names" {
-  let context = framework_test_context()
-  assert_true(
-    execute_framework_command(context, "print answer").legacy_action
-    is Some(LegacyPrintVariable("answer")),
-  )
-  assert_true(
-    execute_framework_command(context, "p input").legacy_action
-    is Some(LegacyPrintVariable("input")),
-  )
-  assert_true(
-    execute_framework_command(context, "p 结果").legacy_action
-    is Some(LegacyPrintVariable("结果")),
-  )
-}
-
-///|
-test "P6 remaining legacy factories retain local validation" {
-  let registry = default_command_registry()
-  let commands = [
-    "p", "print", "p point.x", "p items[3]", "p answer + 1", "p 42", "list -c", "list --count",
-    "list -c 0", "list -c -1", "list -c ten", "list -c 10 more", "list 10", "list --lines 10",
-    "list around",
-  ]
-  for command in commands {
-    assert_true(registry.parse_line(command) is RegistryInvalid(_), msg=command)
-  }
-}
-
-///|
-test "P5 legacy command-like prefixes remain unknown" {
+test "P7 command-like prefixes remain unknown" {
   let registry = default_command_registry()
   for command in ["f", "nexted", "stepping", "finished"] {
     assert_true(registry.parse_line(command) is RegistryUnknown, msg=command)

@@ -22,10 +22,6 @@ async fn apply_command_result(
   result : CommandResult,
 ) -> ReplControlFlow {
   context.render(result.events)
-  match result.legacy_action {
-    Some(action) => execute_legacy_action(context, action)
-    None => ()
-  }
   result.control
 }
 

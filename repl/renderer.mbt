@@ -1,7 +1,4 @@
 ///|
-const DEFAULT_SOURCE_LINE_COUNT : Int = 5
-
-///|
 priv struct HumanRenderer {}
 
 ///|
@@ -110,12 +107,8 @@ fn source_window(
 }
 
 ///|
-async fn render_source_context(
-  snapshot : @moondbg.StopSnapshot,
-  line_count? : Int = DEFAULT_SOURCE_LINE_COUNT,
-) -> Unit {
-  guard (snapshot.source_path(), snapshot.line())
-    is (Some(source_path), Some(line)) else {
+async fn render_source_view(view : SourceView) -> Unit {
+  guard (view.source_path, view.line) is (Some(source_path), Some(line)) else {
     println(
       "Source unavailable: lldb-dap did not provide a local source path and line.",
     )
@@ -137,7 +130,11 @@ async fn render_source_context(
     )
     return
   }
-  let (first_line, last_line) = source_window(line, lines.length(), line_count~)
+  let (first_line, last_line) = source_window(
+    line,
+    lines.length(),
+    line_count=view.line_count,
+  )
   let width = last_line.to_string().length()
   for source_line in first_line..<=last_line {
     let number = source_line.to_string()
@@ -148,14 +145,19 @@ async fn render_source_context(
 }
 
 ///|
-async fn render_stop_snapshot(
-  snapshot : @moondbg.StopSnapshot,
-  line_count? : Int = DEFAULT_SOURCE_LINE_COUNT,
-) -> Unit {
+fn render_stop_header(snapshot : @moondbg.StopSnapshot) -> Unit {
   println(
     "Stopped (\{snapshot.reason()}) in \{snapshot.function_name()} at \{stop_location(snapshot)}",
   )
-  render_source_context(snapshot, line_count~)
+}
+
+///|
+fn render_variable(variable : @moondbg.VariableSnapshot) -> Unit {
+  match variable.type_name() {
+    Some(type_name) =>
+      println("\{variable.name()}: \{type_name} = \{variable.value()}")
+    None => println("\{variable.name()} = \{variable.value()}")
+  }
 }
 
 ///|
@@ -195,7 +197,13 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
     BreakpointUpdatePresentation(breakpoint) =>
       render_breakpoint_update(breakpoint)
     BreakpointErrorPresentation(error) => render_breakpoint_error(error)
-    StopPresentation(snapshot) => render_stop_snapshot(snapshot)
+    StopPresentation(snapshot) => render_stop_header(snapshot)
+    SourceViewPresentation(view) => render_source_view(view)
+    VariablePresentation(variable) => render_variable(variable)
+    VariableNotFoundPresentation(name) =>
+      println("Variable '\{name}' was not found in the current frame.")
+    NoStoppedSourcePresentation =>
+      println("No stopped source location is available.")
     ProcessExitPresentation(exit_code) => render_process_exit(exit_code)
     OperationNotAllowedPresentation(state, action) =>
       println(
