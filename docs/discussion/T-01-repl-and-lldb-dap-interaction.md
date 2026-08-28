@@ -13,6 +13,7 @@
 ## 关联问题
 
 - [Q-03. Struct 变量的递归打印](Q-03-struct-variable-printing.md) 〔待讨论〕
+- [Q-04. FixedArray 值的有界打印](Q-04-fixed-array-printing.md) 〔已解决〕
 
 ## 当前建议与分析
 
