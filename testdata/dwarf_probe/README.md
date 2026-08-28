@@ -7,7 +7,8 @@
 - 跨包普通函数 `@probe.increment`；
 - 分别单态化为 `Int`、`String` 的泛型函数 `@probe.identity`；
 - 不存在函数的 rejected 结果；
-- stopped 状态动态添加与下一 execution 重放。
+- stopped 状态动态添加与下一 execution 重放；
+- `point` 包中 `Point` 和嵌套 `Line` 的 struct 变量打印。
 
 ## 使用完整调试信息构建
 
@@ -58,7 +59,7 @@ moon debug --dry-run main
 
 ## 运行原始 DAP 探针
 
-回到 moondbg 仓库根目录后，可以用两个互补的探针直接连接真实 lldb-dap：
+回到 moondbg 仓库根目录后，可以用三个互补的探针直接连接真实 lldb-dap：
 
 ```sh
 python3 tools/dap_capability_probe.py \
@@ -68,11 +69,27 @@ python3 tools/dap_capability_probe.py \
 
 PYTHONDONTWRITEBYTECODE=1 \
   python3 tools/dynamic_breakpoint_probe.py
+
+PYTHONDONTWRITEBYTECODE=1 \
+  python3 tools/struct_variable_probe.py
 ```
 
 第一个探针验证源码断点、stopped frame 与基础 DAP 生命周期；第二个探针固定 stopped 状态
 下源码/精确函数完整集合、function-family 增量命令、重复 family、零 location、请求拒绝和
-随后命中的协议语义。两者只有在全部断言通过时才以状态码 0 退出。
+随后命中的协议语义；第三个探针验证 `Point` 一层字段和 `Line` 两层字段的
+递归 DAP 形状。三者只有在全部断言通过时才以状态码 0 退出。
+
+struct REPL 闭环可以通过以下命令人工验证：
+
+```text
+moon debug point
+(moondbg) b distance
+(moondbg) b is_parallel
+(moondbg) run
+(moondbg) p p1
+(moondbg) continue
+(moondbg) p line1
+```
 
 ## 2026-08-28 验收结果
 
@@ -86,6 +103,7 @@ PYTHONDONTWRITEBYTECODE=1 \
 | 泛型 function family | `@probe.identity` 为 2 locations，依次命中 `Int`、`String` |
 | 不存在函数 | `missing` 立即 rejected，逻辑配置保留 |
 | 跨 execution 重放 | 编号 1..6 保持，identity 仍为 2 locations，无重复 family |
+| struct 变量 | `Point` 展开为 `x`/`y`，`Line` 递归展开 `start`/`end` |
 
 ## 运行 REPL 端到端验收
 
@@ -97,5 +115,5 @@ set_moon_dev
 python3 tools/repl_e2e.py
 ```
 
-真实链路覆盖上述动态断点和重放闭环；fake adapter 链路另外覆盖请求顺序、动态安装期间
-adapter 退出后的配置保留/恢复、初始化超时、终端控制和进程组清理。
+真实链路覆盖上述动态断点、重放和 struct 打印闭环；fake adapter 链路另外覆盖请求顺序、
+动态安装期间 adapter 退出后的配置保留/恢复、初始化超时、终端控制和进程组清理。

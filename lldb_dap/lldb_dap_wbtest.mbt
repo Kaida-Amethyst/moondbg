@@ -302,6 +302,149 @@ fn stopped_execution_script(
 }
 
 ///|
+fn struct_variable_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(1300, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+    }),
+    scripted_event(1301, "initialized", {}),
+    scripted_response(1302, 3, "configurationDone", {}),
+    scripted_response(1303, 2, "launch", {}),
+    scripted_event(1304, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1305, 4, "stackTrace", scripted_stack_body(70, 20)),
+    scripted_response(1306, 5, "scopes", {
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 100,
+        },
+      ],
+    }),
+    scripted_response(1307, 6, "variables", {
+      "variables": [
+        {
+          "name": "line1",
+          "type": "example/geometry/Line &",
+          "value": "0x1000",
+          "variablesReference": 101,
+        },
+        {
+          "name": "arr",
+          "type": "moonbit.array_i32",
+          "value": "moonbit.array_i32 @ 0x2000",
+          "variablesReference": 102,
+        },
+        {
+          "name": "choice",
+          "type": "example/geometry/Choice &",
+          "value": "0x3000",
+          "variablesReference": 103,
+        },
+      ],
+    }),
+    scripted_response(1308, 7, "variables", {
+      "variables": [
+        {
+          "name": "start",
+          "type": "example/geometry/Point &",
+          "value": "0x1100",
+          "variablesReference": 111,
+        },
+        {
+          "name": "end",
+          "type": "example/geometry/Point &",
+          "value": "0x1200",
+          "variablesReference": 112,
+        },
+      ],
+    }),
+    scripted_response(1309, 8, "variables", {
+      "variables": [
+        { "name": "x", "type": "double", "value": "1", "variablesReference": 0 },
+        { "name": "y", "type": "double", "value": "2", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(1310, 9, "variables", {
+      "variables": [
+        { "name": "x", "type": "double", "value": "4", "variablesReference": 0 },
+        { "name": "y", "type": "double", "value": "6", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(1311, 10, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "0",
+          "variablesReference": 0,
+        },
+        {
+          "name": "Some",
+          "type": "example/geometry/Choice.Some *",
+          "value": "0x3000",
+          "variablesReference": 113,
+        },
+      ],
+    }),
+  ]
+}
+
+///|
+fn truncated_struct_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(1400, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+    }),
+    scripted_event(1401, "initialized", {}),
+    scripted_response(1402, 3, "configurationDone", {}),
+    scripted_response(1403, 2, "launch", {}),
+    scripted_event(1404, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1405, 4, "stackTrace", scripted_stack_body(80, 20)),
+    scripted_response(1406, 5, "variables", {
+      "variables": [
+        {
+          "name": "start",
+          "type": "example/geometry/Point &",
+          "value": "0x1100",
+          "variablesReference": 111,
+        },
+        {
+          "name": "end",
+          "type": "example/geometry/Point &",
+          "value": "0x1200",
+          "variablesReference": 112,
+        },
+      ],
+    }),
+  ]
+}
+
+///|
+fn cyclic_struct_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(1500, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+    }),
+    scripted_event(1501, "initialized", {}),
+    scripted_response(1502, 3, "configurationDone", {}),
+    scripted_response(1503, 2, "launch", {}),
+    scripted_event(1504, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1505, 4, "stackTrace", scripted_stack_body(90, 20)),
+    scripted_response(1506, 5, "variables", {
+      "variables": [
+        {
+          "name": "next",
+          "type": "example/Node &",
+          "value": "0x1000",
+          "variablesReference": 101,
+        },
+      ],
+    }),
+  ]
+}
+
+///|
 fn sent_command(message : Json) -> String? {
   match message {
     { "command": String(command), .. } => Some(command)
@@ -1119,6 +1262,160 @@ test "lldb-dap variable caches are isolated by stop epoch" {
   assert_true(cache.cached_scopes(2) is None)
   cache.store_variables(1, 1, variables)
   assert_true(cache.cached_variables(2, 1) is None)
+}
+
+///|
+async test "lldb-dap materializes nested structs and leaves other aggregates opaque" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      struct_variable_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/struct-program", backend)
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted struct execution should stop")
+    }
+    guard session.find_variable("line1") is @moondbg.VariableFound(line) &&
+      line.expansion() is @moondbg.VariableExpanded &&
+      line.children() is [start, end] &&
+      start.expansion() is @moondbg.VariableExpanded &&
+      start.children() is [start_x, start_y] &&
+      end.expansion() is @moondbg.VariableExpanded &&
+      end.children() is [end_x, end_y] else {
+      fail("line1 should be materialized through both nested points")
+    }
+    assert_eq(start.name(), "start")
+    assert_eq(start_x.value(), "1")
+    assert_eq(start_y.value(), "2")
+    assert_eq(end.name(), "end")
+    assert_eq(end_x.value(), "4")
+    assert_eq(end_y.value(), "6")
+    guard session.find_variable("line1") is @moondbg.VariableFound(cached) else {
+      fail("line1 should remain available from the stop cache")
+    }
+    assert_eq(cached, line)
+    guard session.find_variable("arr") is @moondbg.VariableFound(array) else {
+      fail("array root should remain printable")
+    }
+    assert_true(array.expansion() is @moondbg.VariableLeaf)
+    assert_eq(array.value(), "moonbit.array_i32 @ 0x2000")
+    guard session.find_variable("choice") is @moondbg.VariableFound(choice) else {
+      fail("boxed enum root should remain printable")
+    }
+    assert_true(choice.expansion() is @moondbg.VariableLeaf)
+    assert_eq(choice.value(), "0x3000")
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "variables", "variables", "variables",
+    ])
+  })
+}
+
+///|
+async test "lldb-dap variable materialization obeys depth and node budgets" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      truncated_struct_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/truncated-program", backend)
+    defer session.close()
+    session.run() |> ignore
+    guard backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("scripted execution should retain one stop epoch")
+    }
+    let line = DapVariable::{
+      name: "line1",
+      value: "0x1000",
+      type_name: Some("example/geometry/Line &"),
+      variables_reference: 101,
+    }
+    let snapshot = execution.materialize_variable_with_limits(epoch, line, 8, 2)
+    guard snapshot.expansion() is @moondbg.VariableTruncated &&
+      snapshot.children() is [start] &&
+      start.expansion() is @moondbg.VariableTruncated &&
+      start.children() is [] else {
+      fail(
+        "node budget should preserve materialized children and mark truncation",
+      )
+    }
+    assert_eq(start.name(), "start")
+    let depth_limited = execution.materialize_variable_with_limits(
+      epoch, line, 0, 10,
+    )
+    assert_true(
+      depth_limited.expansion() is @moondbg.VariableTruncated &&
+      depth_limited.children() is [],
+    )
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "variables",
+    ])
+  })
+}
+
+///|
+async test "lldb-dap variable materialization truncates recursive references" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(cyclic_struct_script())
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/cyclic-program", backend)
+    defer session.close()
+    session.run() |> ignore
+    guard backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("scripted execution should retain one stop epoch")
+    }
+    let node = DapVariable::{
+      name: "node",
+      value: "0x1000",
+      type_name: Some("example/Node &"),
+      variables_reference: 101,
+    }
+    let snapshot = execution.materialize_variable_with_limits(
+      epoch, node, 8, 10,
+    )
+    guard snapshot.expansion() is @moondbg.VariableExpanded &&
+      snapshot.children() is [next] &&
+      next.expansion() is @moondbg.VariableTruncated &&
+      next.children() is [] else {
+      fail("recursive reference should stop at the active DAP reference")
+    }
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "variables",
+    ])
+  })
 }
 
 ///|

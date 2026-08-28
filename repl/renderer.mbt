@@ -179,11 +179,81 @@ fn render_stop_header(snapshot : @moondbg.StopSnapshot) -> Unit {
 }
 
 ///|
-fn render_variable(variable : @moondbg.VariableSnapshot) -> Unit {
+fn moonbit_variable_type_name(type_name : StringView) -> String {
+  match type_name {
+    "bool" => "Bool"
+    "float" => "Float"
+    "double" => "Double"
+    "int32_t" => "Int"
+    "uint32_t" => "UInt"
+    "int64_t" => "Int64"
+    "uint64_t" => "UInt64"
+    _ =>
+      match type_name.strip_suffix(" &") {
+        Some(base) =>
+          match base.rev_split_once("/") {
+            Some((package_name, source_name)) if package_name != "" &&
+              source_name != "" => source_name.to_owned()
+            _ => type_name.to_owned()
+          }
+        None => type_name.to_owned()
+      }
+  }
+}
+
+///|
+fn variable_label(variable : @moondbg.VariableSnapshot) -> String {
   match variable.type_name() {
     Some(type_name) =>
-      println("\{variable.name()}: \{type_name} = \{variable.value()}")
-    None => println("\{variable.name()} = \{variable.value()}")
+      "\{variable.name()}: \{moonbit_variable_type_name(type_name)}"
+    None => variable.name()
+  }
+}
+
+///|
+fn append_variable_lines(
+  lines : Array[String],
+  variable : @moondbg.VariableSnapshot,
+  indentation : Int,
+) -> Unit {
+  let prefix = " ".repeat(indentation)
+  let label = variable_label(variable)
+  let children = variable.children()
+  match variable.expansion() {
+    @moondbg.VariableLeaf =>
+      lines.push("\{prefix}\{label} = \{variable.value()}")
+    @moondbg.VariableExpanded =>
+      if children is [] {
+        lines.push("\{prefix}\{label} = {}")
+      } else {
+        lines.push("\{prefix}\{label} = {")
+        for child in children {
+          append_variable_lines(lines, child, indentation + 2)
+        }
+        lines.push("\{prefix}}")
+      }
+    @moondbg.VariableTruncated => {
+      lines.push("\{prefix}\{label} = {")
+      for child in children {
+        append_variable_lines(lines, child, indentation + 2)
+      }
+      lines.push("\{prefix}  …")
+      lines.push("\{prefix}}")
+    }
+  }
+}
+
+///|
+fn variable_lines(variable : @moondbg.VariableSnapshot) -> Array[String] {
+  let lines : Array[String] = []
+  append_variable_lines(lines, variable, 0)
+  lines
+}
+
+///|
+fn render_variable(variable : @moondbg.VariableSnapshot) -> Unit {
+  for line in variable_lines(variable) {
+    println(line)
   }
 }
 

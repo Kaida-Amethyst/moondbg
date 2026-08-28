@@ -91,7 +91,9 @@ static void moondbg_test_debug_wrapper_role(void)
 static void moondbg_test_debug_wrapper_role(void) {
   const char *moon = getenv("MOONDBG_PTY_DEBUG_MOON");
   const char *working_directory = getenv("MOONDBG_PTY_DEBUG_CWD");
-  if (moon == NULL || working_directory == NULL || !isatty(STDIN_FILENO)) {
+  const char *package_name = getenv("MOONDBG_PTY_DEBUG_PACKAGE");
+  if (moon == NULL || working_directory == NULL || package_name == NULL ||
+      !isatty(STDIN_FILENO)) {
     return;
   }
   if (setsid() < 0 || ioctl(STDIN_FILENO, TIOCSCTTY, 0) < 0 ||
@@ -104,7 +106,7 @@ static void moondbg_test_debug_wrapper_role(void) {
       "-C",
       working_directory,
       "debug",
-      "main",
+      package_name,
       (char *)NULL);
   _exit(127);
 }
@@ -291,14 +293,17 @@ int32_t moondbg_test_pty_fixture_prepare(void) {
 
 void *moondbg_test_pty_spawn_debug(
     moonbit_bytes_t executable_value,
-    moonbit_bytes_t working_directory_value) {
+    moonbit_bytes_t working_directory_value,
+    moonbit_bytes_t package_name_value) {
   struct moondbg_test_pty_process *process = moondbg_test_new_process();
   char *executable = moondbg_test_copy_string(executable_value);
   char *working_directory = moondbg_test_copy_string(working_directory_value);
+  char *package_name = moondbg_test_copy_string(package_name_value);
   char wrapper[PATH_MAX];
   if (moondbg_test_executable_path(wrapper, sizeof(wrapper)) != 0) {
     free(executable);
     free(working_directory);
+    free(package_name);
     return process;
   }
   int master_fd = -1;
@@ -306,6 +311,7 @@ void *moondbg_test_pty_spawn_debug(
   if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) != 0) {
     free(executable);
     free(working_directory);
+    free(package_name);
     return process;
   }
   posix_spawn_file_actions_t actions;
@@ -314,6 +320,7 @@ void *moondbg_test_pty_spawn_debug(
     close(master_fd);
     free(executable);
     free(working_directory);
+    free(package_name);
     return process;
   }
   int spawn_error = 0;
@@ -331,7 +338,7 @@ void *moondbg_test_pty_spawn_debug(
   while (environ[environment_count] != NULL) {
     environment_count++;
   }
-  char **environment = malloc((environment_count + 3) * sizeof(*environment));
+  char **environment = malloc((environment_count + 4) * sizeof(*environment));
   if (environment == NULL) {
     abort();
   }
@@ -344,18 +351,26 @@ void *moondbg_test_pty_spawn_debug(
         strncmp(
             environ[index],
             "MOONDBG_PTY_DEBUG_CWD=",
-            sizeof("MOONDBG_PTY_DEBUG_CWD=") - 1) != 0) {
+            sizeof("MOONDBG_PTY_DEBUG_CWD=") - 1) != 0 &&
+        strncmp(
+            environ[index],
+            "MOONDBG_PTY_DEBUG_PACKAGE=",
+            sizeof("MOONDBG_PTY_DEBUG_PACKAGE=") - 1) != 0) {
       environment[copied++] = environ[index];
     }
   }
   const char *moon_prefix = "MOONDBG_PTY_DEBUG_MOON=";
   const char *cwd_prefix = "MOONDBG_PTY_DEBUG_CWD=";
+  const char *package_prefix = "MOONDBG_PTY_DEBUG_PACKAGE=";
   const size_t moon_entry_length = strlen(moon_prefix) + strlen(executable) + 1;
   const size_t cwd_entry_length =
       strlen(cwd_prefix) + strlen(working_directory) + 1;
+  const size_t package_entry_length =
+      strlen(package_prefix) + strlen(package_name) + 1;
   char *moon_entry = malloc(moon_entry_length);
   char *cwd_entry = malloc(cwd_entry_length);
-  if (moon_entry == NULL || cwd_entry == NULL) {
+  char *package_entry = malloc(package_entry_length);
+  if (moon_entry == NULL || cwd_entry == NULL || package_entry == NULL) {
     abort();
   }
   (void)snprintf(
@@ -370,9 +385,16 @@ void *moondbg_test_pty_spawn_debug(
       "%s%s",
       cwd_prefix,
       working_directory);
+  (void)snprintf(
+      package_entry,
+      package_entry_length,
+      "%s%s",
+      package_prefix,
+      package_name);
   environment[copied] = moon_entry;
   environment[copied + 1] = cwd_entry;
-  environment[copied + 2] = NULL;
+  environment[copied + 2] = package_entry;
+  environment[copied + 3] = NULL;
   char *const arguments[] = {wrapper, NULL};
   pid_t child = -1;
   if (spawn_error == 0) {
@@ -383,9 +405,11 @@ void *moondbg_test_pty_spawn_debug(
   close(slave_fd);
   free(moon_entry);
   free(cwd_entry);
+  free(package_entry);
   free(environment);
   free(executable);
   free(working_directory);
+  free(package_name);
   if (spawn_error != 0 || child < 0) {
     close(master_fd);
     return process;

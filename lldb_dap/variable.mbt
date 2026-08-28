@@ -24,6 +24,86 @@ fn DapVariable::snapshot(self : DapVariable) -> @moondbg.VariableSnapshot {
 }
 
 ///|
+fn DapVariable::is_moonbit_struct_candidate(self : DapVariable) -> Bool {
+  guard self.variables_reference > 0 &&
+    self.type_name is Some(type_name) &&
+    type_name.strip_suffix(" &") is Some(base) &&
+    base.rev_split_once("/") is Some((package_name, struct_name)) else {
+    return false
+  }
+  package_name != "" && struct_name != ""
+}
+
+///|
+fn Array::has_moonbit_enum_marker(self : Array[DapVariable]) -> Bool {
+  self.any(fn(variable) {
+    variable.name == "__moonbit_enum_marker" &&
+    variable.type_name == Some("moonbit.enum")
+  })
+}
+
+///|
+const MAX_VARIABLE_EXPANSION_DEPTH : Int = 8
+
+///|
+const MAX_VARIABLE_EXPANSION_NODES : Int = 256
+
+///|
+priv struct VariableMaterializationBudget {
+  max_depth : Int
+  mut remaining_nodes : Int
+  visiting_references : Map[Int, Unit]
+}
+
+///|
+fn VariableMaterializationBudget::new(
+  max_depth : Int,
+  max_nodes : Int,
+) -> VariableMaterializationBudget {
+  { max_depth, remaining_nodes: max_nodes, visiting_references: Map([]), }
+}
+
+///|
+fn VariableMaterializationBudget::take_node(
+  self : VariableMaterializationBudget,
+) -> Bool {
+  guard self.remaining_nodes > 0 else { return false }
+  self.remaining_nodes -= 1
+  true
+}
+
+///|
+fn VariableMaterializationBudget::is_empty(
+  self : VariableMaterializationBudget,
+) -> Bool {
+  self.remaining_nodes <= 0
+}
+
+///|
+fn VariableMaterializationBudget::is_visiting(
+  self : VariableMaterializationBudget,
+  reference : Int,
+) -> Bool {
+  self.visiting_references.get(reference) is Some(_)
+}
+
+///|
+fn VariableMaterializationBudget::enter_reference(
+  self : VariableMaterializationBudget,
+  reference : Int,
+) -> Unit {
+  self.visiting_references.set(reference, ())
+}
+
+///|
+fn VariableMaterializationBudget::leave_reference(
+  self : VariableMaterializationBudget,
+  reference : Int,
+) -> Unit {
+  self.visiting_references.remove(reference)
+}
+
+///|
 priv struct StopVariableCache {
   mut epoch : Int
   mut scopes : Array[DapScope]?
@@ -183,6 +263,79 @@ async fn DebugExecution::load_variables(
 }
 
 ///|
+async fn DebugExecution::materialize_variable(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+  depth : Int,
+  budget : VariableMaterializationBudget,
+) -> @moondbg.VariableSnapshot {
+  guard budget.take_node() else {
+    return @moondbg.VariableSnapshot::truncated(
+      variable.name,
+      variable.value,
+      variable.type_name,
+      [],
+    )
+  }
+  guard variable.is_moonbit_struct_candidate() else {
+    return variable.snapshot()
+  }
+  guard !budget.is_empty() &&
+    depth < budget.max_depth &&
+    !budget.is_visiting(variable.variables_reference) else {
+    return @moondbg.VariableSnapshot::truncated(
+      variable.name,
+      variable.value,
+      variable.type_name,
+      [],
+    )
+  }
+  budget.enter_reference(variable.variables_reference)
+  defer budget.leave_reference(variable.variables_reference)
+  let dap_children = self.load_variables(epoch, variable.variables_reference)
+  guard !dap_children.has_moonbit_enum_marker() else {
+    return variable.snapshot()
+  }
+  let children : Array[@moondbg.VariableSnapshot] = []
+  let mut truncated = false
+  for child in dap_children {
+    if budget.is_empty() {
+      truncated = true
+      break
+    }
+    children.push(self.materialize_variable(epoch, child, depth + 1, budget))
+  }
+  if truncated {
+    @moondbg.VariableSnapshot::truncated(
+      variable.name,
+      variable.value,
+      variable.type_name,
+      children,
+    )
+  } else {
+    @moondbg.VariableSnapshot::expanded(
+      variable.name,
+      variable.value,
+      variable.type_name,
+      children,
+    )
+  }
+}
+
+///|
+async fn DebugExecution::materialize_variable_with_limits(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+  max_depth : Int,
+  max_nodes : Int,
+) -> @moondbg.VariableSnapshot {
+  let budget = VariableMaterializationBudget::new(max_depth, max_nodes)
+  self.materialize_variable(epoch, variable, 0, budget)
+}
+
+///|
 async fn DebugExecution::find_variable_inner(
   self : DebugExecution,
   epoch : Int,
@@ -194,7 +347,13 @@ async fn DebugExecution::find_variable_inner(
     guard scope.is_relevant() else { continue }
     for variable in self.load_variables(epoch, scope.variables_reference) {
       if variable.name == name {
-        return @moondbg.VariableLookupResult::found(variable.snapshot())
+        let snapshot = self.materialize_variable_with_limits(
+          epoch,
+          variable,
+          MAX_VARIABLE_EXPANSION_DEPTH,
+          MAX_VARIABLE_EXPANSION_NODES,
+        )
+        return @moondbg.VariableLookupResult::found(snapshot)
       }
     }
   }

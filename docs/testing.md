@@ -20,7 +20,7 @@ moon test
 | REPL command/presentation | 纯 MoonBit fake backend 与结构化结果断言 | parser、alias、registry、命令调用、事件顺序、human renderer 边界 |
 | DAP protocol/framing | 纯 MoonBit JSON 与字节测试 | message classification、UTF-8 framing、request/response inbox |
 | DAP dispatcher | `testkit/dap` 的进程内 scripted transport | 完整 request 与 seq、乱序 response、event、adapter request、非法/重复 response、EOF/error/close |
-| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
+| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、struct 递归物化与裁剪、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
 | readline/PTY | MoonBit 驱动与 `testkit/pty/pty.c` | 真实 `run_repl` + readline 链路、即时提示符、本地 help、quit/exit、Ctrl-C、Ctrl-D 和子进程清理 |
 | 源码渲染 | 纯 MoonBit renderer 测试 | 源码窗口、高亮、ANSI 状态和原文本保持 |
 
@@ -49,10 +49,11 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moonc build-package` 与 `moonc link-core` 支持完整 debug info；
 - `moon debug` 子命令存在。
 
-随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`，通过 PTY 完成
-运行前入口断点、stopped 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、
-跨 execution 重放和 `quit`。该层负责工具链集成、MoonBit DWARF、真实 lldb-dap 映射和
-`moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
+随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main` 和
+`moon debug point`，通过 PTY 完成运行前入口断点、stopped
+源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
+struct 一层/嵌套字段打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
+lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
 
 ## 可选 Python 诊断回归
 
@@ -83,6 +84,16 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/dynamic_breakpoint_probe.py
 
 它会直接连接真实 lldb-dap，验证源码与精确函数断点的整组替换、function-family 增量命令、
 重复 family、零 location、请求拒绝，以及动态断点随后的命中。
+
+`tools/struct_variable_probe.py` 固化 Q-03 依赖的 MoonBit struct 协议形状。先通过
+`moon debug point` 生成完整 DWARF 产物，再从仓库根目录运行：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tools/struct_variable_probe.py
+```
+
+它验证 `Point -> x/y` 和 `Line -> start/end -> x/y` 的 `variablesReference`、
+字段类型、值与递归请求。
 
 ## 变更时应运行的层
 

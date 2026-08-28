@@ -14,7 +14,7 @@ pub fn PtyProcess::adapter_started(Self, timeout_ms? : Int) -> Bool
 pub fn PtyProcess::adapter_stopped(Self, timeout_ms? : Int) -> Bool
 pub fn PtyProcess::close(Self) -> Unit
 pub fn PtyProcess::expect(Self, Bytes, timeout_ms? : Int) -> Bool
-pub fn PtyProcess::spawn_debug(String, String) -> Self
+pub fn PtyProcess::spawn_debug(String, String, package_name? : String) -> Self
 pub fn PtyProcess::spawn_self(String) -> Self
 pub fn PtyProcess::status(Self) -> Int
 pub fn PtyProcess::wait(Self, timeout_ms? : Int) -> Bool

@@ -210,6 +210,15 @@ pub fn ThreadSelection::index(Self) -> Int
 pub fn ThreadSelection::not_equal(Self, Self) -> Bool
 pub fn ThreadSelection::to_repr(Self) -> @debug.Repr
 
+pub enum VariableExpansion {
+  VariableLeaf
+  VariableExpanded
+  VariableTruncated
+} derive(Eq, @debug.Debug)
+pub fn VariableExpansion::equal(Self, Self) -> Bool
+pub fn VariableExpansion::not_equal(Self, Self) -> Bool
+pub fn VariableExpansion::to_repr(Self) -> @debug.Repr
+
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
   VariableNotFound(String)
@@ -219,9 +228,16 @@ pub fn VariableLookupResult::not_found(String) -> Self
 
 pub struct VariableSnapshot {
   // private fields
-}
+} derive(Eq, @debug.Debug)
+pub fn VariableSnapshot::children(Self) -> ReadOnlyArray[Self]
+pub fn VariableSnapshot::equal(Self, Self) -> Bool
+pub fn VariableSnapshot::expanded(String, String, String?, Array[Self]) -> Self
+pub fn VariableSnapshot::expansion(Self) -> VariableExpansion
 pub fn VariableSnapshot::name(Self) -> String
 pub fn VariableSnapshot::new(String, String, String?) -> Self
+pub fn VariableSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableSnapshot::to_repr(Self) -> @debug.Repr
+pub fn VariableSnapshot::truncated(String, String, String?, Array[Self]) -> Self
 pub fn VariableSnapshot::type_name(Self) -> String?
 pub fn VariableSnapshot::value(Self) -> String
 

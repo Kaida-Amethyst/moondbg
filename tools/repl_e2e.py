@@ -286,6 +286,57 @@ def test_moonbit_flow(
         raise ReplError(f"raw lldb process status leaked to the REPL\n\n{transcript}")
 
 
+def test_struct_flow(
+    moon: Path,
+    env: dict[str, str],
+    timeout: float,
+) -> None:
+    def drive(session: PtyProcess) -> None:
+        session.send("b distance")
+        session.expect("Breakpoint 1 pending at function distance")
+        session.expect("(moondbg) ")
+        session.send("b is_parallel")
+        session.expect("Breakpoint 2 pending at function is_parallel")
+        session.expect("(moondbg) ")
+        session.send("run")
+        session.expect("point.distance")
+        session.expect("(moondbg) ")
+
+        for _ in range(2):
+            session.send("p p1")
+            session.expect("p1: Point = {")
+            session.expect("x: Double = 1")
+            session.expect("y: Double = 2")
+            session.expect("(moondbg) ")
+
+        session.send("continue")
+        session.expect("point.is_parallel")
+        session.expect("(moondbg) ")
+        session.send("p line1")
+        session.expect("line1: Line = {")
+        session.expect("start: Point = {")
+        session.expect("x: Double = 1")
+        session.expect("y: Double = 2")
+        session.expect("end: Point = {")
+        session.expect("x: Double = 4")
+        session.expect("y: Double = 6")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    transcript = run_session(
+        [str(moon), "debug", "point"],
+        cwd=DWARF_PROBE,
+        env=env,
+        timeout=timeout,
+        drive=drive,
+    )
+    if transcript.count("p1: Point = {") != 2:
+        raise ReplError(
+            "repeated struct printing did not remain stable\n\n" + transcript
+        )
+
+
 def compile_exit_probe(directory: Path) -> Path:
     compiler = os.environ.get("CC") or shutil.which("cc")
     if not compiler:
@@ -1118,6 +1169,7 @@ def main() -> int:
                 )
             if not args.fake_only:
                 test_moonbit_flow(moon, env, args.timeout)
+                test_struct_flow(moon, env, args.timeout)
                 test_abnormal_exit(moondbg, executable, env, args.timeout)
                 test_quit(moondbg, executable, env, args.timeout)
                 test_adapter_failure(moondbg, executable, env, args.timeout)
@@ -1131,11 +1183,14 @@ def main() -> int:
             "terminal controls"
         )
     elif args.real_only:
-        print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")
+        print(
+            "repl e2e passed: MoonBit flow, struct printing, abnormal exit, "
+            "quit, adapter failure"
+        )
     else:
         print(
-            "repl e2e passed: fake adapter, MoonBit flow, abnormal exit, quit, "
-            "adapter failure"
+            "repl e2e passed: fake adapter, MoonBit flow, struct printing, "
+            "abnormal exit, quit, adapter failure"
         )
     return 0
 

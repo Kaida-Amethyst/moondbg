@@ -127,3 +127,58 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   assert_true(process.expect(b"Debugger exited."))
   assert_true(process.wait(timeout_ms=10000))
 }
+
+///|
+async test "development toolchain recursively prints MoonBit structs" {
+  guard toolchain_acceptance_enabled() else { return }
+  let (moon, _moon_home) = require_development_toolchain()
+  let repository = @fs.realpath(".")
+  let fixture = "\{repository}/testdata/dwarf_probe"
+  assert_true(@fs.exists("\{fixture}/point/main.mbt"))
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moon,
+    fixture,
+    package_name="point",
+  )
+  defer process.close()
+  assert_eq(process.status(), 0)
+  guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
+    process.wait(timeout_ms=100) |> ignore
+    fail(
+      "moon debug point did not open a prompt (PTY status \{process.status()})",
+    )
+  }
+  assert_true(process.write(b"b distance\r"))
+  assert_true(process.expect(b"Breakpoint 1 pending at function distance"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"b is_parallel\r"))
+  assert_true(process.expect(b"Breakpoint 2 pending at function is_parallel"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"point.distance", timeout_ms=20000))
+  assert_true(process.expect(b"(moondbg) "))
+
+  for _ in 0..<2 {
+    assert_true(process.write(b"p p1\r"))
+    assert_true(process.expect(b"p1: Point = {"))
+    assert_true(process.expect(b"x: Double = 1"))
+    assert_true(process.expect(b"y: Double = 2"))
+    assert_true(process.expect(b"(moondbg) "))
+  }
+
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"point.is_parallel", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p line1\r"))
+  assert_true(process.expect(b"line1: Line = {"))
+  assert_true(process.expect(b"start: Point = {"))
+  assert_true(process.expect(b"x: Double = 1"))
+  assert_true(process.expect(b"y: Double = 2"))
+  assert_true(process.expect(b"end: Point = {"))
+  assert_true(process.expect(b"x: Double = 4"))
+  assert_true(process.expect(b"y: Double = 6"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"quit\r"))
+  assert_true(process.expect(b"Debugger exited."))
+  assert_true(process.wait(timeout_ms=10000))
+}

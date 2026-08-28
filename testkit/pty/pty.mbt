@@ -11,10 +11,11 @@ pub struct PtyProcess {
 extern "C" fn native_spawn_self(filter : Bytes) -> NativePtyProcess = "moondbg_test_pty_spawn_self"
 
 ///|
-#borrow(executable, working_directory)
+#borrow(executable, working_directory, package_name)
 extern "C" fn native_spawn_debug(
   executable : Bytes,
   working_directory : Bytes,
+  package_name : Bytes,
 ) -> NativePtyProcess = "moondbg_test_pty_spawn_debug"
 
 ///|
@@ -69,15 +70,17 @@ pub fn PtyProcess::spawn_self(filter : String) -> PtyProcess {
 }
 
 ///|
-/// Runs `moon debug main` in a selected fixture directory under a fresh PTY.
+/// Runs `moon debug <package>` in a selected fixture directory under a fresh PTY.
 pub fn PtyProcess::spawn_debug(
   moon : String,
   working_directory : String,
+  package_name? : String = "main",
 ) -> PtyProcess {
   {
     native: native_spawn_debug(
       @utf8.encode(moon),
       @utf8.encode(working_directory),
+      @utf8.encode(package_name),
     ),
   }
 }
