@@ -146,7 +146,7 @@ Q-02 建议按 P1 至 P4 顺序实施。P1 先固定本机 lldb-dap 的 stopped 
 
 ### P2. 实现 backend 动态断点同步
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 让当前 stopped execution 可以接收一个新的稳定逻辑断点，并维护正确的本次
 adapter 映射。
@@ -164,6 +164,13 @@ adapter 映射。
 
 **完成条件：** backend 在 stopped 状态动态添加三类断点后可以立即报告本次结果；已有断点
 仍然有效，稳定 ID 与 adapter ID 不混用，下一 execution 不复用旧映射。
+
+**实施结果：** `DebugBackend` 已增加两个异步安装端口；`LldbDapBackend` 在导入稳定逻辑
+断点后，按 source 重发完整源码集合、为精确函数重发完整集合，并只对新 family 执行一次
+regex 命令。每次整组响应都会刷新受影响的 execution outcome，稳定 ID 与 adapter ID 继续
+分层保存。语义拒绝返回 rejected snapshot；transport 失败会归档稳定配置、关闭失效 execution
+并立即准备新 adapter。scripted transport 白盒测试覆盖了完整集合、adapter ID 变化、两个
+locations、零 location、失败 response 与连接中断恢复。
 
 ### P3. 接入 DebugSession、REPL 与持久配置语义
 

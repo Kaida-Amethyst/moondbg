@@ -89,6 +89,32 @@ impl DebugBackend for RecordingBackend with fn launch(
 }
 
 ///|
+impl DebugBackend for RecordingBackend with fn install_source_breakpoint(
+  self,
+  breakpoint,
+) {
+  self.breakpoints.push(breakpoint)
+  BreakpointSnapshot::verified(
+    breakpoint.id(),
+    breakpoint.source_path(),
+    breakpoint.requested_line(),
+    Some(breakpoint.requested_line()),
+  )
+}
+
+///|
+impl DebugBackend for RecordingBackend with fn install_function_breakpoint(
+  self,
+  breakpoint,
+) {
+  self.function_breakpoints.push(breakpoint)
+  FunctionBreakpointSnapshot::verified(
+    breakpoint.id(),
+    breakpoint.display_name(),
+  )
+}
+
+///|
 impl DebugBackend for RecordingBackend with fn continue_execution(self, thread) {
   self.record_running_entry()
   self.continues += 1

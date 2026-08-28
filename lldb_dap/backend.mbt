@@ -29,7 +29,7 @@ fn LldbDapBackend::sync_source_breakpoints(
 ) -> Unit raise {
   for index in self.imported_source_breakpoints..<breakpoints.length() {
     let breakpoint = breakpoints[index]
-    self.session.add_source_breakpoint(breakpoint) |> ignore
+    self.session.import_source_breakpoint(breakpoint) |> ignore
   }
   self.imported_source_breakpoints = breakpoints.length()
 }
@@ -41,7 +41,7 @@ fn LldbDapBackend::sync_function_breakpoints(
 ) -> Unit raise {
   for index in self.imported_function_breakpoints..<breakpoints.length() {
     let breakpoint = breakpoints[index]
-    self.session.add_function_breakpoint(breakpoint) |> ignore
+    self.session.import_function_breakpoint(breakpoint) |> ignore
   }
   self.imported_function_breakpoints = breakpoints.length()
 }
@@ -60,6 +60,40 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
   }
   self.session.run(executable) catch {
+    LldbDapBackendError::AdapterFailure(message) =>
+      raise @moondbg.DebugBackendError::failure(message)
+    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  }
+}
+
+///|
+impl @moondbg.DebugBackend for LldbDapBackend with fn install_source_breakpoint(
+  self,
+  breakpoint,
+) {
+  defer {
+    self.imported_source_breakpoints = self.session.source_breakpoints.length()
+  }
+  self.session.install_source_breakpoint(
+    LogicalSourceBreakpoint::from_domain(breakpoint),
+  ) catch {
+    LldbDapBackendError::AdapterFailure(message) =>
+      raise @moondbg.DebugBackendError::failure(message)
+    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  }
+}
+
+///|
+impl @moondbg.DebugBackend for LldbDapBackend with fn install_function_breakpoint(
+  self,
+  breakpoint,
+) {
+  defer {
+    self.imported_function_breakpoints = self.session.function_breakpoints.length()
+  }
+  self.session.install_function_breakpoint(
+    LogicalFunctionBreakpoint::from_domain(breakpoint),
+  ) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))

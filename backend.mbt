@@ -27,6 +27,8 @@ pub(open) trait DebugBackend {
     source_breakpoints : Array[SourceBreakpoint],
     function_breakpoints : Array[FunctionBreakpoint],
   ) -> RunOutcome
+  async fn install_source_breakpoint(Self, breakpoint : SourceBreakpoint) -> BreakpointSnapshot
+  async fn install_function_breakpoint(Self, breakpoint : FunctionBreakpoint) -> FunctionBreakpointSnapshot
   async fn continue_execution(Self, thread : ThreadSelection) -> RunOutcome
   async fn next(Self, thread : ThreadSelection) -> RunOutcome
   async fn step(Self, thread : ThreadSelection) -> RunOutcome

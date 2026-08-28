@@ -159,7 +159,7 @@ fn ExecutionBreakpointState::function_snapshot(
 }
 
 ///|
-fn LldbDapSession::add_source_breakpoint(
+fn LldbDapSession::import_source_breakpoint(
   self : LldbDapSession,
   source_breakpoint : @moondbg.SourceBreakpoint,
 ) -> @moondbg.BreakpointSnapshot raise LldbDapBackendError {
@@ -195,7 +195,7 @@ fn LldbDapSession::source_breakpoints(
 }
 
 ///|
-fn LldbDapSession::add_function_breakpoint(
+fn LldbDapSession::import_function_breakpoint(
   self : LldbDapSession,
   function_breakpoint : @moondbg.FunctionBreakpoint,
 ) -> @moondbg.FunctionBreakpointSnapshot raise LldbDapBackendError {
@@ -360,29 +360,28 @@ async fn DebugExecution::configure_breakpoints(
   for breakpoint in breakpoints {
     guard configured.get(breakpoint.source_path) is None else { continue }
     configured.set(breakpoint.source_path, true)
-    let source_breakpoints = breakpoints_for_source(
-      breakpoints,
-      breakpoint.source_path,
-    )
-    let arguments = set_breakpoints_arguments(
-      breakpoint.source_path,
-      source_breakpoints,
-    )
-    let seq = self.dispatcher.send_request("setBreakpoints", arguments)
-    guard self.wait_for_response(seq, "setBreakpoints") is Some(response) else {
-      reject_breakpoints(
-        self.breakpoint_state,
-        source_breakpoints,
-        "lldb-dap exited before verifying the breakpoints",
-      )
-      continue
-    }
-    apply_breakpoint_response(
+    self.configure_source_breakpoints(breakpoints, breakpoint.source_path)
+  }
+}
+
+///|
+async fn DebugExecution::configure_source_breakpoints(
+  self : DebugExecution,
+  breakpoints : Array[LogicalSourceBreakpoint],
+  source_path : String,
+) -> Unit {
+  let source_breakpoints = breakpoints_for_source(breakpoints, source_path)
+  let arguments = set_breakpoints_arguments(source_path, source_breakpoints)
+  let seq = self.dispatcher.send_request("setBreakpoints", arguments)
+  guard self.wait_for_response(seq, "setBreakpoints") is Some(response) else {
+    reject_breakpoints(
       self.breakpoint_state,
       source_breakpoints,
-      response,
+      "lldb-dap exited before verifying the breakpoints",
     )
+    return
   }
+  apply_breakpoint_response(self.breakpoint_state, source_breakpoints, response)
 }
 
 ///|
@@ -606,4 +605,74 @@ async fn DebugExecution::configure_function_breakpoints(
   for breakpoint in family_function_breakpoints(breakpoints) {
     self.configure_family_function_breakpoint(breakpoint)
   }
+}
+
+///|
+async fn DebugExecution::configure_dynamic_function_breakpoint(
+  self : DebugExecution,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+  breakpoint : LogicalFunctionBreakpoint,
+) -> Unit {
+  match breakpoint.selector {
+    @moondbg.ExactPhysicalFunction(_) =>
+      self.configure_exact_function_breakpoints(
+        exact_function_breakpoints(breakpoints),
+      )
+    @moondbg.MoonBitFunctionFamily(_) =>
+      self.configure_family_function_breakpoint(breakpoint)
+  }
+}
+
+///|
+async fn LldbDapSession::install_source_breakpoint(
+  self : LldbDapSession,
+  breakpoint : LogicalSourceBreakpoint,
+) -> @moondbg.BreakpointSnapshot raise LldbDapBackendError {
+  let state = self.state()
+  guard state is Stopped && self.execution is Some(execution) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state~,
+      action="install source breakpoint",
+    )
+  }
+  self.source_breakpoints.push(breakpoint)
+  execution.configure_source_breakpoints(
+    self.source_breakpoints,
+    breakpoint.source_path,
+  ) catch {
+    error => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
+  }
+  execution.breakpoint_state.source_snapshot(breakpoint)
+}
+
+///|
+async fn LldbDapSession::install_function_breakpoint(
+  self : LldbDapSession,
+  breakpoint : LogicalFunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot raise LldbDapBackendError {
+  let state = self.state()
+  guard state is Stopped && self.execution is Some(execution) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state~,
+      action="install function breakpoint",
+    )
+  }
+  self.function_breakpoints.push(breakpoint)
+  execution.configure_dynamic_function_breakpoint(
+    self.function_breakpoints,
+    breakpoint,
+  ) catch {
+    error => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
+  }
+  execution.breakpoint_state.function_snapshot(breakpoint)
 }

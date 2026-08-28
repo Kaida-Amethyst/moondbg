@@ -236,6 +236,72 @@ fn function_family_script() -> Array[@dap_testkit.ScriptedInput] {
 }
 
 ///|
+fn dynamic_breakpoint_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(300, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsFunctionBreakpoints": true,
+    }),
+    scripted_event(301, "initialized", {}),
+    scripted_response(302, 3, "configurationDone", {}),
+    scripted_response(303, 2, "launch", {}),
+    scripted_event(304, "stopped", { "reason": "entry", "threadId": 1 }),
+    scripted_response(305, 4, "stackTrace", scripted_stack_body(30, 3)),
+    scripted_response(306, 5, "setBreakpoints", {
+      "breakpoints": [{ "id": 17, "verified": true, "line": 4 }],
+    }),
+    scripted_response(307, 6, "setBreakpoints", {
+      "breakpoints": [
+        { "id": 27, "verified": true, "line": 5 },
+        { "id": 28, "verified": true, "line": 9 },
+      ],
+    }),
+    scripted_response(308, 7, "setFunctionBreakpoints", {
+      "breakpoints": [{ "id": 37, "verified": true }],
+    }),
+    scripted_response(309, 8, "setFunctionBreakpoints", {
+      "breakpoints": [
+        { "id": 47, "verified": true },
+        { "id": 48, "verified": true },
+      ],
+    }),
+    scripted_response(310, 9, "evaluate", {
+      "result": "Breakpoint 57: 2 locations.\n",
+      "variablesReference": 0,
+    }),
+    scripted_response(311, 10, "evaluate", {
+      "result": "Breakpoint 58: no locations (pending).\n",
+      "variablesReference": 0,
+    }),
+    scripted_failed_response(312, 11, "setBreakpoints", "source is unavailable"),
+  ]
+}
+
+///|
+fn stopped_execution_script(
+  first_seq : Int,
+) -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(first_seq, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+    }),
+    scripted_event(first_seq + 1, "initialized", {}),
+    scripted_response(first_seq + 2, 3, "configurationDone", {}),
+    scripted_response(first_seq + 3, 2, "launch", {}),
+    scripted_event(first_seq + 4, "stopped", {
+      "reason": "entry",
+      "threadId": 1,
+    }),
+    scripted_response(
+      first_seq + 5,
+      4,
+      "stackTrace",
+      scripted_stack_body(40, 3),
+    ),
+  ]
+}
+
+///|
 fn sent_command(message : Json) -> String? {
   match message {
     { "command": String(command), .. } => Some(command)
@@ -420,6 +486,143 @@ async test "scripted function family breakpoint uses LLDB command and one logica
     assert_eq(
       expression, "breakpoint set --func-regex '^_M0FP37example3lib4util8identity($|G|H)'",
     )
+  })
+}
+
+///|
+async test "stopped execution dynamically synchronizes complete sets and one family" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      dynamic_breakpoint_script(),
+    )
+    let session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    defer session.close()
+    guard session.run("/tmp/dynamic-program") is @moondbg.Stopped(_) else {
+      fail("scripted execution should stop before dynamic synchronization")
+    }
+
+    let first_source = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
+    let first_source_snapshot = session.install_source_breakpoint(first_source)
+    assert_true(first_source_snapshot.status() is @moondbg.Verified)
+    let second_source = LogicalSourceBreakpoint::new(2, "/tmp/main.mbt", 9)
+    let second_source_snapshot = session.install_source_breakpoint(
+      second_source,
+    )
+    assert_true(second_source_snapshot.status() is @moondbg.Verified)
+
+    let first_exact = LogicalFunctionBreakpoint::new(3, "main", "moonbit_main")
+    assert_true(
+      session.install_function_breakpoint(first_exact).status()
+      is @moondbg.Verified,
+    )
+    let second_exact = LogicalFunctionBreakpoint::new(
+      4, "sum", "_M0FP34demo4main3sum",
+    )
+    assert_true(
+      session.install_function_breakpoint(second_exact).status()
+      is @moondbg.Verified,
+    )
+
+    let family = LogicalFunctionBreakpoint::family(
+      5, "identity", "_M0FP34demo3lib8identity",
+    )
+    let family_snapshot = session.install_function_breakpoint(family)
+    assert_true(family_snapshot.status() is @moondbg.Verified)
+    assert_eq(family_snapshot.location_count(), Some(2))
+    let missing_family = LogicalFunctionBreakpoint::family(
+      6, "missing", "_M0FP34demo4main7missing",
+    )
+    assert_true(
+      session.install_function_breakpoint(missing_family).status()
+      is @moondbg.Rejected("no matching function instances were found"),
+    )
+
+    let rejected_source = LogicalSourceBreakpoint::new(7, "/tmp/missing.mbt", 1)
+    assert_true(
+      session.install_source_breakpoint(rejected_source).status()
+      is @moondbg.Rejected("source is unavailable"),
+    )
+
+    guard session.execution is Some(execution) else {
+      fail("dynamic synchronization should retain the stopped execution")
+    }
+    guard execution.breakpoint_state.outcomes.get(1) is Some(first_outcome) &&
+      execution.breakpoint_state.outcomes.get(3) is Some(first_exact_outcome) &&
+      execution.breakpoint_state.outcomes.get(4) is Some(second_exact_outcome) &&
+      execution.breakpoint_state.outcomes.get(5) is Some(family_outcome) else {
+      fail("dynamic synchronization should retain all adapter mappings")
+    }
+    assert_eq(first_outcome.dap_id, Some(27))
+    assert_eq(first_outcome.actual_line, Some(5))
+    assert_eq(first_exact_outcome.dap_id, Some(47))
+    assert_eq(second_exact_outcome.dap_id, Some(48))
+    assert_eq(family_outcome.dap_id, Some(57))
+    assert_eq(family_outcome.location_count, Some(2))
+    assert_eq(session.source_breakpoints.length(), 3)
+    assert_eq(session.function_breakpoints.length(), 4)
+
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "setBreakpoints",
+      "setBreakpoints", "setFunctionBreakpoints", "setFunctionBreakpoints", "evaluate",
+      "evaluate", "setBreakpoints",
+    ])
+    guard sent[5]
+      is { "arguments": { "breakpoints": Array(source_set), .. }, .. } &&
+      sent[7] is { "arguments": { "breakpoints": Array(function_set), .. }, .. } else {
+      fail("dynamic replacement requests should carry complete sets")
+    }
+    assert_eq(source_set.length(), 2)
+    assert_eq(function_set.length(), 2)
+    assert_eq(transport.remaining_inputs(), 0)
+  })
+}
+
+///|
+async test "dynamic transport failure archives configuration and prepares recovery" {
+  @async.with_task_group(async fn(group) {
+    let failed_script = stopped_execution_script(400)
+    failed_script.push(@dap_testkit.ScriptedClosed)
+    let failed_transport = @dap_testkit.ScriptedTransport::new(failed_script)
+    let recovered_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(500, 1, "initialize", {}),
+    ])
+    let transports = [failed_transport, recovered_transport]
+    let mut factory_index = 0
+    let session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => {
+        let transport = transports[factory_index]
+        factory_index += 1
+        @dap.DapDispatcher::from_transport(transport.as_transport())
+      },
+      preparation_timeout_ms=10000,
+    )
+    defer session.close()
+    guard session.run("/tmp/dynamic-failure-program") is @moondbg.Stopped(_) else {
+      fail("scripted execution should stop before the adapter failure")
+    }
+    let breakpoint = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
+    let failed = try {
+      session.install_source_breakpoint(breakpoint) |> ignore
+      false
+    } catch {
+      LldbDapBackendError::AdapterFailure(_) => true
+      _ => false
+    }
+    assert_true(failed)
+    assert_true(session.state() is Ready)
+    assert_true(session.execution is None)
+    assert_true(session.preparation is Some(_))
+    assert_eq(session.source_breakpoints.length(), 1)
+    guard session.source_breakpoints() is [pending] else {
+      fail("failed dynamic installation should retain one logical breakpoint")
+    }
+    assert_true(pending.status() is @moondbg.Pending)
   })
 }
 

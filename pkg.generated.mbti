@@ -230,6 +230,8 @@ pub fn VariableSnapshot::value(Self) -> String
 // Traits
 pub(open) trait DebugBackend {
   async fn launch(Self, String, Array[SourceBreakpoint], Array[FunctionBreakpoint]) -> RunOutcome
+  async fn install_source_breakpoint(Self, SourceBreakpoint) -> BreakpointSnapshot
+  async fn install_function_breakpoint(Self, FunctionBreakpoint) -> FunctionBreakpointSnapshot
   async fn continue_execution(Self, ThreadSelection) -> RunOutcome
   async fn next(Self, ThreadSelection) -> RunOutcome
   async fn step(Self, ThreadSelection) -> RunOutcome

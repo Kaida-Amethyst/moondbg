@@ -44,6 +44,30 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn launch(
 }
 
 ///|
+impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn install_source_breakpoint(
+  _self,
+  breakpoint,
+) {
+  @moondbg.BreakpointSnapshot::verified(
+    breakpoint.id(),
+    breakpoint.source_path(),
+    breakpoint.requested_line(),
+    Some(breakpoint.requested_line()),
+  )
+}
+
+///|
+impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn install_function_breakpoint(
+  _self,
+  breakpoint,
+) {
+  @moondbg.FunctionBreakpointSnapshot::verified(
+    breakpoint.id(),
+    breakpoint.display_name(),
+  )
+}
+
+///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn continue_execution(
   _self,
   _thread,
