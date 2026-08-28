@@ -391,6 +391,94 @@ fn struct_variable_script() -> Array[@dap_testkit.ScriptedInput] {
 }
 
 ///|
+fn field_path_variable_script() -> Array[@dap_testkit.ScriptedInput] {
+  let scopes : Json = {
+    "scopes": [
+      {
+        "name": "Locals",
+        "presentationHint": "locals",
+        "variablesReference": 300,
+      },
+    ],
+  }
+  let roots : Json = {
+    "variables": [
+      {
+        "name": "line1",
+        "type": "example/geometry/Line &",
+        "value": "0x3000",
+        "variablesReference": 301,
+      },
+    ],
+  }
+  let line_fields : Json = {
+    "variables": [
+      {
+        "name": "start",
+        "type": "example/geometry/Point &",
+        "value": "0x3100",
+        "variablesReference": 311,
+      },
+      {
+        "name": "end",
+        "type": "example/geometry/Point &",
+        "value": "<error: variable not available>",
+        "variablesReference": 312,
+      },
+      {
+        "name": "values",
+        "type": "FixedArray[Int]",
+        "value": "FixedArray[Int] @ 0x3300",
+        "variablesReference": 313,
+      },
+    ],
+  }
+  let point_fields : Json = {
+    "variables": [
+      { "name": "x", "type": "double", "value": "1", "variablesReference": 0 },
+      { "name": "y", "type": "double", "value": "2", "variablesReference": 0 },
+    ],
+  }
+  [
+    scripted_response(1700, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+      "supportsSteppingGranularity": true,
+    }),
+    scripted_event(1701, "initialized", {}),
+    scripted_response(1702, 3, "configurationDone", {}),
+    scripted_response(1703, 2, "launch", {}),
+    scripted_event(1704, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1705, 4, "stackTrace", scripted_stack_body(110, 20)),
+    scripted_response(1706, 5, "scopes", scopes),
+    scripted_response(1707, 6, "variables", roots),
+    scripted_response(1708, 7, "variables", line_fields),
+    scripted_response(1709, 8, "variables", point_fields),
+    scripted_response(1710, 9, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "int *",
+          "value": "0x3300",
+          "evaluateName": "line1.values.body",
+          "memoryReference": "0x3300",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1711, 10, "readMemory", { "data": "AAAAAAMAAAA=" }),
+    scripted_response(1712, 11, "readMemory", { "data": "AQAAAAIAAAADAAAA" }),
+    scripted_event(1713, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(1714, 12, "next", {}),
+    scripted_response(1715, 13, "stackTrace", scripted_stack_body(111, 21)),
+    scripted_response(1716, 14, "scopes", scopes),
+    scripted_response(1717, 15, "variables", roots),
+    scripted_response(1718, 16, "variables", line_fields),
+    scripted_response(1719, 17, "variables", point_fields),
+  ]
+}
+
+///|
 fn truncated_struct_script() -> Array[@dap_testkit.ScriptedInput] {
   [
     scripted_response(1400, 1, "initialize", {
@@ -1362,7 +1450,7 @@ test "lldb-dap variable lookup selects the available shadowed local" {
       ],
     })
     is Some(first_stop) &&
-    first_stop.select_lookup_variable("arr") is Some(first_arr) else {
+    first_stop.select_root_variable("arr") is DapVariableSelected(first_arr) else {
     fail("the first arr should be available before its call")
   }
   assert_eq(first_arr.name, "arr")
@@ -1387,7 +1475,7 @@ test "lldb-dap variable lookup selects the available shadowed local" {
       ],
     })
     is Some(second_stop) &&
-    second_stop.select_lookup_variable("arr") is Some(second_arr) else {
+    second_stop.select_root_variable("arr") is DapVariableSelected(second_arr) else {
     fail("the shadowing arr should be available at its call")
   }
   assert_eq(second_arr.name, "arr")
@@ -1407,7 +1495,9 @@ test "lldb-dap variable lookup selects the available shadowed local" {
     is Some(unavailable_only) else {
     fail("the unavailable arr should be parsed")
   }
-  assert_true(unavailable_only.select_lookup_variable("arr") is None)
+  assert_true(
+    unavailable_only.select_root_variable("arr") is DapVariableUnavailable,
+  )
 }
 
 ///|
@@ -1507,6 +1597,112 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     assert_eq(transport.sent_messages().filter_map(sent_command), [
       "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
       "variables", "variables", "variables", "variables",
+    ])
+  })
+}
+
+///|
+async test "lldb-dap resolves field paths lazily with precise failures and epoch caches" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      field_path_variable_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/field-path-program", backend)
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted field-path execution should stop")
+    }
+    let x_path = @moondbg.VariablePath::with_fields("line1", ["start", "x"])
+    guard session.find_variable(x_path) is @moondbg.VariableFound(x) else {
+      fail("line1.start.x should resolve to a scalar")
+    }
+    assert_eq(x.name(), "line1.start.x")
+    assert_eq(x.type_name(), Some("double"))
+    assert_eq(x.value(), "1")
+    assert_true(x.content() is @moondbg.VariableLeaf)
+    guard session.find_variable(x_path) is @moondbg.VariableFound(cached_x) else {
+      fail("the repeated path should remain cached")
+    }
+    assert_eq(cached_x, x)
+    guard session.find_variable(
+        @moondbg.VariablePath::with_fields("line1", ["start"]),
+      )
+      is @moondbg.VariableFound(start) &&
+      start.content() is @moondbg.VariableStructure(structure) &&
+      structure.children() is [start_x, start_y] else {
+      fail("a final struct field should retain structured materialization")
+    }
+    assert_eq(start.name(), "line1.start")
+    assert_eq(start_x.name(), "x")
+    assert_eq(start_y.name(), "y")
+    guard session.find_variable(
+        @moondbg.VariablePath::with_fields("line1", ["values"]),
+      )
+      is @moondbg.VariableFound(values) &&
+      values.content() is @moondbg.VariableIndexedCollection(collection) &&
+      collection.preview_elements() is [first, _, third] &&
+      first.value() is Some(first_value) &&
+      third.value() is Some(third_value) else {
+      fail("a final FixedArray field should retain its bounded preview")
+    }
+    assert_eq(values.name(), "line1.values")
+    assert_eq(collection.total_length(), 3)
+    assert_eq(first_value.value(), "1")
+    assert_eq(third_value.value(), "3")
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::with_fields("line1", ["missing"]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableFieldNotFound("line1", "missing")
+      ),
+    )
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::with_fields("line1", ["start", "x", "more"]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableFieldAccessOnNonStruct(
+          "line1.start.x",
+          "more",
+          Some("double")
+        )
+      ),
+    )
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::with_fields("line1", ["end", "x"]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableUnavailable("line1.end")
+      ),
+    )
+    assert_true(
+      session.find_variable(@moondbg.VariablePath::root("missing"))
+      is @moondbg.VariableLookupFailed(@moondbg.VariableRootNotFound("missing")),
+    )
+    guard session.next() is @moondbg.Stopped(_) else {
+      fail("next should establish a new stop epoch")
+    }
+    guard session.find_variable(x_path) is @moondbg.VariableFound(next_x) else {
+      fail("the same path should be resolved again after resume")
+    }
+    assert_eq(next_x, x)
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "variables", "variables", "readMemory", "readMemory", "next",
+      "stackTrace", "scopes", "variables", "variables", "variables",
     ])
   })
 }

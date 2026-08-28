@@ -36,32 +36,60 @@ fn DapVariable::is_available(self : DapVariable) -> Bool {
 }
 
 ///|
-fn Array::select_lookup_variable(
-  self : Array[DapVariable],
-  name : String,
-) -> DapVariable? {
-  let mut unavailable_exact_match = None
-  for variable in self {
-    guard variable.matches_lookup_name(name) else { continue }
-    if variable.is_available() {
-      return Some({ ..variable, name, })
-    }
-    if variable.name == name && unavailable_exact_match is None {
-      unavailable_exact_match = Some(variable)
-    }
-  }
-  unavailable_exact_match.map(variable => { ..variable, name, })
+priv enum DapVariableSelection {
+  DapVariableSelected(DapVariable)
+  DapVariableUnavailable
+  DapVariableMissing
 }
 
 ///|
-fn DapVariable::is_moonbit_struct_candidate(self : DapVariable) -> Bool {
-  guard self.variables_reference > 0 &&
-    self.type_name is Some(type_name) &&
+fn Array::select_root_variable(
+  self : Array[DapVariable],
+  name : String,
+) -> DapVariableSelection {
+  let mut matched = false
+  for variable in self {
+    guard variable.matches_lookup_name(name) else { continue }
+    matched = true
+    if variable.is_available() {
+      return DapVariableSelected({ ..variable, name, })
+    }
+  }
+  if matched {
+    DapVariableUnavailable
+  } else {
+    DapVariableMissing
+  }
+}
+
+///|
+fn Array::select_field_variable(
+  self : Array[DapVariable],
+  name : String,
+) -> DapVariableSelection {
+  for variable in self {
+    guard variable.name == name else { continue }
+    if variable.is_available() {
+      return DapVariableSelected(variable)
+    }
+    return DapVariableUnavailable
+  }
+  DapVariableMissing
+}
+
+///|
+fn DapVariable::is_moonbit_struct_type(self : DapVariable) -> Bool {
+  guard self.type_name is Some(type_name) &&
     type_name.strip_suffix(" &") is Some(base) &&
     base.rev_split_once("/") is Some((package_name, struct_name)) else {
     return false
   }
   package_name != "" && struct_name != ""
+}
+
+///|
+fn DapVariable::is_moonbit_struct_candidate(self : DapVariable) -> Bool {
+  self.variables_reference > 0 && self.is_moonbit_struct_type()
 }
 
 ///|
@@ -594,35 +622,117 @@ async fn DebugExecution::materialize_variable_with_limits(
 }
 
 ///|
-async fn DebugExecution::find_variable_inner(
+priv enum DapVariableResolution {
+  DapVariableResolved(DapVariable)
+  DapVariableResolutionFailed(@moondbg.VariableLookupResult)
+}
+
+///|
+async fn DebugExecution::resolve_root_variable(
   self : DebugExecution,
   epoch : Int,
   frame_id : Int,
   name : String,
-) -> @moondbg.VariableLookupResult {
+) -> DapVariableResolution {
   let scopes = self.load_scopes(epoch, frame_id)
   for scope in scopes {
     guard scope.is_relevant() else { continue }
-    guard self
+    match
+      self
       .load_variables(epoch, scope.variables_reference)
-      .select_lookup_variable(name)
-      is Some(variable) else {
-      continue
+      .select_root_variable(name) {
+      DapVariableSelected(variable) => return DapVariableResolved(variable)
+      DapVariableUnavailable =>
+        return DapVariableResolutionFailed(
+          @moondbg.VariableLookupResult::unavailable(name),
+        )
+      DapVariableMissing => ()
     }
-    let cache_key = "\{frame_id}:\{scope.variables_reference}:\{name}"
-    if self.variable_cache.cached_snapshot(epoch, cache_key) is Some(snapshot) {
-      return @moondbg.VariableLookupResult::found(snapshot)
+  }
+  DapVariableResolutionFailed(@moondbg.VariableLookupResult::not_found(name))
+}
+
+///|
+async fn DebugExecution::resolve_variable_path(
+  self : DebugExecution,
+  epoch : Int,
+  frame_id : Int,
+  path : @moondbg.VariablePath,
+) -> DapVariableResolution {
+  let mut variable = match
+    self.resolve_root_variable(epoch, frame_id, path.root_name()) {
+    DapVariableResolved(variable) => variable
+    DapVariableResolutionFailed(result) =>
+      return DapVariableResolutionFailed(result)
+  }
+  let mut owner = path.root_name()
+  for step in path.steps() {
+    let @moondbg.Field(field) = step
+    guard variable.is_moonbit_struct_type() else {
+      return DapVariableResolutionFailed(
+        @moondbg.VariableLookupResult::field_access_on_non_struct(
+          owner,
+          field,
+          variable.type_name,
+        ),
+      )
     }
-    let snapshot = self.materialize_variable_with_limits(
-      epoch,
-      variable,
-      MAX_VARIABLE_EXPANSION_DEPTH,
-      MAX_VARIABLE_EXPANSION_NODES,
-    )
-    self.variable_cache.store_snapshot(epoch, cache_key, snapshot)
+    guard variable.variables_reference > 0 else {
+      return DapVariableResolutionFailed(
+        @moondbg.VariableLookupResult::field_not_found(owner, field),
+      )
+    }
+    let children = self.load_variables(epoch, variable.variables_reference)
+    guard !children.has_moonbit_enum_marker() else {
+      return DapVariableResolutionFailed(
+        @moondbg.VariableLookupResult::field_access_on_non_struct(
+          owner,
+          field,
+          variable.type_name,
+        ),
+      )
+    }
+    match children.select_field_variable(field) {
+      DapVariableSelected(child) => {
+        variable = child
+        owner = "\{owner}.\{field}"
+      }
+      DapVariableUnavailable =>
+        return DapVariableResolutionFailed(
+          @moondbg.VariableLookupResult::unavailable("\{owner}.\{field}"),
+        )
+      DapVariableMissing =>
+        return DapVariableResolutionFailed(
+          @moondbg.VariableLookupResult::field_not_found(owner, field),
+        )
+    }
+  }
+  DapVariableResolved({ ..variable, name: path.display_name(), })
+}
+
+///|
+async fn DebugExecution::find_variable_inner(
+  self : DebugExecution,
+  epoch : Int,
+  frame_id : Int,
+  path : @moondbg.VariablePath,
+) -> @moondbg.VariableLookupResult {
+  let cache_key = "\{frame_id}:\{path.display_name()}"
+  if self.variable_cache.cached_snapshot(epoch, cache_key) is Some(snapshot) {
     return @moondbg.VariableLookupResult::found(snapshot)
   }
-  @moondbg.VariableLookupResult::not_found(name)
+  let variable = match self.resolve_variable_path(epoch, frame_id, path) {
+    DapVariableResolved(variable) => variable
+    DapVariableResolutionFailed(result) => return result
+  }
+  let snapshot = self.materialize_variable_with_limits(
+    epoch,
+    variable,
+    MAX_VARIABLE_EXPANSION_DEPTH,
+    MAX_VARIABLE_EXPANSION_NODES,
+  )
+  self.variable_cache.store_snapshot(epoch, cache_key, snapshot)
+  @moondbg.VariableLookupResult::found(snapshot)
 }
 
 ///|
@@ -640,10 +750,7 @@ async fn DebugExecution::find_variable(
     )
   }
   let frame_id = self.selected_frame_id(thread, frame, "inspect a variable")
-  guard path.steps().length() == 0 else {
-    return @moondbg.VariableLookupResult::not_found(path.display_name())
-  }
-  self.find_variable_inner(epoch, frame_id, path.root_name()) catch {
+  self.find_variable_inner(epoch, frame_id, path) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
   }
 }
