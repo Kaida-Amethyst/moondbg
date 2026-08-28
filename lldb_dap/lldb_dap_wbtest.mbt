@@ -1341,6 +1341,75 @@ test "lldb-dap scopes exclude register-only lookup and variables retain DAP fiel
 }
 
 ///|
+test "lldb-dap variable lookup selects the available shadowed local" {
+  guard parse_variables({
+      "variables": [
+        {
+          "evaluateName": "arr",
+          "name": "arr @ x19",
+          "type": "moonbit.array_i32",
+          "value": "moonbit.array_i32 @ 0x2000",
+          "variablesReference": 4,
+        },
+        {
+          "evaluateName": "arr",
+          "name": "arr @ ",
+          "type": "moonbit.array_i32",
+          "value": "<error: variable not available>",
+          "variablesReference": 7,
+        },
+      ],
+    })
+    is Some(first_stop) &&
+    first_stop.select_lookup_variable("arr") is Some(first_arr) else {
+    fail("the first arr should be available before its call")
+  }
+  assert_eq(first_arr.name, "arr")
+  assert_eq(first_arr.value, "moonbit.array_i32 @ 0x2000")
+  assert_eq(first_arr.variables_reference, 4)
+  guard parse_variables({
+      "variables": [
+        {
+          "evaluateName": "arr",
+          "name": "arr @ ",
+          "type": "moonbit.array_i32",
+          "value": "<error: variable not available>",
+          "variablesReference": 4,
+        },
+        {
+          "evaluateName": "arr",
+          "name": "arr @ x19",
+          "type": "moonbit.array_i32",
+          "value": "moonbit.array_i32 @ 0x3000",
+          "variablesReference": 7,
+        },
+      ],
+    })
+    is Some(second_stop) &&
+    second_stop.select_lookup_variable("arr") is Some(second_arr) else {
+    fail("the shadowing arr should be available at its call")
+  }
+  assert_eq(second_arr.name, "arr")
+  assert_eq(second_arr.value, "moonbit.array_i32 @ 0x3000")
+  assert_eq(second_arr.variables_reference, 7)
+  guard parse_variables({
+      "variables": [
+        {
+          "evaluateName": "arr",
+          "name": "arr @ ",
+          "type": "moonbit.array_i32",
+          "value": "<error: variable not available>",
+          "variablesReference": 4,
+        },
+      ],
+    })
+    is Some(unavailable_only) else {
+    fail("the unavailable arr should be parsed")
+  }
+  assert_true(unavailable_only.select_lookup_variable("arr") is None)
+}
+
+///|
 test "lldb-dap variable caches are isolated by stop epoch" {
   let cache = StopVariableCache::new()
   let scopes = [

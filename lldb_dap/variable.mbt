@@ -26,6 +26,34 @@ fn DapVariable::snapshot(self : DapVariable) -> @moondbg.VariableSnapshot {
 }
 
 ///|
+fn DapVariable::matches_lookup_name(self : DapVariable, name : String) -> Bool {
+  self.name == name || self.evaluate_name == Some(name)
+}
+
+///|
+fn DapVariable::is_available(self : DapVariable) -> Bool {
+  !self.value.has_prefix("<error:") && self.value != "<variable not available>"
+}
+
+///|
+fn Array::select_lookup_variable(
+  self : Array[DapVariable],
+  name : String,
+) -> DapVariable? {
+  let mut unavailable_exact_match = None
+  for variable in self {
+    guard variable.matches_lookup_name(name) else { continue }
+    if variable.is_available() {
+      return Some({ ..variable, name, })
+    }
+    if variable.name == name && unavailable_exact_match is None {
+      unavailable_exact_match = Some(variable)
+    }
+  }
+  unavailable_exact_match.map(variable => { ..variable, name, })
+}
+
+///|
 fn DapVariable::is_moonbit_struct_candidate(self : DapVariable) -> Bool {
   guard self.variables_reference > 0 &&
     self.type_name is Some(type_name) &&
@@ -575,23 +603,24 @@ async fn DebugExecution::find_variable_inner(
   let scopes = self.load_scopes(epoch, frame_id)
   for scope in scopes {
     guard scope.is_relevant() else { continue }
-    for variable in self.load_variables(epoch, scope.variables_reference) {
-      if variable.name == name {
-        let cache_key = "\{frame_id}:\{scope.variables_reference}:\{name}"
-        if self.variable_cache.cached_snapshot(epoch, cache_key)
-          is Some(snapshot) {
-          return @moondbg.VariableLookupResult::found(snapshot)
-        }
-        let snapshot = self.materialize_variable_with_limits(
-          epoch,
-          variable,
-          MAX_VARIABLE_EXPANSION_DEPTH,
-          MAX_VARIABLE_EXPANSION_NODES,
-        )
-        self.variable_cache.store_snapshot(epoch, cache_key, snapshot)
-        return @moondbg.VariableLookupResult::found(snapshot)
-      }
+    guard self
+      .load_variables(epoch, scope.variables_reference)
+      .select_lookup_variable(name)
+      is Some(variable) else {
+      continue
     }
+    let cache_key = "\{frame_id}:\{scope.variables_reference}:\{name}"
+    if self.variable_cache.cached_snapshot(epoch, cache_key) is Some(snapshot) {
+      return @moondbg.VariableLookupResult::found(snapshot)
+    }
+    let snapshot = self.materialize_variable_with_limits(
+      epoch,
+      variable,
+      MAX_VARIABLE_EXPANSION_DEPTH,
+      MAX_VARIABLE_EXPANSION_NODES,
+    )
+    self.variable_cache.store_snapshot(epoch, cache_key, snapshot)
+    return @moondbg.VariableLookupResult::found(snapshot)
   }
   @moondbg.VariableLookupResult::not_found(name)
 }
