@@ -150,7 +150,7 @@ Q-04 按 P1 至 P4 顺序实施。P1 固化原始 DAP 与领域契约，P2 实�
 
 ### P1. 固化原始 FixedArray DAP 行为与 indexed collection 领域模型
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 在读取目标内存前固定当前 native backend 的事实，并让公共领域模型能准确表达
 数组总长度、有索引的预览元素和省略区间。
@@ -166,6 +166,13 @@ Q-04 按 P1 至 P4 顺序实施。P1 固化原始 DAP 与领域契约，P2 实�
 
 **完成条件：** 原始协议事实可重复验证；领域模型无需解析终端文本即可表达三种目标输出，
 公开接口不包含 DAP 临时 ID。
+
+**实施结果：** 新增的真实原始 DAP 探针在未加载 `moonbit.py` 时验证了两个 `sum` 停点：
+`arr` 分别暴露长度为 10 和 100 的 header，raw `body` 为 `int *`，首尾元素分别为
+`1/10` 和 `1/100`。领域层已改为 leaf、structure、indexed collection 的判别联合；indexed
+collection 保存元素类型、总长度、原索引、有值/类型占位预览及省略数量，并验证长度、索引
+范围和严格递增顺序。公开模型不保存地址、memory reference 或 variablesReference，现有
+struct 与 scalar 输出保持不变。
 
 ### P2. 实现基础元素 FixedArray 的原生解码
 

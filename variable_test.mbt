@@ -4,7 +4,7 @@ test "variable snapshot represents a leaf without adapter state" {
   assert_eq(leaf.name(), "answer")
   assert_eq(leaf.value(), "42")
   assert_eq(leaf.type_name(), Some("Int"))
-  assert_true(leaf.expansion() is @moondbg.VariableLeaf)
+  assert_true(leaf.content() is @moondbg.VariableLeaf)
 }
 
 ///|
@@ -15,8 +15,11 @@ test "variable snapshot represents empty and populated structures" {
     Some("example/Empty &"),
     [],
   )
-  assert_true(empty.expansion() is @moondbg.VariableExpanded)
-  assert_eq(empty.children().length(), 0)
+  guard empty.content() is @moondbg.VariableStructure(empty_structure) else {
+    fail("empty should be represented as a structure")
+  }
+  assert_false(empty_structure.is_truncated())
+  assert_eq(empty_structure.children().length(), 0)
   let point = @moondbg.VariableSnapshot::expanded(
     "point",
     "0x20",
@@ -26,8 +29,8 @@ test "variable snapshot represents empty and populated structures" {
       @moondbg.VariableSnapshot::new("y", "2", Some("double")),
     ],
   )
-  guard point.expansion() is @moondbg.VariableExpanded &&
-    point.children() is [x, y] else {
+  guard point.content() is @moondbg.VariableStructure(point_structure) &&
+    point_structure.children() is [x, y] else {
     fail("point should contain two materialized fields")
   }
   assert_eq(x.name(), "x")
@@ -35,7 +38,7 @@ test "variable snapshot represents empty and populated structures" {
 }
 
 ///|
-test "variable snapshot owns its read-only children" {
+test "variable snapshot owns its read-only structure children" {
   let children = [@moondbg.VariableSnapshot::new("value", "1", Some("int32_t"))]
   let snapshot = @moondbg.VariableSnapshot::expanded(
     "box",
@@ -44,7 +47,8 @@ test "variable snapshot owns its read-only children" {
     children,
   )
   children.clear()
-  guard snapshot.children() is [value] else {
+  guard snapshot.content() is @moondbg.VariableStructure(structure) &&
+    structure.children() is [value] else {
     fail("mutating the constructor input must not change the snapshot")
   }
   assert_eq(value.name(), "value")
@@ -64,10 +68,10 @@ test "variable snapshot represents nested and truncated structures" {
     Some("example/Line &"),
     [point],
   )
-  guard line.expansion() is @moondbg.VariableExpanded &&
-    line.children() is [start] &&
-    start.expansion() is @moondbg.VariableExpanded &&
-    start.children() is [x] else {
+  guard line.content() is @moondbg.VariableStructure(line_structure) &&
+    line_structure.children() is [start] &&
+    start.content() is @moondbg.VariableStructure(point_structure) &&
+    point_structure.children() is [x] else {
     fail("line should retain its nested point field")
   }
   assert_eq(x.value(), "1")
@@ -78,8 +82,112 @@ test "variable snapshot represents nested and truncated structures" {
     [point],
   )
   assert_true(
-    truncated.expansion() is @moondbg.VariableTruncated &&
-    truncated.children() is [materialized] &&
+    truncated.content() is @moondbg.VariableStructure(structure) &&
+    structure.is_truncated() &&
+    structure.children() is [materialized] &&
     materialized.name() == "start",
   )
+}
+
+///|
+test "indexed collection snapshot retains indices values and omission count" {
+  let elements = [
+    @moondbg.IndexedVariableElement::with_value(
+      0,
+      @moondbg.VariableSnapshot::new("[0]", "1", Some("Int")),
+    ),
+    @moondbg.IndexedVariableElement::with_value(
+      1,
+      @moondbg.VariableSnapshot::new("[1]", "2", Some("Int")),
+    ),
+    @moondbg.IndexedVariableElement::with_value(
+      9,
+      @moondbg.VariableSnapshot::new("[9]", "10", Some("Int")),
+    ),
+  ]
+  let collection = @moondbg.IndexedCollectionSnapshot::new("Int", 10, elements)
+  elements.clear()
+  let array = @moondbg.VariableSnapshot::indexed_collection(
+    "arr",
+    "moonbit.array_i32 @ 0x1000",
+    Some("moonbit.array_i32"),
+    collection,
+  )
+  guard array.content() is @moondbg.VariableIndexedCollection(indexed) &&
+    indexed.preview_elements() is [first, second, last] &&
+    first.value() is Some(first_value) &&
+    last.value() is Some(last_value) else {
+    fail("array should retain its structured indexed preview")
+  }
+  assert_eq(indexed.element_type_name(), "Int")
+  assert_eq(indexed.total_length(), 10)
+  assert_eq(indexed.omitted_count(), 7)
+  assert_false(indexed.is_complete())
+  assert_eq(first.index(), 0)
+  assert_eq(first_value.value(), "1")
+  assert_eq(second.index(), 1)
+  assert_eq(last.index(), 9)
+  assert_eq(last_value.value(), "10")
+}
+
+///|
+test "indexed collection snapshot represents empty complete and placeholder previews" {
+  let empty = @moondbg.IndexedCollectionSnapshot::new("Int", 0, [])
+  assert_true(empty.is_complete())
+  assert_eq(empty.omitted_count(), 0)
+  let points = @moondbg.IndexedCollectionSnapshot::new("Point", 100, [
+    @moondbg.IndexedVariableElement::placeholder(0),
+    @moondbg.IndexedVariableElement::placeholder(1),
+    @moondbg.IndexedVariableElement::placeholder(99),
+  ])
+  guard points.preview_elements() is [first, second, last] else {
+    fail("point preview should preserve three selected indices")
+  }
+  assert_eq(points.omitted_count(), 97)
+  assert_true(first.value() is None)
+  assert_eq(second.index(), 1)
+  assert_eq(last.index(), 99)
+}
+
+///|
+test "indexed collection snapshot rejects invalid metadata" {
+  let empty_type_rejected = try {
+    @moondbg.IndexedCollectionSnapshot::new("", 0, []) |> ignore
+    false
+  } catch {
+    @moondbg.InvalidIndexedCollectionElementType("") => true
+    _ => false
+  }
+  assert_true(empty_type_rejected)
+  let negative_length_rejected = try {
+    @moondbg.IndexedCollectionSnapshot::new("Int", -1, []) |> ignore
+    false
+  } catch {
+    @moondbg.InvalidIndexedCollectionLength(-1) => true
+    _ => false
+  }
+  assert_true(negative_length_rejected)
+  let out_of_bounds_rejected = try {
+    @moondbg.IndexedCollectionSnapshot::new("Int", 1, [
+      @moondbg.IndexedVariableElement::placeholder(1),
+    ])
+    |> ignore
+    false
+  } catch {
+    @moondbg.InvalidIndexedCollectionIndex(index=1, total_length=1) => true
+    _ => false
+  }
+  assert_true(out_of_bounds_rejected)
+  let unordered_rejected = try {
+    @moondbg.IndexedCollectionSnapshot::new("Int", 3, [
+      @moondbg.IndexedVariableElement::placeholder(2),
+      @moondbg.IndexedVariableElement::placeholder(1),
+    ])
+    |> ignore
+    false
+  } catch {
+    @moondbg.UnorderedIndexedCollectionIndex(previous=2, index=1) => true
+    _ => false
+  }
+  assert_true(unordered_rejected)
 }

@@ -218,28 +218,26 @@ fn append_variable_lines(
 ) -> Unit {
   let prefix = " ".repeat(indentation)
   let label = variable_label(variable)
-  let children = variable.children()
-  match variable.expansion() {
+  match variable.content() {
     @moondbg.VariableLeaf =>
       lines.push("\{prefix}\{label} = \{variable.value()}")
-    @moondbg.VariableExpanded =>
-      if children is [] {
+    @moondbg.VariableStructure(structure) => {
+      let children = structure.children()
+      if children is [] && !structure.is_truncated() {
         lines.push("\{prefix}\{label} = {}")
       } else {
         lines.push("\{prefix}\{label} = {")
         for child in children {
           append_variable_lines(lines, child, indentation + 2)
         }
+        if structure.is_truncated() {
+          lines.push("\{prefix}  …")
+        }
         lines.push("\{prefix}}")
       }
-    @moondbg.VariableTruncated => {
-      lines.push("\{prefix}\{label} = {")
-      for child in children {
-        append_variable_lines(lines, child, indentation + 2)
-      }
-      lines.push("\{prefix}  …")
-      lines.push("\{prefix}}")
     }
+    @moondbg.VariableIndexedCollection(_) =>
+      lines.push("\{prefix}\{label} = \{variable.value()}")
   }
 }
 

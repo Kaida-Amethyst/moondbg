@@ -31,6 +31,16 @@ pub suberror DebugSessionError {
 } derive(@debug.Debug)
 pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
 
+pub(all) suberror VariableSnapshotError {
+  InvalidIndexedCollectionElementType(String)
+  InvalidIndexedCollectionLength(Int)
+  InvalidIndexedCollectionIndex(index~ : Int, total_length~ : Int)
+  UnorderedIndexedCollectionIndex(previous~ : Int, index~ : Int)
+} derive(Eq, @debug.Debug)
+pub fn VariableSnapshotError::equal(Self, Self) -> Bool
+pub fn VariableSnapshotError::not_equal(Self, Self) -> Bool
+pub fn VariableSnapshotError::to_repr(Self) -> @debug.Repr
+
 // Types and methods
 pub struct BreakpointSnapshot {
   // private fields
@@ -169,6 +179,30 @@ pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
 pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
 pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
 
+pub struct IndexedCollectionSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn IndexedCollectionSnapshot::element_type_name(Self) -> String
+pub fn IndexedCollectionSnapshot::equal(Self, Self) -> Bool
+pub fn IndexedCollectionSnapshot::is_complete(Self) -> Bool
+pub fn IndexedCollectionSnapshot::new(String, Int, Array[IndexedVariableElement]) -> Self raise VariableSnapshotError
+pub fn IndexedCollectionSnapshot::not_equal(Self, Self) -> Bool
+pub fn IndexedCollectionSnapshot::omitted_count(Self) -> Int
+pub fn IndexedCollectionSnapshot::preview_elements(Self) -> ReadOnlyArray[IndexedVariableElement]
+pub fn IndexedCollectionSnapshot::to_repr(Self) -> @debug.Repr
+pub fn IndexedCollectionSnapshot::total_length(Self) -> Int
+
+pub struct IndexedVariableElement {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn IndexedVariableElement::equal(Self, Self) -> Bool
+pub fn IndexedVariableElement::index(Self) -> Int
+pub fn IndexedVariableElement::not_equal(Self, Self) -> Bool
+pub fn IndexedVariableElement::placeholder(Int) -> Self
+pub fn IndexedVariableElement::to_repr(Self) -> @debug.Repr
+pub fn IndexedVariableElement::value(Self) -> VariableSnapshot?
+pub fn IndexedVariableElement::with_value(Int, VariableSnapshot) -> Self
+
 pub enum RunOutcome {
   Stopped(StopSnapshot)
   Exited(Int?)
@@ -210,14 +244,14 @@ pub fn ThreadSelection::index(Self) -> Int
 pub fn ThreadSelection::not_equal(Self, Self) -> Bool
 pub fn ThreadSelection::to_repr(Self) -> @debug.Repr
 
-pub enum VariableExpansion {
+pub enum VariableContent {
   VariableLeaf
-  VariableExpanded
-  VariableTruncated
+  VariableStructure(VariableStructureSnapshot)
+  VariableIndexedCollection(IndexedCollectionSnapshot)
 } derive(Eq, @debug.Debug)
-pub fn VariableExpansion::equal(Self, Self) -> Bool
-pub fn VariableExpansion::not_equal(Self, Self) -> Bool
-pub fn VariableExpansion::to_repr(Self) -> @debug.Repr
+pub fn VariableContent::equal(Self, Self) -> Bool
+pub fn VariableContent::not_equal(Self, Self) -> Bool
+pub fn VariableContent::to_repr(Self) -> @debug.Repr
 
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
@@ -229,10 +263,10 @@ pub fn VariableLookupResult::not_found(String) -> Self
 pub struct VariableSnapshot {
   // private fields
 } derive(Eq, @debug.Debug)
-pub fn VariableSnapshot::children(Self) -> ReadOnlyArray[Self]
+pub fn VariableSnapshot::content(Self) -> VariableContent
 pub fn VariableSnapshot::equal(Self, Self) -> Bool
 pub fn VariableSnapshot::expanded(String, String, String?, Array[Self]) -> Self
-pub fn VariableSnapshot::expansion(Self) -> VariableExpansion
+pub fn VariableSnapshot::indexed_collection(String, String, String?, IndexedCollectionSnapshot) -> Self
 pub fn VariableSnapshot::name(Self) -> String
 pub fn VariableSnapshot::new(String, String, String?) -> Self
 pub fn VariableSnapshot::not_equal(Self, Self) -> Bool
@@ -240,6 +274,15 @@ pub fn VariableSnapshot::to_repr(Self) -> @debug.Repr
 pub fn VariableSnapshot::truncated(String, String, String?, Array[Self]) -> Self
 pub fn VariableSnapshot::type_name(Self) -> String?
 pub fn VariableSnapshot::value(Self) -> String
+
+pub struct VariableStructureSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableStructureSnapshot::children(Self) -> ReadOnlyArray[VariableSnapshot]
+pub fn VariableStructureSnapshot::equal(Self, Self) -> Bool
+pub fn VariableStructureSnapshot::is_truncated(Self) -> Bool
+pub fn VariableStructureSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableStructureSnapshot::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

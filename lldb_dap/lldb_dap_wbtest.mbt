@@ -1286,12 +1286,12 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
       fail("scripted struct execution should stop")
     }
     guard session.find_variable("line1") is @moondbg.VariableFound(line) &&
-      line.expansion() is @moondbg.VariableExpanded &&
-      line.children() is [start, end] &&
-      start.expansion() is @moondbg.VariableExpanded &&
-      start.children() is [start_x, start_y] &&
-      end.expansion() is @moondbg.VariableExpanded &&
-      end.children() is [end_x, end_y] else {
+      line.content() is @moondbg.VariableStructure(line_structure) &&
+      line_structure.children() is [start, end] &&
+      start.content() is @moondbg.VariableStructure(start_structure) &&
+      start_structure.children() is [start_x, start_y] &&
+      end.content() is @moondbg.VariableStructure(end_structure) &&
+      end_structure.children() is [end_x, end_y] else {
       fail("line1 should be materialized through both nested points")
     }
     assert_eq(start.name(), "start")
@@ -1307,12 +1307,12 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     guard session.find_variable("arr") is @moondbg.VariableFound(array) else {
       fail("array root should remain printable")
     }
-    assert_true(array.expansion() is @moondbg.VariableLeaf)
+    assert_true(array.content() is @moondbg.VariableLeaf)
     assert_eq(array.value(), "moonbit.array_i32 @ 0x2000")
     guard session.find_variable("choice") is @moondbg.VariableFound(choice) else {
       fail("boxed enum root should remain printable")
     }
-    assert_true(choice.expansion() is @moondbg.VariableLeaf)
+    assert_true(choice.content() is @moondbg.VariableLeaf)
     assert_eq(choice.value(), "0x3000")
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
@@ -1352,10 +1352,12 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       variables_reference: 101,
     }
     let snapshot = execution.materialize_variable_with_limits(epoch, line, 8, 2)
-    guard snapshot.expansion() is @moondbg.VariableTruncated &&
-      snapshot.children() is [start] &&
-      start.expansion() is @moondbg.VariableTruncated &&
-      start.children() is [] else {
+    guard snapshot.content() is @moondbg.VariableStructure(line_structure) &&
+      line_structure.is_truncated() &&
+      line_structure.children() is [start] &&
+      start.content() is @moondbg.VariableStructure(start_structure) &&
+      start_structure.is_truncated() &&
+      start_structure.children() is [] else {
       fail(
         "node budget should preserve materialized children and mark truncation",
       )
@@ -1365,8 +1367,9 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       epoch, line, 0, 10,
     )
     assert_true(
-      depth_limited.expansion() is @moondbg.VariableTruncated &&
-      depth_limited.children() is [],
+      depth_limited.content() is @moondbg.VariableStructure(structure) &&
+      structure.is_truncated() &&
+      structure.children() is [],
     )
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
@@ -1405,10 +1408,12 @@ async test "lldb-dap variable materialization truncates recursive references" {
     let snapshot = execution.materialize_variable_with_limits(
       epoch, node, 8, 10,
     )
-    guard snapshot.expansion() is @moondbg.VariableExpanded &&
-      snapshot.children() is [next] &&
-      next.expansion() is @moondbg.VariableTruncated &&
-      next.children() is [] else {
+    guard snapshot.content() is @moondbg.VariableStructure(node_structure) &&
+      !node_structure.is_truncated() &&
+      node_structure.children() is [next] &&
+      next.content() is @moondbg.VariableStructure(next_structure) &&
+      next_structure.is_truncated() &&
+      next_structure.children() is [] else {
       fail("recursive reference should stop at the active DAP reference")
     }
     assert_eq(transport.remaining_inputs(), 0)
