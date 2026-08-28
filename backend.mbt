@@ -37,7 +37,7 @@ pub(open) trait DebugBackend {
     Self,
     thread : ThreadSelection,
     frame : FrameSelection,
-    name : String,
+    path : VariablePath,
   ) -> VariableLookupResult
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
   fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]

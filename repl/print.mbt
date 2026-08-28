@@ -49,7 +49,9 @@ fn print_command_spec() -> CommandSpec {
 ///|
 impl ReplCommand for CommandPrint with fn execute(self, context) {
   let events : Array[PresentationEvent] = []
-  let result = context.session.find_variable(self.name) catch {
+  let result = context.session.find_variable(
+    @moondbg.VariablePath::root(self.name),
+  ) catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       events.push(OperationNotAllowedPresentation(state, action))
       return CommandResult::continuing(events~)
@@ -65,8 +67,8 @@ impl ReplCommand for CommandPrint with fn execute(self, context) {
   match result {
     @moondbg.VariableFound(variable) =>
       events.push(VariablePresentation(variable))
-    @moondbg.VariableNotFound(name) =>
-      events.push(VariableNotFoundPresentation(name))
+    @moondbg.VariableLookupFailed(failure) =>
+      events.push(VariableNotFoundPresentation(failure.requested_path()))
   }
   CommandResult::continuing(events~)
 }

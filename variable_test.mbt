@@ -191,3 +191,44 @@ test "indexed collection snapshot rejects invalid metadata" {
   }
   assert_true(unordered_rejected)
 }
+
+///|
+test "variable path owns fields and produces a stable display name" {
+  let root = @moondbg.VariablePath::root("answer")
+  assert_eq(root.root_name(), "answer")
+  assert_eq(root.steps().length(), 0)
+  assert_eq(root.display_name(), "answer")
+  let fields = ["start", "x"]
+  let nested = @moondbg.VariablePath::with_fields("line1", fields)
+  fields.clear()
+  assert_eq(nested.root_name(), "line1")
+  assert_true(nested.steps() is [@moondbg.Field("start"), @moondbg.Field("x")])
+  assert_eq(nested.display_name(), "line1.start.x")
+}
+
+///|
+test "variable lookup failures retain structured path context" {
+  assert_true(
+    @moondbg.VariableLookupResult::not_found("missing")
+    is @moondbg.VariableLookupFailed(@moondbg.VariableRootNotFound("missing")),
+  )
+  guard @moondbg.VariableLookupResult::field_not_found("line1", "start")
+    is @moondbg.VariableLookupFailed(field_missing) else {
+    fail("expected a structured missing-field failure")
+  }
+  assert_eq(field_missing.requested_path(), "line1.start")
+  guard @moondbg.VariableLookupResult::field_access_on_non_struct(
+      "answer",
+      "value",
+      Some("Int"),
+    )
+    is @moondbg.VariableLookupFailed(non_struct) else {
+    fail("expected a structured non-struct failure")
+  }
+  assert_eq(non_struct.requested_path(), "answer.value")
+  guard @moondbg.VariableLookupResult::unavailable("line1.start")
+    is @moondbg.VariableLookupFailed(unavailable) else {
+    fail("expected a structured unavailable failure")
+  }
+  assert_eq(unavailable.requested_path(), "line1.start")
+}

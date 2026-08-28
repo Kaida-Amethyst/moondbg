@@ -144,9 +144,9 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
   self,
   thread,
   frame,
-  name,
+  path,
 ) {
-  self.session.find_variable(thread, frame, name) catch {
+  self.session.find_variable(thread, frame, path) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))

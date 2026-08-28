@@ -66,9 +66,9 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn find_variable(
   _self,
   _thread,
   _frame,
-  name,
+  path,
 ) {
-  @moondbg.VariableLookupResult::not_found(name)
+  @moondbg.VariableLookupResult::not_found(path.display_name())
 }
 
 ///|

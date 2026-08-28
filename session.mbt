@@ -254,7 +254,7 @@ pub async fn DebugSession::finish(self : DebugSession) -> RunOutcome {
 ///|
 pub async fn DebugSession::find_variable(
   self : DebugSession,
-  name : String,
+  path : VariablePath,
 ) -> VariableLookupResult {
   guard self.application.phase is Stopped &&
     self.application.selected_thread() is Some(thread) &&
@@ -264,7 +264,7 @@ pub async fn DebugSession::find_variable(
       action="inspect a variable",
     )
   }
-  self.backend.find_variable(thread, frame, name) catch {
+  self.backend.find_variable(thread, frame, path) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
     error => self.backend_failed(@debug.to_string(error), next_state=Failed)

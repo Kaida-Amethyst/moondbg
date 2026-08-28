@@ -104,9 +104,10 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variab
   self,
   _thread,
   _frame,
-  name,
+  path,
 ) {
   self.lookups += 1
+  let name = path.display_name()
   self.last_name = Some(name)
   match self.variable_mode {
     ObservationVariableFound =>

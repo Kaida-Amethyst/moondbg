@@ -98,7 +98,7 @@ pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit
 pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
-pub async fn DebugSession::find_variable(Self, String) -> VariableLookupResult
+pub async fn DebugSession::find_variable(Self, VariablePath) -> VariableLookupResult
 pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnapshot]
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
@@ -253,12 +253,48 @@ pub fn VariableContent::equal(Self, Self) -> Bool
 pub fn VariableContent::not_equal(Self, Self) -> Bool
 pub fn VariableContent::to_repr(Self) -> @debug.Repr
 
+pub enum VariableLookupFailure {
+  VariableRootNotFound(String)
+  VariableFieldNotFound(String, String)
+  VariableFieldAccessOnNonStruct(String, String, String?)
+  VariableUnavailable(String)
+} derive(Eq, @debug.Debug)
+pub fn VariableLookupFailure::equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::not_equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::requested_path(Self) -> String
+pub fn VariableLookupFailure::to_repr(Self) -> @debug.Repr
+
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
-  VariableNotFound(String)
-}
+  VariableLookupFailed(VariableLookupFailure)
+} derive(Eq, @debug.Debug)
+pub fn VariableLookupResult::equal(Self, Self) -> Bool
+pub fn VariableLookupResult::field_access_on_non_struct(String, String, String?) -> Self
+pub fn VariableLookupResult::field_not_found(String, String) -> Self
 pub fn VariableLookupResult::found(VariableSnapshot) -> Self
+pub fn VariableLookupResult::not_equal(Self, Self) -> Bool
 pub fn VariableLookupResult::not_found(String) -> Self
+pub fn VariableLookupResult::to_repr(Self) -> @debug.Repr
+pub fn VariableLookupResult::unavailable(String) -> Self
+
+pub struct VariablePath {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariablePath::display_name(Self) -> String
+pub fn VariablePath::equal(Self, Self) -> Bool
+pub fn VariablePath::not_equal(Self, Self) -> Bool
+pub fn VariablePath::root(String) -> Self
+pub fn VariablePath::root_name(Self) -> String
+pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
+pub fn VariablePath::to_repr(Self) -> @debug.Repr
+pub fn VariablePath::with_fields(String, Array[String]) -> Self
+
+pub enum VariablePathStep {
+  Field(String)
+} derive(Eq, @debug.Debug)
+pub fn VariablePathStep::equal(Self, Self) -> Bool
+pub fn VariablePathStep::not_equal(Self, Self) -> Bool
+pub fn VariablePathStep::to_repr(Self) -> @debug.Repr
 
 pub struct VariableSnapshot {
   // private fields
@@ -295,7 +331,7 @@ pub(open) trait DebugBackend {
   async fn next(Self, ThreadSelection) -> RunOutcome
   async fn step(Self, ThreadSelection) -> RunOutcome
   async fn finish(Self, ThreadSelection) -> RunOutcome
-  async fn find_variable(Self, ThreadSelection, FrameSelection, String) -> VariableLookupResult
+  async fn find_variable(Self, ThreadSelection, FrameSelection, VariablePath) -> VariableLookupResult
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
   fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]
   fn take_output(Self) -> Array[DebugOutput]

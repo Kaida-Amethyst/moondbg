@@ -189,11 +189,12 @@ impl DebugBackend for RecordingBackend with fn find_variable(
   self,
   thread,
   frame,
-  name,
+  path,
 ) {
   self.variable_lookups += 1
   self.thread_selections.push(thread.index())
   self.frame_selections.push(frame.index())
+  let name = path.display_name()
   VariableLookupResult::found(VariableSnapshot::new(name, "42", Some("Int")))
 }
 
@@ -304,7 +305,8 @@ async test "P4 application state owns epochs selections and stable breakpoint re
     fail("finish should delegate to the backend")
   }
   assert_eq(session.stop_epoch().map(stop => stop.number()), Some(4))
-  guard session.find_variable("answer") is VariableFound(variable) else {
+  guard session.find_variable(VariablePath::root("answer"))
+    is VariableFound(variable) else {
     fail("variable lookup should delegate to the backend")
   }
   assert_eq(variable.name(), "answer")

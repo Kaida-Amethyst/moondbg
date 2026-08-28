@@ -265,10 +265,107 @@ pub fn VariableSnapshot::content(self : VariableSnapshot) -> VariableContent {
 }
 
 ///|
+/// One backend-independent step in a variable lookup path.
+pub enum VariablePathStep {
+  Field(String)
+} derive(Eq, Debug)
+
+///|
+pub extend VariablePathStep with Eq::{equal, not_equal}
+
+///|
+pub extend VariablePathStep with @debug.Debug::{to_repr}
+
+///|
+/// A parsed variable lookup path owned by debugger core.
+///
+/// Adapter references and expression-evaluator text intentionally do not
+/// appear in this value.
+pub struct VariablePath {
+  priv root : String
+  priv steps : Array[VariablePathStep]
+} derive(Eq, Debug)
+
+///|
+pub extend VariablePath with Eq::{equal, not_equal}
+
+///|
+pub extend VariablePath with @debug.Debug::{to_repr}
+
+///|
+pub fn VariablePath::root(root : String) -> VariablePath {
+  { root, steps: [], }
+}
+
+///|
+pub fn VariablePath::with_fields(
+  root : String,
+  fields : Array[String],
+) -> VariablePath {
+  { root, steps: fields.map(field => Field(field)), }
+}
+
+///|
+pub fn VariablePath::root_name(self : VariablePath) -> String {
+  self.root
+}
+
+///|
+pub fn VariablePath::steps(
+  self : VariablePath,
+) -> ReadOnlyArray[VariablePathStep] {
+  ReadOnlyArray::from_array(self.steps)
+}
+
+///|
+pub fn VariablePath::display_name(self : VariablePath) -> String {
+  guard self.steps is [_, ..] else { return self.root }
+  let fields = self.steps.map(step => {
+    match step {
+      Field(field) => field
+    }
+  })
+  "\{self.root}.\{fields.join(".")}"
+}
+
+///|
+/// A domain-level reason why one variable path could not be inspected.
+pub enum VariableLookupFailure {
+  VariableRootNotFound(String)
+  VariableFieldNotFound(String, String)
+  VariableFieldAccessOnNonStruct(String, String, String?)
+  VariableUnavailable(String)
+} derive(Eq, Debug)
+
+///|
+pub extend VariableLookupFailure with Eq::{equal, not_equal}
+
+///|
+pub extend VariableLookupFailure with @debug.Debug::{to_repr}
+
+///|
+pub fn VariableLookupFailure::requested_path(
+  self : VariableLookupFailure,
+) -> String {
+  match self {
+    VariableRootNotFound(root) => root
+    VariableFieldNotFound(owner, field) => "\{owner}.\{field}"
+    VariableFieldAccessOnNonStruct(owner, field, _) => "\{owner}.\{field}"
+    VariableUnavailable(path) => path
+  }
+}
+
+///|
 pub enum VariableLookupResult {
   VariableFound(VariableSnapshot)
-  VariableNotFound(String)
-}
+  VariableLookupFailed(VariableLookupFailure)
+} derive(Eq, Debug)
+
+///|
+pub extend VariableLookupResult with Eq::{equal, not_equal}
+
+///|
+pub extend VariableLookupResult with @debug.Debug::{to_repr}
 
 ///|
 pub fn VariableLookupResult::found(
@@ -279,5 +376,27 @@ pub fn VariableLookupResult::found(
 
 ///|
 pub fn VariableLookupResult::not_found(name : String) -> VariableLookupResult {
-  VariableNotFound(name)
+  VariableLookupFailed(VariableRootNotFound(name))
+}
+
+///|
+pub fn VariableLookupResult::field_not_found(
+  owner : String,
+  field : String,
+) -> VariableLookupResult {
+  VariableLookupFailed(VariableFieldNotFound(owner, field))
+}
+
+///|
+pub fn VariableLookupResult::field_access_on_non_struct(
+  owner : String,
+  field : String,
+  type_name : String?,
+) -> VariableLookupResult {
+  VariableLookupFailed(VariableFieldAccessOnNonStruct(owner, field, type_name))
+}
+
+///|
+pub fn VariableLookupResult::unavailable(path : String) -> VariableLookupResult {
+  VariableLookupFailed(VariableUnavailable(path))
 }

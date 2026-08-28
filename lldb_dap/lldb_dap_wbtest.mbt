@@ -635,7 +635,8 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     }
     assert_true(output.kind() is @moondbg.StandardOutput)
     assert_eq(output.text(), "hello from debuggee\n")
-    guard session.find_variable("answer") is @moondbg.VariableFound(variable) else {
+    guard session.find_variable(@moondbg.VariablePath::root("answer"))
+      is @moondbg.VariableFound(variable) else {
       fail("scripted execution should expose answer")
     }
     assert_eq(variable.value(), "42")
@@ -1469,7 +1470,8 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     guard session.run() is @moondbg.Stopped(_) else {
       fail("scripted struct execution should stop")
     }
-    guard session.find_variable("line1") is @moondbg.VariableFound(line) &&
+    guard session.find_variable(@moondbg.VariablePath::root("line1"))
+      is @moondbg.VariableFound(line) &&
       line.content() is @moondbg.VariableStructure(line_structure) &&
       line_structure.children() is [start, end] &&
       start.content() is @moondbg.VariableStructure(start_structure) &&
@@ -1484,16 +1486,19 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     assert_eq(end.name(), "end")
     assert_eq(end_x.value(), "4")
     assert_eq(end_y.value(), "6")
-    guard session.find_variable("line1") is @moondbg.VariableFound(cached) else {
+    guard session.find_variable(@moondbg.VariablePath::root("line1"))
+      is @moondbg.VariableFound(cached) else {
       fail("line1 should remain available from the stop cache")
     }
     assert_eq(cached, line)
-    guard session.find_variable("arr") is @moondbg.VariableFound(array) else {
+    guard session.find_variable(@moondbg.VariablePath::root("arr"))
+      is @moondbg.VariableFound(array) else {
       fail("array root should remain printable")
     }
     assert_true(array.content() is @moondbg.VariableLeaf)
     assert_eq(array.value(), "moonbit.array_i32 @ 0x2000")
-    guard session.find_variable("choice") is @moondbg.VariableFound(choice) else {
+    guard session.find_variable(@moondbg.VariablePath::root("choice"))
+      is @moondbg.VariableFound(choice) else {
       fail("boxed enum root should remain printable")
     }
     assert_true(choice.content() is @moondbg.VariableLeaf)
@@ -1529,7 +1534,8 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     guard session.run() is @moondbg.Stopped(_) else {
       fail("scripted FixedArray execution should stop")
     }
-    guard session.find_variable("short") is @moondbg.VariableFound(short) &&
+    guard session.find_variable(@moondbg.VariablePath::root("short"))
+      is @moondbg.VariableFound(short) &&
       short.content() is @moondbg.VariableIndexedCollection(short_collection) &&
       short_collection.preview_elements() is [first, second, third] &&
       first.value() is Some(first_value) &&
@@ -1541,7 +1547,8 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     assert_eq(first_value.value(), "1")
     assert_eq(second.index(), 1)
     assert_eq(third_value.value(), "3")
-    guard session.find_variable("long") is @moondbg.VariableFound(long) &&
+    guard session.find_variable(@moondbg.VariablePath::root("long"))
+      is @moondbg.VariableFound(long) &&
       long.content() is @moondbg.VariableIndexedCollection(long_collection) &&
       long_collection.preview_elements() is [first, .., last] &&
       first.value() is Some(first_value) &&
@@ -1555,11 +1562,13 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     assert_eq(first_value.value(), "1")
     assert_eq(last.index(), 99)
     assert_eq(last_value.value(), "100")
-    guard session.find_variable("long") is @moondbg.VariableFound(cached) else {
+    guard session.find_variable(@moondbg.VariablePath::root("long"))
+      is @moondbg.VariableFound(cached) else {
       fail("same-stop FixedArray lookup should use its snapshot cache")
     }
     assert_eq(cached, long)
-    guard session.find_variable("points") is @moondbg.VariableFound(points) &&
+    guard session.find_variable(@moondbg.VariablePath::root("points"))
+      is @moondbg.VariableFound(points) &&
       points.content() is @moondbg.VariableIndexedCollection(point_collection) &&
       point_collection.preview_elements() is [point_first, .., point_last] else {
       fail("opaque FixedArray should retain only bounded type placeholders")
@@ -1570,7 +1579,8 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     assert_true(point_first.value() is None)
     assert_eq(point_last.index(), 99)
     assert_true(point_last.value() is None)
-    guard session.find_variable("empty") is @moondbg.VariableFound(empty) &&
+    guard session.find_variable(@moondbg.VariablePath::root("empty"))
+      is @moondbg.VariableFound(empty) &&
       empty.content() is @moondbg.VariableIndexedCollection(empty_collection) else {
       fail("null FixedArray payload should represent an empty collection")
     }
