@@ -3,6 +3,8 @@ priv suberror CliError {
   MissingExecutable
   ExecutableNotFound(String)
   ExecutableNotAFile(String)
+  InvalidPackageAliasArgument(String)
+  PackageAliasWithoutCurrentPackage
 } derive(Debug)
 
 ///|
@@ -19,6 +21,17 @@ fn command() -> @argparse.Command {
         allow_hyphen_values=true,
       ),
     ],
+    options=[
+      @argparse.OptionArg(
+        "current-package",
+        about="canonical MoonBit package containing the debug target",
+      ),
+      @argparse.OptionArg(
+        "package-alias",
+        about="source import alias mapping in ALIAS=PACKAGE form",
+        action=Append,
+      ),
+    ],
   )
 }
 
@@ -28,6 +41,40 @@ fn executable_argument(matches : @argparse.Matches) -> String raise CliError {
     raise MissingExecutable
   }
   executable
+}
+
+///|
+fn parse_package_alias_argument(
+  argument : StringView,
+) -> (String, String) raise CliError {
+  guard argument.split_once("=") is Some((alias_name, package_name)) &&
+    alias_name != "" &&
+    package_name != "" else {
+    raise InvalidPackageAliasArgument(argument.to_owned())
+  }
+  (alias_name.to_owned(), package_name.to_owned())
+}
+
+///|
+fn debug_context_argument(
+  matches : @argparse.Matches,
+) -> @moondbg.DebugContext raise {
+  let aliases : Array[(String, String)] = match
+    matches.values.get("package-alias") {
+    Some(arguments) =>
+      arguments.map(argument => parse_package_alias_argument(argument))
+    None => []
+  }
+  match matches.values.get("current-package") {
+    Some([current_package]) =>
+      @moondbg.DebugContext::new(current_package, aliases)
+    _ => {
+      guard aliases.length() == 0 else {
+        raise PackageAliasWithoutCurrentPackage
+      }
+      @moondbg.DebugContext::empty()
+    }
+  }
 }
 
 ///|
@@ -75,7 +122,10 @@ fn adapter_preparation_timeout_ms() -> Int {
 }
 
 ///|
-async fn run(executable : String) -> Unit {
+async fn run(
+  executable : String,
+  debug_context : @moondbg.DebugContext,
+) -> Unit {
   let executable = validate_executable(executable)
   @async.with_task_group(async fn(group) {
     let backend = @lldb_dap.LldbDapBackend::start(
@@ -92,7 +142,7 @@ async fn run(executable : String) -> Unit {
     let editor = @readline.LineEditor::open(history~)
     let registry = default_command_registry()
     let renderer = HumanRenderer::new()
-    let context = ReplContext::new(session, registry, renderer)
+    let context = ReplContext::new(session, registry, renderer, debug_context~)
     run_repl(editor, history, context)
     session.disconnect()
     println("Debugger exited.")
@@ -102,8 +152,10 @@ async fn run(executable : String) -> Unit {
 ///|
 async fn main {
   try {
-    let executable = executable_argument(command().parse())
-    run(executable)
+    let matches = command().parse()
+    let executable = executable_argument(matches)
+    let debug_context = debug_context_argument(matches)
+    run(executable, debug_context)
   } catch {
     @moondbg.AdapterFailure(message) =>
       println("moondbg: debugger adapter failed: \{message}")

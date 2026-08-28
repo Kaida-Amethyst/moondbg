@@ -5,6 +5,7 @@ priv struct ReplContext {
   session : @moondbg.DebugSession
   registry : CommandRegistry
   renderer : &PresentationRenderer
+  debug_context : @moondbg.DebugContext
 }
 
 ///|
@@ -12,8 +13,9 @@ fn ReplContext::new(
   session : @moondbg.DebugSession,
   registry : CommandRegistry,
   renderer : &PresentationRenderer,
+  debug_context? : @moondbg.DebugContext = @moondbg.DebugContext::empty(),
 ) -> ReplContext {
-  { session, registry, renderer, }
+  { session, registry, renderer, debug_context, }
 }
 
 ///|

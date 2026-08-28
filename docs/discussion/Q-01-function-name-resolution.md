@@ -146,7 +146,7 @@ polymorphic 函数 golden symbol，并覆盖转义、复合类型参数和非法
 
 ### P2. 从 moon 向 moondbg 传递包上下文
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 让 moondbg 得到当前调试包的规范全名，并能把当前包可见的 import alias 解析为
 依赖包规范全名。
@@ -165,6 +165,17 @@ polymorphic 函数 golden symbol，并覆盖转义、复合类型参数和非法
 
 **完成条件：** `moon debug --dry-run <pkg>` 可观察到准确的当前包和 alias 映射；真实委托
 后 moondbg 得到相同上下文；两个仓库原有测试保持通过。
+
+**实施结果：** moon 的 run 构建结果现在携带调试目标的 `PackageFQN`，并从 source target
+依赖边提取实际生效的 `short_alias -> PackageFQN` 映射；`moon debug` 通过
+`--current-package` 和可重复的 `--package-alias` 将它们传给 moondbg。提取结果包含显式
+别名、默认别名和构建图注入的 `prelude`，且在 dry-run 中按稳定顺序显示。
+
+moondbg 新增与 REPL、DAP 无关的 `DebugContext`，CLI 可以构造并校验包上下文；直接运行
+moondbg 仍允许省略上下文，以保留源码行断点和独立调试用法，后续使用函数名断点时会给出
+缺少当前包的明确错误。两个仓库分别增加了参数、别名、未知别名、错误输入、dry-run 和
+委托测试；真实开发版 `moon debug main --dry-run` 已验证传递
+`Kaida-Amethyst/moondbg-dwarf-probe/main` 与 `prelude=moonbitlang/core/prelude`。
 
 ### P3. 实现非泛型函数名断点
 

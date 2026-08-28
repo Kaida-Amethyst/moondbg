@@ -14,6 +14,17 @@ pub suberror DebugBackendError {
 pub fn DebugBackendError::failure(String) -> Self
 pub fn DebugBackendError::to_repr(Self) -> @debug.Repr
 
+pub(all) suberror DebugContextError {
+  MissingCurrentPackage
+  InvalidCurrentPackage(String)
+  InvalidPackageAlias(String)
+  DuplicatePackageAlias(String)
+  UnknownPackageAlias(String)
+} derive(Eq, @debug.Debug)
+pub fn DebugContextError::equal(Self, Self) -> Bool
+pub fn DebugContextError::not_equal(Self, Self) -> Bool
+pub fn DebugContextError::to_repr(Self) -> @debug.Repr
+
 pub suberror DebugSessionError {
   OperationNotAllowed(state~ : DebugSessionState, action~ : String)
   AdapterFailure(String)
@@ -41,6 +52,14 @@ pub enum BreakpointStatus {
 pub fn BreakpointStatus::equal(Self, Self) -> Bool
 pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
 pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
+
+pub struct DebugContext {
+  // private fields
+}
+pub fn DebugContext::current_package(Self) -> String raise DebugContextError
+pub fn DebugContext::empty() -> Self
+pub fn DebugContext::new(String, Array[(String, String)]) -> Self raise DebugContextError
+pub fn DebugContext::package_for_alias(Self, StringView) -> String raise DebugContextError
 
 pub struct DebugOutput {
   // private fields

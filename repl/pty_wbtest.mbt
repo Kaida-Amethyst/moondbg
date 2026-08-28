@@ -7,7 +7,7 @@ async test "REPL PTY fixture child" {
   guard @pty_testkit.prepare_fixture() else {
     fail("PTY fixture could not acquire its controlling terminal")
   }
-  run(executable)
+  run(executable, @moondbg.DebugContext::empty())
 }
 
 ///|
