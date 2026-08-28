@@ -1,6 +1,6 @@
 # T-01. 第一版 REPL 交互模型与 lldb-dap 会话边界
 
-> 最后更新日期：2026-08-28
+> 最后更新日期：2026-08-29
 > 仓库：moondbg
 > 记录者：Codex-GPT-5
 
@@ -14,6 +14,7 @@
 
 - [Q-03. Struct 变量的递归打印](Q-03-struct-variable-printing.md) 〔待讨论〕
 - [Q-04. FixedArray 值的有界打印](Q-04-fixed-array-printing.md) 〔已解决〕
+- [Q-05. Struct 字段路径查询的实现边界](Q-05-struct-field-path-printing.md) 〔已解决〕
 
 ## 当前建议与分析
 
@@ -285,4 +286,5 @@ DWARF 是源码位置、变量和类型信息的事实来源。只有 LLDB/DAP �
 
 ## 待决策问题
 
-暂无。T-01 初始列出的决策问题 1—12 均已确认；后续发现的新问题再继续补充。
+暂无。T-01 初始列出的决策问题 1—12 均已确认；后续独立问题记录在关联 Q 文档中。
+Q-05 已确认采用领域 `VariablePath` 与 backend 按需逐层解析。
