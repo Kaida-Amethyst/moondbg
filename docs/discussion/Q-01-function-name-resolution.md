@@ -117,7 +117,7 @@ moondbg 与 moon 两个独立 Git 仓库，因此两个仓库分别产生一个�
 
 ### P1. 实现 `name_mangle` 子包
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 建立不依赖 REPL、debugger core 和 lldb-dap 的 MoonBit v0 顶层函数符号模型。
 
@@ -133,6 +133,16 @@ moondbg 与 moon 两个独立 Git 仓库，因此两个仓库分别产生一个�
 
 **完成条件：** package 的公共接口和边界清晰；golden tests、`moon check`、`moon test`、
 `moon info` 和格式化均通过。
+
+**实施结果：** 新增独立 `name_mangle` package，对外提供
+`mangle_top_level_function_base` 和 `demangle_top_level_function`。实现覆盖 MoonBit v0
+标识符 UTF-8 字节转义、普通/core/builtin package 编码、顶层函数 family base、普通与
+错误多态泛型后缀，以及 primitive、容器、tuple、函数和命名类型参数的解析；其他符号种类
+和未知版本会被明确拒绝。公共解码结果保持为与 LLDB/DAP 无关的结构化值。
+
+测试包含编译器输出和真实 native fixture 中的普通函数、builtin 泛型函数与 core error
+polymorphic 函数 golden symbol，并覆盖转义、复合类型参数和非法输入；没有只使用自身往返
+验证。最终 `moon info`、`moon fmt`、`moon check` 和 119 个 MoonBit 测试全部通过。
 
 ### P2. 从 moon 向 moondbg 传递包上下文
 

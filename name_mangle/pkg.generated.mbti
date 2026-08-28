@@ -1,0 +1,39 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/name_mangle"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn demangle_top_level_function(StringView) -> TopLevelFunctionSymbol raise NameMangleError
+
+pub fn mangle_top_level_function_base(StringView, StringView) -> String raise NameMangleError
+
+// Errors
+pub(all) suberror NameMangleError {
+  InvalidPackage(String)
+  InvalidIdentifier(String)
+  InvalidSymbol(String)
+  UnsupportedVersion(String)
+} derive(Eq, @debug.Debug)
+pub fn NameMangleError::equal(Self, Self) -> Bool
+pub fn NameMangleError::not_equal(Self, Self) -> Bool
+pub fn NameMangleError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct TopLevelFunctionSymbol {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn TopLevelFunctionSymbol::equal(Self, Self) -> Bool
+pub fn TopLevelFunctionSymbol::error_type_argument(Self) -> String?
+pub fn TopLevelFunctionSymbol::function_name(Self) -> String
+pub fn TopLevelFunctionSymbol::is_specialized(Self) -> Bool
+pub fn TopLevelFunctionSymbol::not_equal(Self, Self) -> Bool
+pub fn TopLevelFunctionSymbol::package_name(Self) -> String
+pub fn TopLevelFunctionSymbol::to_repr(Self) -> @debug.Repr
+pub fn TopLevelFunctionSymbol::type_arguments(Self) -> Array[String]
+
+// Type aliases
+
+// Traits
