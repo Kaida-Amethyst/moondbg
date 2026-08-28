@@ -5,7 +5,7 @@ priv enum ReplControlFlow {
 }
 
 ///|
-const DEFAULT_SOURCE_LINE_COUNT : Int = 5
+const DEFAULT_SOURCE_LINE_COUNT : Int = 10
 
 ///|
 priv struct CommandHelpEntry {

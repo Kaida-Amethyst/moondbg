@@ -42,7 +42,7 @@ fn list_command_spec() -> CommandSpec {
     "list",
     [],
     "list [-c|--count <count>]",
-    "Show source context (default: 5 lines)",
+    "Show source context (default: \{DEFAULT_SOURCE_LINE_COUNT} lines)",
     parse_list_command,
   )
 }

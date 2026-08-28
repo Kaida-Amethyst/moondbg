@@ -256,7 +256,12 @@ test "P7 list spec retains default and positive count validation" {
 ///|
 async test "P7 list returns independent stop and source-view events" {
   let (backend, context) = stopped_observation_context(ObservationVariableFound)
-  for entry in [("list", 5), ("list -c 10", 10), ("list --count 12", 12)] {
+  for
+    entry in [
+      ("list", DEFAULT_SOURCE_LINE_COUNT),
+      ("list -c 10", 10),
+      ("list --count 12", 12),
+    ] {
     let result = execute_framework_command(context, entry.0)
     guard result.events
       is [StopPresentation(snapshot), SourceViewPresentation(source_view)] else {
