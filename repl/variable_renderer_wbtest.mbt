@@ -91,3 +91,143 @@ test "scalar and unsupported container rendering remains one line" {
     content="arr: moonbit.array_i32 = moonbit.array_i32 @ 0x2000",
   )
 }
+
+///|
+fn indexed_value(
+  index : Int,
+  value : String,
+  type_name : String,
+) -> @moondbg.IndexedVariableElement {
+  @moondbg.IndexedVariableElement::with_value(
+    index,
+    @moondbg.VariableSnapshot::new("[\{index}]", value, Some(type_name)),
+  )
+}
+
+///|
+fn indexed_array(
+  name : String,
+  element_type : String,
+  length : Int,
+  elements : Array[@moondbg.IndexedVariableElement],
+) -> @moondbg.VariableSnapshot raise {
+  @moondbg.VariableSnapshot::indexed_collection(
+    name,
+    "raw array",
+    None,
+    @moondbg.IndexedCollectionSnapshot::new(element_type, length, elements),
+  )
+}
+
+///|
+test "FixedArray renderer displays empty single and complete short arrays" {
+  inspect(
+    variable_lines(indexed_array("empty", "Int", 0, [])).join("\n"),
+    content=(
+      #|empty: FixedArray[Int] with length = 0
+      #|
+      #|  []
+    ),
+  )
+  inspect(
+    variable_lines(
+      indexed_array("one", "Bool", 1, [indexed_value(0, "true", "Bool")]),
+    ).join("\n"),
+    content=(
+      #|one: FixedArray[Bool] with length = 1
+      #|
+      #|  [true]
+    ),
+  )
+  inspect(
+    variable_lines(
+      indexed_array("arr", "Int", 3, [
+        indexed_value(0, "1", "Int"),
+        indexed_value(1, "2", "Int"),
+        indexed_value(2, "3", "Int"),
+      ]),
+    ).join("\n"),
+    content=(
+      #|arr: FixedArray[Int] with length = 3
+      #|
+      #|  [1, 2, 3]
+    ),
+  )
+}
+
+///|
+test "FixedArray renderer keeps a bounded head and the true tail" {
+  let elements = Array::makei(15, index => {
+    indexed_value(index, (index + 1).to_string(), "Int")
+  })
+  elements.push(indexed_value(99, "100", "Int"))
+  inspect(
+    variable_lines(indexed_array("arr", "Int", 100, elements)).join("\n"),
+    content=(
+      #|arr: FixedArray[Int] with length = 100
+      #|
+      #|  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, ..., 100]
+    ),
+  )
+}
+
+///|
+test "FixedArray renderer applies its character budget without losing endpoints" {
+  let elements = Array::makei(15, index => {
+    indexed_value(index, "18446744073709551615", "UInt64")
+  })
+  elements.push(indexed_value(99, "100", "UInt64"))
+  let array = indexed_array("wide", "UInt64", 100, elements)
+  guard variable_lines(array) is [_, "", content] else {
+    fail("FixedArray should render as a header, blank line, and content line")
+  }
+  assert_true(content.length() <= FIXED_ARRAY_CONTENT_WIDTH + 2)
+  assert_true(content.has_prefix("  [18446744073709551615"))
+  assert_true(content.has_suffix("..., 100]"))
+  inspect(
+    content,
+    content="  [18446744073709551615, 18446744073709551615, 18446744073709551615, 18446744073709551615, ..., 100]",
+  )
+  let exact_value = "1".repeat(48)
+  let exact = indexed_array("exact", "Int", 2, [
+    indexed_value(0, exact_value, "Int"),
+    indexed_value(1, exact_value, "Int"),
+  ])
+  guard exact.content() is @moondbg.VariableIndexedCollection(collection) else {
+    fail("exact-width fixture should remain an indexed collection")
+  }
+  let exact_content = bounded_indexed_content_text(collection)
+  assert_eq(exact_content.length(), FIXED_ARRAY_CONTENT_WIDTH)
+  assert_false(exact_content.contains("..."))
+}
+
+///|
+test "FixedArray renderer formats numeric values and opaque type placeholders" {
+  inspect(
+    variable_lines(
+      indexed_array("values", "Double", 4, [
+        indexed_value(0, "-2.5", "Double"),
+        indexed_value(1, "0", "Double"),
+        indexed_value(2, "3.25", "Double"),
+        indexed_value(3, "-1e+20", "Double"),
+      ]),
+    ).join("\n"),
+    content=(
+      #|values: FixedArray[Double] with length = 4
+      #|
+      #|  [-2.5, 0, 3.25, -1e+20]
+    ),
+  )
+  let points = Array::makei(15, index => {
+    @moondbg.IndexedVariableElement::placeholder(index)
+  })
+  points.push(@moondbg.IndexedVariableElement::placeholder(99))
+  inspect(
+    variable_lines(indexed_array("points", "Point", 100, points)).join("\n"),
+    content=(
+      #|points: FixedArray[Point] with length = 100
+      #|
+      #|  [Point, Point, Point, Point, Point, Point, Point, Point, Point, Point, Point, Point, ..., Point]
+    ),
+  )
+}

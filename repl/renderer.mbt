@@ -211,6 +211,69 @@ fn variable_label(variable : @moondbg.VariableSnapshot) -> String {
 }
 
 ///|
+const FIXED_ARRAY_CONTENT_WIDTH : Int = 100
+
+///|
+fn indexed_element_text(
+  element : @moondbg.IndexedVariableElement,
+  element_type_name : String,
+) -> String {
+  match element.value() {
+    Some(value) => value.value()
+    None => element_type_name
+  }
+}
+
+///|
+fn indexed_content_text(
+  collection : @moondbg.IndexedCollectionSnapshot,
+  selected : Array[@moondbg.IndexedVariableElement],
+) -> String {
+  let parts : Array[String] = []
+  let mut next_index = 0
+  for element in selected {
+    if element.index() > next_index {
+      parts.push("...")
+    }
+    parts.push(indexed_element_text(element, collection.element_type_name()))
+    next_index = element.index() + 1
+  }
+  if next_index < collection.total_length() {
+    parts.push("...")
+  }
+  "[\{parts.join(", ")}]"
+}
+
+///|
+fn bounded_indexed_content_text(
+  collection : @moondbg.IndexedCollectionSnapshot,
+) -> String {
+  let selected : Array[@moondbg.IndexedVariableElement] = []
+  selected.push_iter(collection.preview_elements().iter())
+  let mut content = indexed_content_text(collection, selected)
+  while content.length() > FIXED_ARRAY_CONTENT_WIDTH && selected.length() > 2 {
+    selected.remove(selected.length() - 2) |> ignore
+    content = indexed_content_text(collection, selected)
+  }
+  content
+}
+
+///|
+fn append_indexed_collection_lines(
+  lines : Array[String],
+  variable : @moondbg.VariableSnapshot,
+  collection : @moondbg.IndexedCollectionSnapshot,
+  indentation : Int,
+) -> Unit {
+  let prefix = " ".repeat(indentation)
+  lines.push(
+    "\{prefix}\{variable.name()}: FixedArray[\{collection.element_type_name()}] with length = \{collection.total_length()}",
+  )
+  lines.push("")
+  lines.push("\{prefix}  \{bounded_indexed_content_text(collection)}")
+}
+
+///|
 fn append_variable_lines(
   lines : Array[String],
   variable : @moondbg.VariableSnapshot,
@@ -236,8 +299,8 @@ fn append_variable_lines(
         lines.push("\{prefix}}")
       }
     }
-    @moondbg.VariableIndexedCollection(_) =>
-      lines.push("\{prefix}\{label} = \{variable.value()}")
+    @moondbg.VariableIndexedCollection(collection) =>
+      append_indexed_collection_lines(lines, variable, collection, indentation)
   }
 }
 
