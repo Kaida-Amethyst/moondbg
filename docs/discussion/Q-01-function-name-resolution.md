@@ -213,7 +213,7 @@ lldb-dap backend 增加独立的函数断点集合，通过标准 `setFunctionBr
 
 ### P4. 实现泛型函数 family 断点
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 让同一个 `b foo` 自动命中当前二进制中 `foo` 的普通本体或全部已生成泛型实例，
 而不要求编译器提供单态化函数索引。
@@ -232,3 +232,21 @@ lldb-dap backend 增加独立的函数断点集合，通过标准 `setFunctionBr
 
 **完成条件：** 用户无需写类型参数即可用一个函数断点命中全部已链接实例；普通函数行为
 保持不变；断点 ID、location、重放、停止与错误反馈稳定，所有规定检查通过。
+
+**实施结果：** 普通 MoonBit 顶层函数断点现在保存 `MoonBitFunctionFamily(mangled_base)`
+选择器，native 入口等 ABI 特例仍保存 `ExactPhysicalFunction`。lldb-dap backend 对 family
+构造 `^<base>($|G|H)`，边界只接受普通本体、泛型后缀和错误多态后缀，不会把嵌套函数或
+闭包后缀纳入；精确选择器继续走标准 `setFunctionBreakpoints`。
+
+本机 lldb-dap 协议探针确认，`evaluate(context="repl")` 可以执行
+`breakpoint set --func-regex`，返回文本包含 LLDB breakpoint ID 与 location 数量，但不会
+发送 breakpoint event。因此 backend 封装了这一条 LLDB 命令通道，并只解析三种已实测的
+稳定首行：多 location、单 location 详情和 `no locations (pending)`。解析出的 LLDB ID
+保留在 execution-scoped state；多个 location 对外仍是一个稳定的用户逻辑断点，snapshot
+会报告 location 数量，零实例则明确 rejected。每次新执行会从应用层稳定配置重新创建并
+映射断点。
+
+native fixture 的 `identity[T]` 同时生成 `Int` 和 `String` 两个实例。真实 `moon debug`
+验证一个 `b @probe.identity` 显示 2 locations，先后停在两个实例；`b @probe.absent` 稳定
+报告没有匹配实例；普通 `b sum` 迁移到 family 路径后仍正常停住。协议、解析、ID/location
+映射和配置重放测试均已加入，最终 `moon check` 与 131 个测试通过。

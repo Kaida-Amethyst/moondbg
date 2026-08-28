@@ -82,9 +82,16 @@ fn render_function_breakpoint_update(
         "Breakpoint \{breakpoint.id()} is still pending at function \{breakpoint.display_name()}",
       )
     @moondbg.Verified =>
-      println(
-        "Breakpoint \{breakpoint.id()} verified at function \{breakpoint.display_name()}",
-      )
+      match breakpoint.location_count() {
+        Some(count) if count > 1 =>
+          println(
+            "Breakpoint \{breakpoint.id()} verified at function \{breakpoint.display_name()} (\{count} locations)",
+          )
+        _ =>
+          println(
+            "Breakpoint \{breakpoint.id()} verified at function \{breakpoint.display_name()}",
+          )
+      }
     @moondbg.Rejected(message) =>
       println(
         "Breakpoint \{breakpoint.id()} rejected at function \{breakpoint.display_name()}: \{message}",

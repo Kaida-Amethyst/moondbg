@@ -10,6 +10,7 @@ priv struct RecordingBackend {
   breakpoints : Array[SourceBreakpoint]
   function_breakpoints : Array[FunctionBreakpoint]
   breakpoint_launches : Array[Array[Int]]
+  function_breakpoint_launches : Array[Array[Int]]
   thread_selections : Array[Int]
   frame_selections : Array[Int]
   mut fail_next : Bool
@@ -32,6 +33,7 @@ fn RecordingBackend::new() -> RecordingBackend {
     breakpoints: [],
     function_breakpoints: [],
     breakpoint_launches: [],
+    function_breakpoint_launches: [],
     thread_selections: [],
     frame_selections: [],
     fail_next: false,
@@ -79,6 +81,9 @@ impl DebugBackend for RecordingBackend with fn launch(
   for breakpoint in function_breakpoints {
     self.function_breakpoints.push(breakpoint)
   }
+  self.function_breakpoint_launches.push(
+    function_breakpoints.map(breakpoint => breakpoint.id()),
+  )
   self.breakpoint_launches.push(breakpoints.map(breakpoint => breakpoint.id()))
   RunOutcome::stopped(recording_stop())
 }
@@ -344,15 +349,24 @@ async test "function breakpoints resolve package context and native symbols" {
   guard backend.function_breakpoints is [local_breakpoint, imported, entry] else {
     fail("backend should receive all stable function breakpoints")
   }
-  assert_eq(local_breakpoint.physical_name(), "_M0FP37example3app4main6helper")
-  assert_eq(imported.physical_name(), "_M0FP37example3lib4util5parse")
-  assert_eq(entry.physical_name(), "moonbit_main")
+  assert_true(
+    local_breakpoint.selector()
+    is MoonBitFunctionFamily("_M0FP37example3app4main6helper"),
+  )
+  assert_true(
+    imported.selector()
+    is MoonBitFunctionFamily("_M0FP37example3lib4util5parse"),
+  )
+  assert_true(entry.selector() is ExactPhysicalFunction("moonbit_main"))
   guard session.function_breakpoints() is [one, two, three] else {
     fail("function breakpoint results should be visible through the session")
   }
   assert_true(one.status() is Verified)
   assert_true(two.status() is Verified)
   assert_true(three.status() is Verified)
+  assert_eq(backend.function_breakpoint_launches, [[1, 2, 3]])
+  session.run() |> ignore
+  assert_eq(backend.function_breakpoint_launches, [[1, 2, 3], [1, 2, 3]])
 }
 
 ///|

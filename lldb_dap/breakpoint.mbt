@@ -31,7 +31,7 @@ fn LogicalSourceBreakpoint::pending_snapshot(
 priv struct LogicalFunctionBreakpoint {
   id : Int
   display_name : String
-  physical_name : String
+  selector : @moondbg.FunctionBreakpointSelector
 }
 
 ///|
@@ -41,7 +41,7 @@ fn LogicalFunctionBreakpoint::from_domain(
   {
     id: breakpoint.id(),
     display_name: breakpoint.display_name(),
-    physical_name: breakpoint.physical_name(),
+    selector: breakpoint.selector(),
   }
 }
 
@@ -58,6 +58,7 @@ fn LogicalFunctionBreakpoint::pending_snapshot(
 priv struct AdapterBreakpointOutcome {
   actual_line : Int?
   dap_id : Int?
+  location_count : Int?
   status : AdapterBreakpointStatus
 }
 
@@ -83,10 +84,12 @@ fn ExecutionBreakpointState::verify(
   breakpoint_id : Int,
   actual_line : Int?,
   dap_id : Int?,
+  location_count? : Int? = None,
 ) -> Unit {
   self.outcomes.set(breakpoint_id, {
     actual_line,
     dap_id,
+    location_count,
     status: AdapterVerified,
   })
 }
@@ -100,6 +103,7 @@ fn ExecutionBreakpointState::reject(
   self.outcomes.set(breakpoint_id, {
     actual_line: None,
     dap_id: None,
+    location_count: None,
     status: AdapterRejected(message),
   })
 }
@@ -143,6 +147,7 @@ fn ExecutionBreakpointState::function_snapshot(
       @moondbg.FunctionBreakpointSnapshot::verified(
         breakpoint.id,
         breakpoint.display_name,
+        location_count=outcome.location_count,
       )
     AdapterRejected(message) =>
       @moondbg.FunctionBreakpointSnapshot::rejected(
@@ -386,9 +391,30 @@ fn set_function_breakpoints_arguments(
 ) -> Json {
   let dap_breakpoints : Array[Json] = []
   for breakpoint in breakpoints {
-    dap_breakpoints.push({ "name": breakpoint.physical_name })
+    guard breakpoint.selector is @moondbg.ExactPhysicalFunction(name) else {
+      continue
+    }
+    dap_breakpoints.push({ "name": name })
   }
   { "breakpoints": dap_breakpoints }
+}
+
+///|
+fn exact_function_breakpoints(
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Array[LogicalFunctionBreakpoint] {
+  breakpoints.filter(breakpoint => {
+    breakpoint.selector is @moondbg.ExactPhysicalFunction(_)
+  })
+}
+
+///|
+fn family_function_breakpoints(
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Array[LogicalFunctionBreakpoint] {
+  breakpoints.filter(breakpoint => {
+    breakpoint.selector is @moondbg.MoonBitFunctionFamily(_)
+  })
 }
 
 ///|
@@ -445,7 +471,7 @@ fn apply_function_breakpoint_response(
 }
 
 ///|
-async fn DebugExecution::configure_function_breakpoints(
+async fn DebugExecution::configure_exact_function_breakpoints(
   self : DebugExecution,
   breakpoints : Array[LogicalFunctionBreakpoint],
 ) -> Unit {
@@ -467,4 +493,117 @@ async fn DebugExecution::configure_function_breakpoints(
     breakpoints,
     response,
   )
+}
+
+///|
+fn function_family_regex(base : StringView) -> String {
+  "^\{base}($|G|H)"
+}
+
+///|
+fn function_family_breakpoint_command(base : StringView) -> String {
+  "breakpoint set --func-regex '\{function_family_regex(base)}'"
+}
+
+///|
+priv struct LldbCreatedBreakpoint {
+  id : Int
+  location_count : Int
+}
+
+///|
+fn LldbCreatedBreakpoint::parse(result : StringView) -> LldbCreatedBreakpoint? {
+  guard result.trim().strip_prefix("Breakpoint ") is Some(description) &&
+    description.split_once(":") is Some((id_text, detail)) else {
+    return None
+  }
+  let id = Some(@string.parse_int(id_text, base=10)) catch { _ => None }
+  guard id is Some(id) else { return None }
+  let detail = detail.trim()
+  if detail.has_prefix("no locations") {
+    return Some({ id, location_count: 0, })
+  }
+  let location_count = match detail.split_once(" locations.") {
+    Some((count_text, _)) =>
+      Some(@string.parse_int(count_text, base=10)) catch {
+        _ => None
+      }
+    None => Some(1)
+  }
+  guard location_count is Some(location_count) && location_count > 0 else {
+    return None
+  }
+  Some({ id, location_count, })
+}
+
+///|
+fn lldb_command_result(response : @dap.DapResponse) -> String? {
+  guard response.success() &&
+    response.body() is { "result": String(result), .. } else {
+    return None
+  }
+  Some(result)
+}
+
+///|
+async fn DebugExecution::configure_family_function_breakpoint(
+  self : DebugExecution,
+  breakpoint : LogicalFunctionBreakpoint,
+) -> Unit {
+  guard breakpoint.selector is @moondbg.MoonBitFunctionFamily(base) else {
+    return
+  }
+  let seq = self.dispatcher.send_request("evaluate", {
+    "expression": function_family_breakpoint_command(base),
+    "context": "repl",
+  })
+  guard self.wait_for_response(seq, "evaluate") is Some(response) else {
+    self.breakpoint_state.reject(
+      breakpoint.id,
+      "lldb-dap exited before creating the function family breakpoint",
+    )
+    return
+  }
+  guard lldb_command_result(response) is Some(result) else {
+    self.breakpoint_state.reject(
+      breakpoint.id,
+      response
+      .message()
+      .unwrap_or("lldb-dap rejected the function family breakpoint"),
+    )
+    return
+  }
+  guard LldbCreatedBreakpoint::parse(result) is Some(created) else {
+    self.breakpoint_state.reject(
+      breakpoint.id,
+      "lldb-dap returned an unrecognized LLDB breakpoint result",
+    )
+    return
+  }
+  guard created.location_count > 0 else {
+    self.breakpoint_state.reject(
+      breakpoint.id,
+      "no matching function instances were found",
+    )
+    return
+  }
+  self.breakpoint_state.verify(
+    breakpoint.id,
+    None,
+    Some(created.id),
+    location_count=Some(created.location_count),
+  )
+}
+
+///|
+async fn DebugExecution::configure_function_breakpoints(
+  self : DebugExecution,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Unit {
+  self.configure_exact_function_breakpoints(
+    exact_function_breakpoints(breakpoints),
+  )
+  for breakpoint in family_function_breakpoints(breakpoints) {
+    self.configure_family_function_breakpoint(breakpoint)
+  }
 }

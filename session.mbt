@@ -98,15 +98,17 @@ pub fn DebugSession::add_function_breakpoint(
         false,
       )
   }
-  let physical_name = if entry_point {
-    "moonbit_main"
+  let selector = if entry_point {
+    ExactPhysicalFunction("moonbit_main")
   } else {
-    @name_mangle.mangle_top_level_function_base(package_name, function_name)
+    MoonBitFunctionFamily(
+      @name_mangle.mangle_top_level_function_base(package_name, function_name),
+    )
   }
   let breakpoint = FunctionBreakpoint::new(
     self.next_breakpoint_id,
     request.display_name(),
-    physical_name,
+    selector,
   )
   self.next_breakpoint_id += 1
   self.function_breakpoints.push(breakpoint)

@@ -41,21 +41,48 @@ pub fn FunctionBreakpointRequest::display_name(
 }
 
 ///|
+/// Backend-independent physical matching strategy for a function breakpoint.
+pub enum FunctionBreakpointSelector {
+  ExactPhysicalFunction(String)
+  MoonBitFunctionFamily(String)
+} derive(Debug, Eq)
+
+///|
+pub extend FunctionBreakpointSelector with @debug.Debug::{to_repr}
+
+///|
+pub extend FunctionBreakpointSelector with Eq::{equal, not_equal}
+
+///|
+pub fn FunctionBreakpointSelector::exact_physical(
+  physical_name : String,
+) -> FunctionBreakpointSelector {
+  ExactPhysicalFunction(physical_name)
+}
+
+///|
+pub fn FunctionBreakpointSelector::family(
+  mangled_base : String,
+) -> FunctionBreakpointSelector {
+  MoonBitFunctionFamily(mangled_base)
+}
+
+///|
 /// A stable application-level function breakpoint after package and native
 /// symbol resolution. Adapter-specific breakpoint identifiers are not stored.
 pub struct FunctionBreakpoint {
   priv id : Int
   priv display_name : String
-  priv physical_name : String
+  priv selector : FunctionBreakpointSelector
 }
 
 ///|
 fn FunctionBreakpoint::new(
   id : Int,
   display_name : String,
-  physical_name : String,
+  selector : FunctionBreakpointSelector,
 ) -> FunctionBreakpoint {
-  { id, display_name, physical_name, }
+  { id, display_name, selector, }
 }
 
 ///|
@@ -69,8 +96,10 @@ pub fn FunctionBreakpoint::display_name(self : FunctionBreakpoint) -> String {
 }
 
 ///|
-pub fn FunctionBreakpoint::physical_name(self : FunctionBreakpoint) -> String {
-  self.physical_name
+pub fn FunctionBreakpoint::selector(
+  self : FunctionBreakpoint,
+) -> FunctionBreakpointSelector {
+  self.selector
 }
 
 ///|
@@ -84,6 +113,7 @@ fn FunctionBreakpoint::pending_snapshot(
 pub struct FunctionBreakpointSnapshot {
   priv id : Int
   priv display_name : String
+  priv location_count : Int?
   priv status : BreakpointStatus
 }
 
@@ -92,15 +122,16 @@ pub fn FunctionBreakpointSnapshot::pending(
   id : Int,
   display_name : String,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, status: Pending, }
+  { id, display_name, location_count: None, status: Pending, }
 }
 
 ///|
 pub fn FunctionBreakpointSnapshot::verified(
   id : Int,
   display_name : String,
+  location_count? : Int? = None,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, status: Verified, }
+  { id, display_name, location_count, status: Verified, }
 }
 
 ///|
@@ -109,7 +140,7 @@ pub fn FunctionBreakpointSnapshot::rejected(
   display_name : String,
   message : String,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, status: Rejected(message), }
+  { id, display_name, location_count: None, status: Rejected(message), }
 }
 
 ///|
@@ -129,4 +160,11 @@ pub fn FunctionBreakpointSnapshot::status(
   self : FunctionBreakpointSnapshot,
 ) -> BreakpointStatus {
   self.status
+}
+
+///|
+pub fn FunctionBreakpointSnapshot::location_count(
+  self : FunctionBreakpointSnapshot,
+) -> Int? {
+  self.location_count
 }

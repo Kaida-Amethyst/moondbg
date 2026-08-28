@@ -13,7 +13,24 @@ fn LogicalFunctionBreakpoint::new(
   display_name : String,
   physical_name : String,
 ) -> LogicalFunctionBreakpoint {
-  { id, display_name, physical_name, }
+  {
+    id,
+    display_name,
+    selector: @moondbg.FunctionBreakpointSelector::exact_physical(physical_name),
+  }
+}
+
+///|
+fn LogicalFunctionBreakpoint::family(
+  id : Int,
+  display_name : String,
+  base : String,
+) -> LogicalFunctionBreakpoint {
+  {
+    id,
+    display_name,
+    selector: @moondbg.FunctionBreakpointSelector::family(base),
+  }
 }
 
 ///|
@@ -196,6 +213,29 @@ fn lifecycle_script() -> Array[@dap_testkit.ScriptedInput] {
 }
 
 ///|
+fn function_family_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(200, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsFunctionBreakpoints": true,
+    }),
+    scripted_event(201, "initialized", {}),
+    scripted_response(202, 3, "evaluate", {
+      "result": "Breakpoint 7: 2 locations.\n",
+      "variablesReference": 0,
+    }),
+    scripted_response(203, 4, "configurationDone", {}),
+    scripted_response(204, 2, "launch", {}),
+    scripted_event(205, "stopped", {
+      "reason": "breakpoint",
+      "threadId": 1,
+      "hitBreakpointIds": [7],
+    }),
+    scripted_response(206, 5, "stackTrace", scripted_stack_body(20, 8)),
+  ]
+}
+
+///|
 fn sent_command(message : Json) -> String? {
   match message {
     { "command": String(command), .. } => Some(command)
@@ -316,6 +356,70 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
       "scopes", "variables", "next", "stackTrace", "stepIn", "stackTrace", "stepOut",
       "stackTrace", "disconnect",
     ])
+  })
+}
+
+///|
+async test "scripted function family breakpoint uses LLDB command and one logical result" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      function_family_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let debug_context = @moondbg.DebugContext::new("example/app/main", [
+      ("util", "example/lib/util"),
+    ])
+    let session = @moondbg.DebugSession::new(
+      "/tmp/moondbg-function-family-program",
+      backend,
+      debug_context~,
+    )
+    defer session.close()
+    let pending = session.add_function_breakpoint(
+      @moondbg.FunctionBreakpointRequest::imported("util", "identity"),
+    )
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted family breakpoint should stop the execution")
+    }
+    guard session.function_breakpoints() is [verified] else {
+      fail("one function family should remain one logical breakpoint")
+    }
+    assert_eq(verified.id(), pending.id())
+    assert_eq(verified.location_count(), Some(2))
+    assert_true(verified.status() is @moondbg.Verified)
+    guard backend.session.execution is Some(execution) &&
+      execution.breakpoint_state.outcomes.get(pending.id()) is Some(outcome) else {
+      fail("LLDB breakpoint id should be retained for the active execution")
+    }
+    assert_eq(outcome.dap_id, Some(7))
+    assert_eq(outcome.location_count, Some(2))
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "evaluate", "configurationDone", "stackTrace",
+    ])
+    guard sent[2]
+      is {
+        "arguments": {
+          "context": String("repl"),
+          "expression": String(expression),
+          ..
+        },
+        ..
+      } else {
+      fail("evaluate should carry one LLDB function regex command")
+    }
+    assert_eq(
+      expression, "breakpoint set --func-regex '^_M0FP37example3lib4util8identity($|G|H)'",
+    )
   })
 }
 
@@ -621,7 +725,12 @@ test "setFunctionBreakpoints uses exact resolved physical names" {
     1, "helper", "_M0FP37example3app4main6helper",
   )
   let entry = LogicalFunctionBreakpoint::new(2, "main", "moonbit_main")
-  let arguments = set_function_breakpoints_arguments([local_breakpoint, entry])
+  let family = LogicalFunctionBreakpoint::family(
+    3, "identity", "_M0FP37example3lib4util8identity",
+  )
+  let arguments = set_function_breakpoints_arguments([
+    local_breakpoint, family, entry,
+  ])
   guard arguments is { "breakpoints": Array(breakpoints), .. } else {
     fail("expected function breakpoint arguments")
   }
@@ -658,6 +767,40 @@ test "function breakpoint responses preserve stable ids and verification" {
   let rejected = state.function_snapshot(missing)
   assert_eq(rejected.id(), 2)
   assert_true(rejected.status() is @moondbg.Rejected("no locations found"))
+}
+
+///|
+test "function family regex keeps the MoonBit specialization boundary" {
+  let base = "_M0FP37example3lib4util8identity"
+  assert_eq(
+    function_family_regex(base),
+    "^_M0FP37example3lib4util8identity($|G|H)",
+  )
+  assert_eq(
+    function_family_breakpoint_command(base),
+    "breakpoint set --func-regex '^_M0FP37example3lib4util8identity($|G|H)'",
+  )
+}
+
+///|
+test "LLDB breakpoint command results preserve id and location count" {
+  assert_true(
+    LldbCreatedBreakpoint::parse("Breakpoint 7: 2 locations.\n")
+    is Some({ id: 7, location_count: 2, }),
+  )
+  assert_true(
+    LldbCreatedBreakpoint::parse(
+      "Breakpoint 8: where = main.exe`function at main.mbt:3, address = 0x10\n",
+    )
+    is Some({ id: 8, location_count: 1, }),
+  )
+  assert_true(
+    LldbCreatedBreakpoint::parse(
+      "Breakpoint 9: no locations (pending).\nWARNING: unresolved\n",
+    )
+    is Some({ id: 9, location_count: 0, }),
+  )
+  assert_true(LldbCreatedBreakpoint::parse("unexpected output") is None)
 }
 
 ///|

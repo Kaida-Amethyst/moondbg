@@ -292,9 +292,17 @@ async test "function break command resolves local_breakpoint imported and entry 
   guard backend.function_breakpoints is [local_breakpoint, imported, entry] else {
     fail("run should pass function breakpoints to the backend")
   }
-  assert_eq(local_breakpoint.physical_name(), "_M0FP37example3app4main6helper")
-  assert_eq(imported.physical_name(), "_M0FP37example3lib4util5parse")
-  assert_eq(entry.physical_name(), "moonbit_main")
+  assert_true(
+    local_breakpoint.selector()
+    is @moondbg.MoonBitFunctionFamily("_M0FP37example3app4main6helper"),
+  )
+  assert_true(
+    imported.selector()
+    is @moondbg.MoonBitFunctionFamily("_M0FP37example3lib4util5parse"),
+  )
+  assert_true(
+    entry.selector() is @moondbg.ExactPhysicalFunction("moonbit_main"),
+  )
 }
 
 ///|

@@ -135,7 +135,7 @@ pub struct FunctionBreakpoint {
 }
 pub fn FunctionBreakpoint::display_name(Self) -> String
 pub fn FunctionBreakpoint::id(Self) -> Int
-pub fn FunctionBreakpoint::physical_name(Self) -> String
+pub fn FunctionBreakpoint::selector(Self) -> FunctionBreakpointSelector
 
 pub enum FunctionBreakpointRequest {
   CurrentPackageFunction(String)
@@ -148,15 +148,26 @@ pub fn FunctionBreakpointRequest::imported(String, String) -> Self
 pub fn FunctionBreakpointRequest::not_equal(Self, Self) -> Bool
 pub fn FunctionBreakpointRequest::to_repr(Self) -> @debug.Repr
 
+pub enum FunctionBreakpointSelector {
+  ExactPhysicalFunction(String)
+  MoonBitFunctionFamily(String)
+} derive(Eq, @debug.Debug)
+pub fn FunctionBreakpointSelector::equal(Self, Self) -> Bool
+pub fn FunctionBreakpointSelector::exact_physical(String) -> Self
+pub fn FunctionBreakpointSelector::family(String) -> Self
+pub fn FunctionBreakpointSelector::not_equal(Self, Self) -> Bool
+pub fn FunctionBreakpointSelector::to_repr(Self) -> @debug.Repr
+
 pub struct FunctionBreakpointSnapshot {
   // private fields
 }
 pub fn FunctionBreakpointSnapshot::display_name(Self) -> String
 pub fn FunctionBreakpointSnapshot::id(Self) -> Int
+pub fn FunctionBreakpointSnapshot::location_count(Self) -> Int?
 pub fn FunctionBreakpointSnapshot::pending(Int, String) -> Self
 pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
 pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
-pub fn FunctionBreakpointSnapshot::verified(Int, String) -> Self
+pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
 
 pub enum RunOutcome {
   Stopped(StopSnapshot)
