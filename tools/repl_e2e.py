@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DWARF_PROBE = ROOT / "testdata" / "dwarf_probe"
 EXIT_PROBE = ROOT / "testdata" / "exit_probe" / "main.c"
 FAKE_DAP = ROOT / "tools" / "fake_dap.py"
+TERMINAL_OUTPUT_BEGIN = ">>>>>>>>> begin terminal output >>>>>>>>>"
+TERMINAL_OUTPUT_END = "<<<<<<<<< end terminal output <<<<<<<<<<<"
 
 
 class ReplError(RuntimeError):
@@ -502,7 +504,9 @@ def test_fake_adapter_flow(
         session.expect("answer: int = 42")
         session.expect("(moondbg) ")
         session.send("continue")
+        session.expect(TERMINAL_OUTPUT_BEGIN)
         session.expect("fake-output")
+        session.expect(TERMINAL_OUTPUT_END)
         session.expect("Process exited normally (code 0).")
         session.expect("(moondbg) ")
         session.send("run")
@@ -585,6 +589,16 @@ def test_fake_adapter_flow(
         )
     if transcript.count("Process exited normally (code 0).") != 1:
         raise ReplError("exit feedback was duplicated\n\n" + transcript)
+    expected_output_block = (
+        f"{TERMINAL_OUTPUT_BEGIN}\n\n"
+        f"fake-output\n\n"
+        f"{TERMINAL_OUTPUT_END}"
+    )
+    if expected_output_block not in transcript:
+        raise ReplError(
+            "debuggee output did not use one padded terminal block\n\n"
+            + transcript
+        )
     if "late-output-should-not-render" in transcript:
         raise ReplError("a late event leaked across executions\n\n" + transcript)
 

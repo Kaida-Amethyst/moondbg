@@ -35,20 +35,29 @@ fn render_help(entries : Array[CommandHelpEntry]) -> Unit {
 }
 
 ///|
+const TERMINAL_OUTPUT_BEGIN : String = ">>>>>>>>> begin terminal output >>>>>>>>>"
+
+///|
+const TERMINAL_OUTPUT_END : String = "<<<<<<<<< end terminal output <<<<<<<<<<<"
+
+///|
 async fn render_debuggee_outputs(
   output_items : Array[@moondbg.DebugOutput],
 ) -> Unit {
-  let mut wrote_output = false
+  guard output_items is [_, ..] else { return }
+  println(TERMINAL_OUTPUT_BEGIN)
+  println("")
   let mut ended_with_newline = true
   for output in output_items {
     @stdio.stdout.write(output.text())
-    wrote_output = true
     ended_with_newline = output.text().has_suffix("\n") ||
       output.text().has_suffix("\r")
   }
-  if wrote_output && !ended_with_newline {
+  if !ended_with_newline {
     println("")
   }
+  println("")
+  println(TERMINAL_OUTPUT_END)
 }
 
 ///|
