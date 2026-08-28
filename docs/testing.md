@@ -72,6 +72,16 @@ python3 tools/repl_e2e.py --real-only
 不因测试语言迁移而删除。用法见其 `--help`；它适合检查新 lldb-dap 版本的 capability、
 消息顺序和变量结果。
 
+`tools/dynamic_breakpoint_probe.py` 固化 Q-02 所依赖的 stopped 状态动态断点协议语义。先在
+`testdata/dwarf_probe` 中执行 `moon build --target native --debug`，再从仓库根目录运行：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tools/dynamic_breakpoint_probe.py
+```
+
+它会直接连接真实 lldb-dap，验证源码与精确函数断点的整组替换、function-family 增量命令、
+重复 family、零 location、请求拒绝，以及动态断点随后的命中。
+
 ## 变更时应运行的层
 
 - 修改 core/session：默认 `moon test`。

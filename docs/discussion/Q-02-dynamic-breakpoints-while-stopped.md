@@ -113,7 +113,7 @@ Q-02 建议按 P1 至 P4 顺序实施。P1 先固定本机 lldb-dap 的 stopped 
 
 ### P1. 验证 stopped 状态下的 lldb-dap 断点更新语义
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 在修改架构前确认三类动态断点请求在当前开发版 lldb-dap 上的实际行为。
 
@@ -129,6 +129,20 @@ Q-02 建议按 P1 至 P4 顺序实施。P1 先固定本机 lldb-dap 的 stopped 
 
 **完成条件：** 三类请求的替换/增量语义、ID 更新和错误行为明确，足以决定 backend 的同步
 实现；测试不依赖用户手动操作。
+
+**验证结果：** `tools/dynamic_breakpoint_probe.py` 已使用真实 lldb-dap 固化以下行为：
+
+1. stopped 状态接受源码 `setBreakpoints` 和完整 `setFunctionBreakpoints`；整组重发时未删除的
+   断点保留 adapter ID，新断点得到新 ID，成功后可能异步发送 `breakpoint/changed`；
+2. function-family `evaluate` 每执行一次都会新建一个 LLDB breakpoint，重复相同 regex 会产生
+   新 ID 和重复 locations，因此 backend 必须保证每个逻辑 family 只增量安装一次；
+3. family 命令不发送 DAP `breakpoint` event，结果必须从命令文本解析；无匹配会得到带 ID 的
+   `no locations (pending)`，应映射为 rejected；
+4. DAP 参数错误以失败 response 返回；动态安装的精确函数断点在随后 `continue` 中可以直接
+   通过该次 execution 的 adapter ID 命中。
+
+探针同时验证源码完整集合、已有 ID 保留、两个泛型实例、重复 family、零 location、请求拒绝
+和随后命中，所有断言通过。
 
 ### P2. 实现 backend 动态断点同步
 
