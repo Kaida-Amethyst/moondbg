@@ -176,7 +176,7 @@ struct 与 scalar 输出保持不变。
 
 ### P2. 实现基础元素 FixedArray 的原生解码
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 在 lldb-dap backend 中先读长度，再按固定读取预算物化基础元素预览。
 
@@ -194,6 +194,15 @@ struct 与 scalar 输出保持不变。
 
 **完成条件：** `FixedArray[Int]` 等已支持基础类型返回有界、带真实索引和总长度的快照；
 读取次数与数组总长度无关，非 FixedArray 和未支持元素类型不会被误读为标量数组。
+
+**实施结果：** 新增独立的 `runtime_value` 包集中维护 native FixedArray header、基础标量
+类型/宽度/字节序映射、预览计划和纯字节解码。lldb-dap backend 只对明确的 FixedArray
+DWARF 类型读取 `body`，先用一次 `readMemory` 取得长度；长度超过 16 时再分别批量读取前
+15 个元素和最后一个元素，读取请求数不随总长度增长。第一版已覆盖 `Bool`、`Int`、
+`UInt`、`Int64`、`UInt64`、`Float` 和 `Double`；非基础元素只建立原索引类型占位符。
+同一 stop epoch 的完整领域快照会缓存，恢复执行时与 raw variables 一起失效。纯解码和
+scripted DAP 测试覆盖空、短、长、尾元素、各基础类型、非基础类型、非法 header、短 payload
+和请求范围；真实 `moon debug fixed_array_int` 链路已验证可以在无 `moonbit.py` 时物化数组。
 
 ### P3. 实现 FixedArray 单行渲染与非基础类型摘要
 

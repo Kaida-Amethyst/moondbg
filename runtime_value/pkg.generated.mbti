@@ -1,0 +1,73 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/runtime_value"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub const MAX_FIXED_ARRAY_PREVIEW_ELEMENTS : Int = 16
+
+pub const NATIVE_FIXED_ARRAY_HEADER_OFFSET : Int = -8
+
+pub const NATIVE_FIXED_ARRAY_HEADER_SIZE : Int = 8
+
+pub fn decode_fixed_array_length(Bytes) -> Int raise NativeValueError
+
+pub fn decode_scalar_payload(NativeScalarType, Bytes, Int) -> Array[String] raise NativeValueError
+
+pub fn fixed_array_element_from_pointer_type(String) -> FixedArrayElementType?
+
+// Errors
+pub(all) suberror NativeValueError {
+  InvalidFixedArrayHeaderSize(Int)
+  InvalidFixedArrayLength(UInt)
+  InvalidFixedArrayPreviewBudget(Int)
+  InvalidScalarPayload(expected~ : Int, actual~ : Int)
+  InvalidBoolValue(UInt)
+} derive(Eq, @debug.Debug)
+pub fn NativeValueError::equal(Self, Self) -> Bool
+pub fn NativeValueError::not_equal(Self, Self) -> Bool
+pub fn NativeValueError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) enum FixedArrayElementType {
+  FixedArrayScalar(NativeScalarType)
+  FixedArrayOpaque(String)
+} derive(Eq, @debug.Debug)
+pub fn FixedArrayElementType::equal(Self, Self) -> Bool
+pub fn FixedArrayElementType::not_equal(Self, Self) -> Bool
+pub fn FixedArrayElementType::source_name(Self) -> String
+pub fn FixedArrayElementType::to_repr(Self) -> @debug.Repr
+
+pub struct FixedArrayPreviewPlan {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn FixedArrayPreviewPlan::equal(Self, Self) -> Bool
+pub fn FixedArrayPreviewPlan::head_count(Self) -> Int
+pub fn FixedArrayPreviewPlan::new(Int, max_elements? : Int) -> Self raise NativeValueError
+pub fn FixedArrayPreviewPlan::not_equal(Self, Self) -> Bool
+pub fn FixedArrayPreviewPlan::selected_count(Self) -> Int
+pub fn FixedArrayPreviewPlan::tail_byte_offset(Self, Int) -> Int? raise NativeValueError
+pub fn FixedArrayPreviewPlan::tail_index(Self) -> Int?
+pub fn FixedArrayPreviewPlan::to_repr(Self) -> @debug.Repr
+pub fn FixedArrayPreviewPlan::total_length(Self) -> Int
+
+pub(all) enum NativeScalarType {
+  NativeBool
+  NativeInt
+  NativeUInt
+  NativeInt64
+  NativeUInt64
+  NativeFloat
+  NativeDouble
+} derive(Eq, @debug.Debug)
+pub fn NativeScalarType::byte_width(Self) -> Int
+pub fn NativeScalarType::equal(Self, Self) -> Bool
+pub fn NativeScalarType::not_equal(Self, Self) -> Bool
+pub fn NativeScalarType::source_name(Self) -> String
+pub fn NativeScalarType::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
