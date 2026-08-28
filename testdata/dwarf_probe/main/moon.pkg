@@ -1,5 +1,0 @@
-pkgtype(kind: "executable")
-
-import {
-  "Kaida-Amethyst/moondbg-dwarf-probe/lib" @probe,
-}
