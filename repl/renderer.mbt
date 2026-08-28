@@ -361,6 +361,22 @@ fn render_breakpoint_error(error : BreakpointCommandError) -> Unit {
 }
 
 ///|
+fn variable_lookup_failure_message(
+  failure : @moondbg.VariableLookupFailure,
+) -> String {
+  match failure {
+    @moondbg.VariableRootNotFound(root) =>
+      "Variable '\{root}' was not found in the current frame."
+    @moondbg.VariableFieldNotFound(owner, field) =>
+      "Field '\{field}' was not found in '\{owner}'."
+    @moondbg.VariableFieldAccessOnNonStruct(owner, field, _) =>
+      "Cannot access field '\{field}' because '\{owner}' is not a struct."
+    @moondbg.VariableUnavailable(path) =>
+      "Variable '\{path}' is unavailable at the current location."
+  }
+}
+
+///|
 async fn render_presentation_event(event : PresentationEvent) -> Unit {
   match event {
     HelpPresentation(entries) => render_help(entries)
@@ -379,8 +395,8 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
     StopPresentation(snapshot) => render_stop_header(snapshot)
     SourceViewPresentation(view) => render_source_view(view)
     VariablePresentation(variable) => render_variable(variable)
-    VariableNotFoundPresentation(name) =>
-      println("Variable '\{name}' was not found in the current frame.")
+    VariableLookupFailurePresentation(failure) =>
+      println(variable_lookup_failure_message(failure))
     NoStoppedSourcePresentation =>
       println("No stopped source location is available.")
     ProcessExitPresentation(exit_code) => render_process_exit(exit_code)

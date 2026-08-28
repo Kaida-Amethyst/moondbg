@@ -1,7 +1,10 @@
 ///|
 priv enum ObservationVariableMode {
   ObservationVariableFound
-  ObservationVariableMissing
+  ObservationVariableRootMissing
+  ObservationVariableFieldMissing
+  ObservationVariableNonStruct
+  ObservationVariableUnavailable
   ObservationVariableFailure
 }
 
@@ -114,7 +117,18 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variab
       @moondbg.VariableLookupResult::found(
         @moondbg.VariableSnapshot::new(name, "42", Some("Int")),
       )
-    ObservationVariableMissing => @moondbg.VariableLookupResult::not_found(name)
+    ObservationVariableRootMissing =>
+      @moondbg.VariableLookupResult::not_found(name)
+    ObservationVariableFieldMissing =>
+      @moondbg.VariableLookupResult::field_not_found("point", "z")
+    ObservationVariableNonStruct =>
+      @moondbg.VariableLookupResult::field_access_on_non_struct(
+        "point.x",
+        "value",
+        Some("Double"),
+      )
+    ObservationVariableUnavailable =>
+      @moondbg.VariableLookupResult::unavailable("line.start")
     ObservationVariableFailure =>
       raise @moondbg.DebugBackendError::failure("variable adapter failed")
   }
@@ -178,7 +192,7 @@ async fn stopped_observation_context(
 }
 
 ///|
-test "P7 print spec retains alias and simple variable validation" {
+test "print spec accepts variables and struct field paths only" {
   let registry = default_command_registry()
   guard registry.lookup("print") is Some(command) &&
     registry.lookup("p") is Some(command_alias) else {
@@ -186,13 +200,27 @@ test "P7 print spec retains alias and simple variable validation" {
   }
   assert_eq(command.name, "print")
   assert_eq(command_alias.name, "print")
-  for valid in ["print answer", "p input", "p 结果"] {
+  for
+    valid in [
+      "print answer", "p input", "p 结果", "p point.x", "p line.start.x", "p 线段.起点.x1",
+    ] {
     assert_true(registry.parse_line(valid) is RegistryCommand(_), msg=valid)
   }
   for
-    invalid in ["p", "print", "p point.x", "p items[3]", "p answer + 1", "p 42"] {
+    invalid in [
+      "p", "print", "p .x", "p x.", "p x..y", "p x .y", "p x. y", "p items[3]", "p answer + 1",
+      "p point()", "p 42", "p point.2x",
+    ] {
     assert_true(registry.parse_line(invalid) is RegistryInvalid(_), msg=invalid)
   }
+  guard parse_variable_path("line.start.x") is Some(path) else {
+    fail("a valid field path should be structured")
+  }
+  assert_eq(path.root_name(), "line")
+  assert_true(path.steps() is [@moondbg.Field("start"), @moondbg.Field("x")])
+  assert_eq(path.display_name(), "line.start.x")
+  assert_eq(command.usage, "print <path>")
+  assert_eq(command.summary, "Show a variable or struct field path")
 }
 
 ///|
@@ -210,17 +238,71 @@ async test "P7 print and p call the session and return variable events" {
     fail("p should use the print command")
   }
   assert_eq(variable.name(), "结果")
-  assert_eq(backend.lookups, 2)
-  assert_eq(backend.last_name, Some("结果"))
+  let field = execute_framework_command(context, "p line.start.x")
+  guard field.events is [VariablePresentation(variable)] else {
+    fail("p should send the complete field path to the session")
+  }
+  assert_eq(variable.name(), "line.start.x")
+  assert_eq(backend.lookups, 3)
+  assert_eq(backend.last_name, Some("line.start.x"))
 }
 
 ///|
-async test "P7 print returns not-found and operation-not-allowed events" {
+async test "print returns structured lookup failures and operation-not-allowed events" {
   let (_missing_backend, missing_context) = stopped_observation_context(
-    ObservationVariableMissing,
+    ObservationVariableRootMissing,
   )
   let missing = execute_framework_command(missing_context, "p absent")
-  assert_true(missing.events is [VariableNotFoundPresentation("absent")])
+  assert_true(
+    missing.events
+    is [
+      VariableLookupFailurePresentation(@moondbg.VariableRootNotFound("absent")),
+    ],
+  )
+  let (_, field_context) = stopped_observation_context(
+    ObservationVariableFieldMissing,
+  )
+  let field = execute_framework_command(field_context, "p point.z")
+  assert_true(
+    field.events
+    is [
+      VariableLookupFailurePresentation(
+        @moondbg.VariableFieldNotFound("point", "z")
+      ),
+    ],
+  )
+  let (_, non_struct_context) = stopped_observation_context(
+    ObservationVariableNonStruct,
+  )
+  let non_struct = execute_framework_command(
+    non_struct_context, "p point.x.value",
+  )
+  assert_true(
+    non_struct.events
+    is [
+      VariableLookupFailurePresentation(
+        @moondbg.VariableFieldAccessOnNonStruct(
+          "point.x",
+          "value",
+          Some("Double")
+        )
+      ),
+    ],
+  )
+  let (_, unavailable_context) = stopped_observation_context(
+    ObservationVariableUnavailable,
+  )
+  let unavailable = execute_framework_command(
+    unavailable_context, "p line.start",
+  )
+  assert_true(
+    unavailable.events
+    is [
+      VariableLookupFailurePresentation(
+        @moondbg.VariableUnavailable("line.start")
+      ),
+    ],
+  )
   let (ready_backend, ready_context) = observation_command_test_context(
     ObservationVariableFound,
   )
@@ -229,6 +311,54 @@ async test "P7 print returns not-found and operation-not-allowed events" {
   assert_true(
     disallowed.events
     is [OperationNotAllowedPresentation(@moondbg.Ready, "inspect a variable")],
+  )
+}
+
+///|
+fn test_lookup_failure(
+  result : @moondbg.VariableLookupResult,
+) -> @moondbg.VariableLookupFailure raise {
+  guard result is @moondbg.VariableLookupFailed(failure) else {
+    fail("expected a variable lookup failure")
+  }
+  failure
+}
+
+///|
+test "variable lookup failures render stable MoonBit-oriented messages" {
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(@moondbg.VariableLookupResult::not_found("missing")),
+    ),
+    "Variable 'missing' was not found in the current frame.",
+  )
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(
+        @moondbg.VariableLookupResult::field_not_found("point", "z"),
+      ),
+    ),
+    "Field 'z' was not found in 'point'.",
+  )
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(
+        @moondbg.VariableLookupResult::field_access_on_non_struct(
+          "point.x",
+          "value",
+          Some("Double"),
+        ),
+      ),
+    ),
+    "Cannot access field 'value' because 'point.x' is not a struct.",
+  )
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(
+        @moondbg.VariableLookupResult::unavailable("line.start"),
+      ),
+    ),
+    "Variable 'line.start' is unavailable at the current location.",
   )
 }
 

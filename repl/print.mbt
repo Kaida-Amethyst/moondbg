@@ -1,6 +1,6 @@
 ///|
 priv struct CommandPrint {
-  name : String
+  path : @moondbg.VariablePath
 }
 
 ///|
@@ -17,22 +17,43 @@ fn is_variable_name_char(character : Char, first~ : Bool) -> Bool {
 }
 
 ///|
+fn is_variable_path_segment(segment : StringView) -> Bool {
+  guard segment is [first, .. rest] && is_variable_name_char(first, first=true) else {
+    return false
+  }
+  rest.all(character => is_variable_name_char(character, first=false))
+}
+
+///|
+fn parse_variable_path(arguments : StringView) -> @moondbg.VariablePath? {
+  let segments : Array[String] = arguments
+    .to_owned()
+    .split(".")
+    .map(segment => segment.to_owned())
+    .collect()
+  guard segments.length() > 0 else { return None }
+  for segment in segments {
+    guard is_variable_path_segment(segment) else { return None }
+  }
+  let fields : Array[String] = []
+  for index in 1..<segments.length() {
+    fields.push(segments[index])
+  }
+  Some(@moondbg.VariablePath::with_fields(segments[0], fields))
+}
+
+///|
 fn parse_print_command(
   _invoked_name : StringView,
   arguments : StringView,
 ) -> CommandParseResult {
-  guard arguments is [first, .. rest] else {
-    return invalid_command("print requires a simple variable name")
+  guard arguments != "" else {
+    return invalid_command("print requires a variable path")
   }
-  guard is_variable_name_char(first, first=true) else {
-    return invalid_command("print only accepts a simple variable name")
+  guard parse_variable_path(arguments) is Some(path) else {
+    return invalid_command("print only accepts a variable or struct field path")
   }
-  for character in rest {
-    guard is_variable_name_char(character, first=false) else {
-      return invalid_command("print only accepts a simple variable name")
-    }
-  }
-  parsed_command(CommandPrint::{ name: arguments.to_owned(), })
+  parsed_command(CommandPrint::{ path, })
 }
 
 ///|
@@ -40,8 +61,8 @@ fn print_command_spec() -> CommandSpec {
   CommandSpec::new(
     "print",
     ["p"],
-    "print <name>",
-    "Show a simple variable",
+    "print <path>",
+    "Show a variable or struct field path",
     parse_print_command,
   )
 }
@@ -49,9 +70,7 @@ fn print_command_spec() -> CommandSpec {
 ///|
 impl ReplCommand for CommandPrint with fn execute(self, context) {
   let events : Array[PresentationEvent] = []
-  let result = context.session.find_variable(
-    @moondbg.VariablePath::root(self.name),
-  ) catch {
+  let result = context.session.find_variable(self.path) catch {
     @moondbg.OperationNotAllowed(state~, action~) => {
       events.push(OperationNotAllowedPresentation(state, action))
       return CommandResult::continuing(events~)
@@ -68,7 +87,7 @@ impl ReplCommand for CommandPrint with fn execute(self, context) {
     @moondbg.VariableFound(variable) =>
       events.push(VariablePresentation(variable))
     @moondbg.VariableLookupFailed(failure) =>
-      events.push(VariableNotFoundPresentation(failure.requested_path()))
+      events.push(VariableLookupFailurePresentation(failure))
   }
   CommandResult::continuing(events~)
 }
