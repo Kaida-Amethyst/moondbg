@@ -311,6 +311,31 @@ def test_struct_flow(
             session.expect("y: Double = 2")
             session.expect("(moondbg) ")
 
+        for _ in range(2):
+            session.send("p p1.x")
+            session.expect("p1.x: Double = 1")
+            session.expect("(moondbg) ")
+        session.send("p p1.y")
+        session.expect("p1.y: Double = 2")
+        session.expect("(moondbg) ")
+        session.send("p p1.z")
+        session.expect("Field 'z' was not found in 'p1'.")
+        session.expect("(moondbg) ")
+        session.send("p p1.x.value")
+        session.expect(
+            "Cannot access field 'value' because 'p1.x' is not a struct."
+        )
+        session.expect("(moondbg) ")
+        session.send("p dx")
+        session.expect("Variable 'dx' is unavailable at the current location.")
+        session.expect("(moondbg) ")
+        session.send("next")
+        session.expect("point.distance")
+        session.expect("(moondbg) ")
+        session.send("p p1.x")
+        session.expect("p1.x: Double = 1")
+        session.expect("(moondbg) ")
+
         session.send("continue")
         session.expect("point.is_parallel")
         session.expect("(moondbg) ")
@@ -322,6 +347,21 @@ def test_struct_flow(
         session.expect("end: Point = {")
         session.expect("x: Double = 4")
         session.expect("y: Double = 6")
+        session.expect("(moondbg) ")
+        session.send("p line1.start.x")
+        session.expect("line1.start.x: Double = 1")
+        session.expect("(moondbg) ")
+        session.send("p line1.end.y")
+        session.expect("line1.end.y: Double = 6")
+        session.expect("(moondbg) ")
+        for _ in range(2):
+            session.send("p line1.start")
+            session.expect("line1.start: Point = {")
+            session.expect("x: Double = 1")
+            session.expect("y: Double = 2")
+            session.expect("(moondbg) ")
+        session.send("p dx1")
+        session.expect("Variable 'dx1' is unavailable at the current location.")
         session.expect("(moondbg) ")
         session.send("quit")
         session.expect("Debugger exited.")
@@ -336,6 +376,10 @@ def test_struct_flow(
     if transcript.count("p1: Point = {") != 2:
         raise ReplError(
             "repeated struct printing did not remain stable\n\n" + transcript
+        )
+    if transcript.count("p1.x: Double = 1") != 3:
+        raise ReplError(
+            "field paths were not stable across the stop epoch\n\n" + transcript
         )
 
 

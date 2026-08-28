@@ -166,6 +166,37 @@ async test "development toolchain recursively prints MoonBit structs" {
     assert_true(process.expect(b"(moondbg) "))
   }
 
+  for _ in 0..<2 {
+    assert_true(process.write(b"p p1.x\r"))
+    assert_true(process.expect(b"p1.x: Double = 1"))
+    assert_true(process.expect(b"(moondbg) "))
+  }
+  assert_true(process.write(b"p p1.y\r"))
+  assert_true(process.expect(b"p1.y: Double = 2"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p p1.z\r"))
+  assert_true(process.expect(b"Field 'z' was not found in 'p1'."))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p p1.x.value\r"))
+  assert_true(
+    process.expect(
+      b"Cannot access field 'value' because 'p1.x' is not a struct.",
+    ),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p dx\r"))
+  assert_true(
+    process.expect(b"Variable 'dx' is unavailable at the current location."),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"next\r"))
+  assert_true(process.expect(b"point.distance", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p p1.x\r"))
+  assert_true(process.expect(b"p1.x: Double = 1"))
+  assert_true(process.expect(b"(moondbg) "))
+
   assert_true(process.write(b"continue\r"))
   assert_true(process.expect(b"point.is_parallel", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
@@ -177,6 +208,24 @@ async test "development toolchain recursively prints MoonBit structs" {
   assert_true(process.expect(b"end: Point = {"))
   assert_true(process.expect(b"x: Double = 4"))
   assert_true(process.expect(b"y: Double = 6"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p line1.start.x\r"))
+  assert_true(process.expect(b"line1.start.x: Double = 1"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p line1.end.y\r"))
+  assert_true(process.expect(b"line1.end.y: Double = 6"))
+  assert_true(process.expect(b"(moondbg) "))
+  for _ in 0..<2 {
+    assert_true(process.write(b"p line1.start\r"))
+    assert_true(process.expect(b"line1.start: Point = {"))
+    assert_true(process.expect(b"x: Double = 1"))
+    assert_true(process.expect(b"y: Double = 2"))
+    assert_true(process.expect(b"(moondbg) "))
+  }
+  assert_true(process.write(b"p dx1\r"))
+  assert_true(
+    process.expect(b"Variable 'dx1' is unavailable at the current location."),
+  )
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"quit\r"))
   assert_true(process.expect(b"Debugger exited."))

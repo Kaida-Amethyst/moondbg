@@ -52,7 +52,8 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`、`moon debug point` 和
 `moon debug fixed_array_int`，通过 PTY 完成运行前入口断点、stopped
 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
-struct 一层/嵌套字段打印、FixedArray 短值/长值/跨 stop 打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
+struct 递归打印、字段路径逐层查询、查询失败分类、同 stop cache 与跨 stop 失效、
+FixedArray 短值/长值/跨 stop 打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
 lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
 
 ## 可选 Python 诊断回归

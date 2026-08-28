@@ -8,7 +8,7 @@
 - 分别单态化为 `Int`、`String` 的泛型函数 `@probe.identity`；
 - 不存在函数的 rejected 结果；
 - stopped 状态动态添加与下一 execution 重放；
-- `point` 包中 `Point` 和嵌套 `Line` 的 struct 变量打印。
+- `point` 包中 `Point` 和嵌套 `Line` 的 struct 变量打印与字段路径查询。
 - `fixed_array_int` 包中长度 10/100 的 `FixedArray[Int]` 有界打印。
 
 ## 使用完整调试信息构建
@@ -92,8 +92,18 @@ moon debug point
 (moondbg) b is_parallel
 (moondbg) run
 (moondbg) p p1
+(moondbg) p p1.x
+(moondbg) p p1.y
+(moondbg) p p1.z
+(moondbg) p p1.x.value
+(moondbg) p dx
+(moondbg) next
+(moondbg) p p1.x
 (moondbg) continue
 (moondbg) p line1
+(moondbg) p line1.start.x
+(moondbg) p line1.end.y
+(moondbg) p line1.start
 ```
 
 FixedArray REPL 闭环可以通过以下命令人工验证：
@@ -107,7 +117,7 @@ moon debug fixed_array_int
 (moondbg) p arr
 ```
 
-## 2026-08-28 验收结果
+## 2026-08-29 验收结果
 
 当前开发工具链上的真实 lldb-dap 验收结果如下：
 
@@ -120,6 +130,7 @@ moon debug fixed_array_int
 | 不存在函数 | `missing` 立即 rejected，逻辑配置保留 |
 | 跨 execution 重放 | 编号 1..6 保持，identity 仍为 2 locations，无重复 family |
 | struct 变量 | `Point` 展开为 `x`/`y`，`Line` 递归展开 `start`/`end` |
+| struct 字段路径 | 支持一层/多层/最终 struct，精确区分缺失字段、非 struct 与当前位置不可用 |
 | FixedArray 变量 | 长度 10 完整显示；长度 100 有界显示并保留尾值 100 |
 
 ## 运行 REPL 端到端验收
