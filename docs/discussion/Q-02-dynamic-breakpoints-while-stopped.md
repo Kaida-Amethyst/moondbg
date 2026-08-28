@@ -174,7 +174,7 @@ locations、零 location、失败 response 与连接中断恢复。
 
 ### P3. 接入 DebugSession、REPL 与持久配置语义
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 建立用户输入 `b` 到当前 stopped execution 的完整应用层闭环。
 
@@ -190,6 +190,14 @@ locations、零 location、失败 response 与连接中断恢复。
 
 **完成条件：** `b main`、`run`、`b sum` 会立即得到可理解的结果；成功时 `continue` 可以
 命中新断点，已有 run 前断点和重启行为不回归。
+
+**实施结果：** 两个 `DebugSession` 添加操作已改为 async，并以调用开始时的 application
+phase 决定路径：Ready 保存后返回 pending，Stopped 保存后等待 backend 的即时 snapshot，
+其余状态在分配编号前拒绝。语义 rejection 保持当前 stop/epoch/选择不变；adapter failure
+清除失效 stop、回到 Ready，但稳定逻辑编号和配置仍会在下一 execution 重放。REPL 会把
+Stopped 下的 verified/rejected 直接渲染为 breakpoint update，不再先显示 pending；adapter
+failure 使用统一的 adapter 错误事件。session、command 与 recording backend 测试已覆盖
+源码/函数断点、拒绝、失败恢复、状态守卫和 stop context 不变性。
 
 ### P4. 真实链路、重放与异常回归
 

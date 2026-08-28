@@ -82,8 +82,8 @@ pub fn DebugOutputKind::to_repr(Self) -> @debug.Repr
 pub struct DebugSession {
   // private fields
 }
-pub fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot raise
-pub fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnapshot raise DebugSessionError
+pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
+pub async fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnapshot
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit

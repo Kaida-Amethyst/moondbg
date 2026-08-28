@@ -17,6 +17,10 @@ priv struct RecordingBackend {
   mut observe_running_entry : (() -> Bool)?
   mut running_entries : Int
   mut invalid_running_entries : Int
+  mut source_installs : Int
+  mut function_installs : Int
+  mut reject_installs : Bool
+  mut fail_installs : Bool
   mut closed : Bool
 }
 
@@ -40,6 +44,10 @@ fn RecordingBackend::new() -> RecordingBackend {
     observe_running_entry: None,
     running_entries: 0,
     invalid_running_entries: 0,
+    source_installs: 0,
+    function_installs: 0,
+    reject_installs: false,
+    fail_installs: false,
     closed: false,
   }
 }
@@ -93,7 +101,21 @@ impl DebugBackend for RecordingBackend with fn install_source_breakpoint(
   self,
   breakpoint,
 ) {
+  self.source_installs += 1
   self.breakpoints.push(breakpoint)
+  if self.fail_installs {
+    raise DebugBackendError::BackendFailure(
+      "recording backend failed to install a breakpoint",
+    )
+  }
+  if self.reject_installs {
+    return BreakpointSnapshot::rejected(
+      breakpoint.id(),
+      breakpoint.source_path(),
+      breakpoint.requested_line(),
+      "recording backend rejected the source breakpoint",
+    )
+  }
   BreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.source_path(),
@@ -107,7 +129,20 @@ impl DebugBackend for RecordingBackend with fn install_function_breakpoint(
   self,
   breakpoint,
 ) {
+  self.function_installs += 1
   self.function_breakpoints.push(breakpoint)
+  if self.fail_installs {
+    raise DebugBackendError::BackendFailure(
+      "recording backend failed to install a breakpoint",
+    )
+  }
+  if self.reject_installs {
+    return FunctionBreakpointSnapshot::rejected(
+      breakpoint.id(),
+      breakpoint.display_name(),
+      "recording backend rejected the function breakpoint",
+    )
+  }
   FunctionBreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.display_name(),
@@ -353,6 +388,97 @@ async test "P4 backend failure invalidates the stable stop and preserves executi
 }
 
 ///|
+async test "stopped breakpoint additions install immediately without changing the stop" {
+  let backend = RecordingBackend::new()
+  let debug_context = DebugContext::new("example/app/main", [])
+  let session = DebugSession::new("/tmp/program", backend, debug_context~)
+  let pending = session.add_source_breakpoint("/tmp/main.mbt", 4)
+  assert_true(pending.status() is Pending)
+  guard session.run() is RunOutcome::Stopped(_) else {
+    fail("recording backend should establish a stable stop")
+  }
+  let execution_epoch = session.execution_epoch()
+  let stop_epoch = session.stop_epoch()
+  let selected_thread = session.selected_thread()
+  let selected_frame = session.selected_frame()
+
+  let source = session.add_source_breakpoint("/tmp/other.mbt", 7)
+  assert_true(source.status() is Verified)
+  assert_eq(source.id(), 2)
+  let function = session.add_function_breakpoint(
+    FunctionBreakpointRequest::current("helper"),
+  )
+  assert_true(function.status() is Verified)
+  assert_eq(function.id(), 3)
+  assert_true(session.state() is Stopped)
+  assert_eq(session.execution_epoch(), execution_epoch)
+  assert_eq(session.stop_epoch(), stop_epoch)
+  assert_eq(session.selected_thread(), selected_thread)
+  assert_eq(session.selected_frame(), selected_frame)
+  assert_eq(backend.source_installs, 1)
+  assert_eq(backend.function_installs, 1)
+  assert_eq(backend.breakpoints.map(item => item.id()), [1, 2])
+  assert_eq(backend.function_breakpoints.map(item => item.id()), [3])
+
+  backend.reject_installs = true
+  let rejected = session.add_source_breakpoint("/tmp/rejected.mbt", 9)
+  assert_true(
+    rejected.status()
+    is Rejected("recording backend rejected the source breakpoint"),
+  )
+  assert_eq(rejected.id(), 4)
+  assert_true(session.state() is Stopped)
+  assert_eq(session.stop_epoch(), stop_epoch)
+  assert_eq(backend.breakpoints.map(item => item.id()), [1, 2, 4])
+  session.close()
+}
+
+///|
+async test "dynamic adapter failure retains configuration for the next execution" {
+  let backend = RecordingBackend::new()
+  let session = DebugSession::new("/tmp/program", backend)
+  session.run() |> ignore
+  backend.fail_installs = true
+  let failed = try {
+    session.add_source_breakpoint("/tmp/retry.mbt", 6) |> ignore
+    false
+  } catch {
+    AdapterFailure("recording backend failed to install a breakpoint") => true
+    _ => false
+  }
+  assert_true(failed)
+  assert_true(session.state() is Ready)
+  assert_eq(session.stop_epoch(), None)
+  assert_true(session.last_stop_snapshot() is None)
+  backend.fail_installs = false
+  session.run() |> ignore
+  assert_eq(backend.breakpoint_launches, [[], [1]])
+  assert_eq(backend.breakpoints.map(item => item.id()), [1])
+  session.close()
+}
+
+///|
+async test "breakpoint additions reject unstable and terminal application phases" {
+  for phase in [Running, Exited, Failed] {
+    let backend = RecordingBackend::new()
+    let session = DebugSession::new("/tmp/program", backend)
+    session.application.transition_without_stop(phase)
+    let rejected = try {
+      session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
+      false
+    } catch {
+      OperationNotAllowed(state~, action~) =>
+        state == phase && action == "add source breakpoint"
+      _ => false
+    }
+    assert_true(rejected)
+    assert_eq(backend.source_installs, 0)
+    assert_eq(session.next_breakpoint_id, 1)
+    session.close()
+  }
+}
+
+///|
 async test "function breakpoints resolve package context and native symbols" {
   let backend = RecordingBackend::new()
   let debug_context = DebugContext::new("example/app/main", [
@@ -396,7 +522,7 @@ async test "function breakpoints resolve package context and native symbols" {
 }
 
 ///|
-test "function breakpoints reject missing and unknown package context" {
+async test "function breakpoints reject missing and unknown package context" {
   let backend = RecordingBackend::new()
   let missing = DebugSession::new("/tmp/program", backend)
   assert_true(

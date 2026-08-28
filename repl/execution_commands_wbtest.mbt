@@ -9,6 +9,8 @@ priv struct ExecutionCommandTestBackend {
   function_breakpoints : Array[@moondbg.FunctionBreakpoint]
   output : Array[@moondbg.DebugOutput]
   mut fail_next : Bool
+  mut fail_installs : Bool
+  mut reject_installs : Bool
 }
 
 ///|
@@ -23,6 +25,8 @@ fn ExecutionCommandTestBackend::new() -> ExecutionCommandTestBackend {
     function_breakpoints: [],
     output: [],
     fail_next: false,
+    fail_installs: false,
+    reject_installs: false,
   }
 }
 
@@ -62,6 +66,17 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn install_sourc
   breakpoint,
 ) {
   self.breakpoints.push(breakpoint)
+  if self.fail_installs {
+    raise @moondbg.DebugBackendError::failure("breakpoint adapter failed")
+  }
+  if self.reject_installs {
+    return @moondbg.BreakpointSnapshot::rejected(
+      breakpoint.id(),
+      breakpoint.source_path(),
+      breakpoint.requested_line(),
+      "no executable code at this location",
+    )
+  }
   @moondbg.BreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.source_path(),
@@ -76,6 +91,16 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn install_funct
   breakpoint,
 ) {
   self.function_breakpoints.push(breakpoint)
+  if self.fail_installs {
+    raise @moondbg.DebugBackendError::failure("breakpoint adapter failed")
+  }
+  if self.reject_installs {
+    return @moondbg.FunctionBreakpointSnapshot::rejected(
+      breakpoint.id(),
+      breakpoint.display_name(),
+      "no matching functions were found",
+    )
+  }
   @moondbg.FunctionBreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.display_name(),
@@ -368,8 +393,8 @@ async test "P6 break and b call the session and return pending events" {
 }
 
 ///|
-async test "P6 break path and debugger-state failures are structured" {
-  let (_backend, context) = execution_command_test_context()
+async test "break paths stay structured and stopped additions update immediately" {
+  let (backend, context) = execution_command_test_context()
   let missing = execute_framework_command(
     context, "break repl/no-such-source.mbt:4",
   )
@@ -399,14 +424,63 @@ async test "P6 break path and debugger-state failures are structured" {
   )
   context.session.run() |> ignore
   let stopped = execute_framework_command(context, "break repl/main.mbt:4")
+  guard stopped.events is [BreakpointUpdatePresentation(breakpoint)] else {
+    fail("stopped breakpoint should return its immediate adapter result")
+  }
+  assert_true(breakpoint.status() is @moondbg.Verified)
+  assert_eq(breakpoint.id(), 1)
+  assert_true(context.session.state() is @moondbg.Stopped)
+  assert_eq(backend.breakpoints.map(item => item.id()), [1])
+}
+
+///|
+async test "stopped function breakpoint returns an immediate verified event" {
+  let (backend, context) = function_breakpoint_test_context()
+  context.session.run() |> ignore
+  let result = execute_framework_command(context, "b helper")
+  guard result.events is [FunctionBreakpointUpdatePresentation(breakpoint)] else {
+    fail("stopped function breakpoint should not be reported as pending")
+  }
+  assert_true(breakpoint.status() is @moondbg.Verified)
+  assert_eq(breakpoint.id(), 1)
+  assert_eq(breakpoint.display_name(), "helper")
+  assert_eq(backend.function_breakpoints.map(item => item.id()), [1])
+  assert_true(context.session.state() is @moondbg.Stopped)
+}
+
+///|
+async test "dynamic breakpoint adapter failure is presented and invalidates the stop" {
+  let (backend, context) = execution_command_test_context()
+  context.session.run() |> ignore
+  backend.fail_installs = true
+  let result = execute_framework_command(context, "b repl/main.mbt:4")
   assert_true(
-    stopped.events
-    is [
-      BreakpointErrorPresentation(
-        BreakpointOperationNotAllowed(@moondbg.Stopped, "add source breakpoint")
-      ),
-    ],
+    result.events is [AdapterFailurePresentation("breakpoint adapter failed")],
   )
+  assert_true(context.session.state() is @moondbg.Ready)
+  assert_eq(context.session.stop_epoch(), None)
+  guard context.session.source_breakpoints() is [retained] else {
+    fail("adapter failure should retain the logical breakpoint")
+  }
+  assert_eq(retained.id(), 1)
+}
+
+///|
+async test "stopped rejected breakpoint is immediate and keeps the current stop" {
+  let (backend, context) = execution_command_test_context()
+  context.session.run() |> ignore
+  let stop_epoch = context.session.stop_epoch()
+  backend.reject_installs = true
+  let result = execute_framework_command(context, "b repl/main.mbt:4")
+  guard result.events is [BreakpointUpdatePresentation(breakpoint)] else {
+    fail("semantic rejection should be an immediate breakpoint update")
+  }
+  assert_true(
+    breakpoint.status()
+    is @moondbg.Rejected("no executable code at this location"),
+  )
+  assert_true(context.session.state() is @moondbg.Stopped)
+  assert_eq(context.session.stop_epoch(), stop_epoch)
 }
 
 ///|

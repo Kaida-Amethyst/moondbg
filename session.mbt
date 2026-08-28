@@ -55,16 +55,14 @@ pub fn DebugSession::selected_frame(self : DebugSession) -> FrameSelection? {
 }
 
 ///|
-pub fn DebugSession::add_source_breakpoint(
+pub async fn DebugSession::add_source_breakpoint(
   self : DebugSession,
   source_path : String,
   line : Int,
-) -> BreakpointSnapshot raise DebugSessionError {
-  guard self.application.phase is Ready else {
-    raise OperationNotAllowed(
-      state=self.application.phase,
-      action="add source breakpoint",
-    )
+) -> BreakpointSnapshot {
+  let phase = self.application.phase
+  guard phase is Ready || phase is Stopped else {
+    raise OperationNotAllowed(state=phase, action="add source breakpoint")
   }
   let breakpoint = SourceBreakpoint::new(
     self.next_breakpoint_id,
@@ -73,19 +71,22 @@ pub fn DebugSession::add_source_breakpoint(
   )
   self.next_breakpoint_id += 1
   self.source_breakpoints.push(breakpoint)
-  breakpoint.pending_snapshot()
+  guard phase is Stopped else { return breakpoint.pending_snapshot() }
+  self.backend.install_source_breakpoint(breakpoint) catch {
+    DebugBackendError::BackendFailure(message) =>
+      self.backend_failed(message, next_state=Ready)
+    error => self.backend_failed(@debug.to_string(error), next_state=Failed)
+  }
 }
 
 ///|
-pub fn DebugSession::add_function_breakpoint(
+pub async fn DebugSession::add_function_breakpoint(
   self : DebugSession,
   request : FunctionBreakpointRequest,
-) -> FunctionBreakpointSnapshot raise {
-  guard self.application.phase is Ready else {
-    raise OperationNotAllowed(
-      state=self.application.phase,
-      action="add function breakpoint",
-    )
+) -> FunctionBreakpointSnapshot {
+  let phase = self.application.phase
+  guard phase is Ready || phase is Stopped else {
+    raise OperationNotAllowed(state=phase, action="add function breakpoint")
   }
   let current_package = self.debug_context.current_package()
   let (package_name, function_name, entry_point) = match request {
@@ -112,7 +113,12 @@ pub fn DebugSession::add_function_breakpoint(
   )
   self.next_breakpoint_id += 1
   self.function_breakpoints.push(breakpoint)
-  breakpoint.pending_snapshot()
+  guard phase is Stopped else { return breakpoint.pending_snapshot() }
+  self.backend.install_function_breakpoint(breakpoint) catch {
+    DebugBackendError::BackendFailure(message) =>
+      self.backend_failed(message, next_state=Ready)
+    error => self.backend_failed(@debug.to_string(error), next_state=Failed)
+  }
 }
 
 ///|

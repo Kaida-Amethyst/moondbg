@@ -93,6 +93,38 @@ fn break_command_spec() -> CommandSpec {
 }
 
 ///|
+fn source_breakpoint_presentation(
+  breakpoint : @moondbg.BreakpointSnapshot,
+  requested_source : String,
+) -> PresentationEvent {
+  match breakpoint.status() {
+    @moondbg.Pending =>
+      BreakpointPendingPresentation(
+        breakpoint.id(),
+        requested_source,
+        breakpoint.requested_line(),
+      )
+    @moondbg.Verified | @moondbg.Rejected(_) =>
+      BreakpointUpdatePresentation(breakpoint)
+  }
+}
+
+///|
+fn function_breakpoint_presentation(
+  breakpoint : @moondbg.FunctionBreakpointSnapshot,
+) -> PresentationEvent {
+  match breakpoint.status() {
+    @moondbg.Pending =>
+      FunctionBreakpointPendingPresentation(
+        breakpoint.id(),
+        breakpoint.display_name(),
+      )
+    @moondbg.Verified | @moondbg.Rejected(_) =>
+      FunctionBreakpointUpdatePresentation(breakpoint)
+  }
+}
+
+///|
 async fn resolve_breakpoint_source(path : String) -> String {
   guard @fs.exists(path) else { raise BreakpointSourceMissing(path) }
   guard @fs.kind(path) is Regular else {
@@ -110,14 +142,11 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
         let breakpoint = context.session.add_source_breakpoint(
           canonical_source, line,
         )
-        BreakpointPendingPresentation(breakpoint.id(), source, line)
+        source_breakpoint_presentation(breakpoint, source)
       }
       FunctionBreakTarget(request) => {
         let breakpoint = context.session.add_function_breakpoint(request)
-        FunctionBreakpointPendingPresentation(
-          breakpoint.id(),
-          breakpoint.display_name(),
-        )
+        function_breakpoint_presentation(breakpoint)
       }
     }
   } catch {
@@ -131,6 +160,7 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
       BreakpointErrorPresentation(BreakpointFunctionContextMissing)
     @moondbg.UnknownPackageAlias(package_alias) =>
       BreakpointErrorPresentation(BreakpointUnknownPackageAlias(package_alias))
+    @moondbg.AdapterFailure(message) => AdapterFailurePresentation(message)
     error =>
       BreakpointErrorPresentation(
         BreakpointUnexpectedFailure(@debug.to_string(error)),
