@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 
 
@@ -44,6 +46,11 @@ class PtyProcess:
         self.timeout = timeout
         self.buffer = bytearray()
         self.cursor = 0
+
+        def acquire_controlling_terminal() -> None:
+            os.setsid()
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+
         try:
             self.process = subprocess.Popen(
                 argv,
@@ -52,7 +59,7 @@ class PtyProcess:
                 stdin=slave,
                 stdout=slave,
                 stderr=slave,
-                start_new_session=True,
+                preexec_fn=acquire_controlling_terminal,
             )
         finally:
             os.close(slave)
@@ -189,50 +196,71 @@ def test_moonbit_flow(
     timeout: float,
 ) -> None:
     def drive(session: PtyProcess) -> None:
-        session.send("p input")
-        session.expect("Cannot inspect a variable while the debugger is Ready.")
-        session.expect("(moondbg) ")
-        session.send("continue")
-        session.expect("Cannot continue execution while the debugger is Ready.")
-        session.expect("(moondbg) ")
-        session.send("break main/main.mbt:4")
-        session.expect("Breakpoint 1 pending")
-        session.expect("(moondbg) ")
-        session.send("break main/main.mbt:5")
-        session.expect("Breakpoint 2 pending")
+        session.send("b main")
+        session.expect("Breakpoint 1 pending at function main")
         session.expect("(moondbg) ")
         session.send("run")
-        session.expect("Breakpoint 1 verified")
-        session.expect("Breakpoint 2 verified")
-        session.expect("Stopped (")
+        session.expect("Breakpoint 1 verified at function main")
+        session.expect("in moonbit_main")
         session.expect("(moondbg) ")
-        session.send("p input")
-        session.expect("input: int = 41")
+
+        session.send("b main/main.mbt:13")
+        session.expect("Breakpoint 2 verified at")
+        session.expect("main/main.mbt:13")
         session.expect("(moondbg) ")
-        session.send("p answer")
-        session.expect("answer: int = 42")
-        session.expect("(moondbg) ")
-        session.send("continue")
-        session.expect("42")
-        session.expect("Stopped (")
-        session.expect("(moondbg) ")
-        session.send("p answer")
-        session.expect("answer: int = 42")
+        session.send("b sum")
+        session.expect("Breakpoint 3 verified at function sum")
         session.expect("(moondbg) ")
         session.send("continue")
-        session.expect("83")
-        session.expect("Process exited normally (code 0).")
+        session.expect("in moonbit_main")
+        session.expect("main/main.mbt:13")
         session.expect("(moondbg) ")
-        session.send("run")
-        session.expect("Breakpoint 1 verified")
-        session.expect("Breakpoint 2 verified")
-        session.expect("Stopped (")
+        session.send("continue")
+        session.expect("moondbg-dwarf-probe/main.sum")
+        session.expect("(moondbg) ")
+
+        session.send("b @probe.increment")
+        session.expect("Breakpoint 4 verified at function @probe.increment")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("moondbg-dwarf-probe/lib.increment")
+        session.expect("(moondbg) ")
+        session.send("b @probe.identity")
+        session.expect(
+            "Breakpoint 5 verified at function @probe.identity (2 locations)"
+        )
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("moondbg-dwarf-probe/lib.identity|[Int]|")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("moondbg-dwarf-probe/lib.identity|[String]|")
+        session.expect("(moondbg) ")
+
+        session.send("b missing")
+        session.expect(
+            "Breakpoint 6 rejected at function missing: "
+            "no matching function instances were found"
+        )
         session.expect("(moondbg) ")
         session.send("run")
         session.expect("Restarting program.")
-        session.expect("Breakpoint 1 verified")
         session.expect("Breakpoint 2 verified")
-        session.expect("Stopped (")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Breakpoint 3 verified")
+        session.expect("Breakpoint 4 verified")
+        session.expect(
+            "Breakpoint 5 verified at function @probe.identity (2 locations)"
+        )
+        session.expect("Breakpoint 6 rejected at function missing")
+        session.expect("in moonbit_main")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("in moonbit_main")
+        session.expect("main/main.mbt:13")
+        session.expect("(moondbg) ")
+        session.send("continue")
+        session.expect("moondbg-dwarf-probe/main.sum")
         session.expect("(moondbg) ")
         session.send("quit")
         session.expect("Debugger exited.")
@@ -244,9 +272,16 @@ def test_moonbit_flow(
         timeout=timeout,
         drive=drive,
     )
-    for expected in ("42\n", "83\n"):
-        if expected not in transcript:
-            raise ReplError(f"missing debuggee output {expected!r}\n\n{transcript}")
+    if transcript.count("Breakpoint 5 verified at function @probe.identity") != 2:
+        raise ReplError(
+            "generic function family did not retain two clean locations\n\n"
+            + transcript
+        )
+    for stable_id in range(1, 7):
+        if f"Breakpoint {stable_id} " not in transcript:
+            raise ReplError(
+                f"logical breakpoint {stable_id} disappeared\n\n{transcript}"
+            )
     if "exited with status =" in transcript:
         raise ReplError(f"raw lldb process status leaked to the REPL\n\n{transcript}")
 
@@ -399,19 +434,18 @@ def test_fake_adapter_flow(
             raise ReplError(
                 f"local help command waited for adapter: {help_elapsed:.3f}s"
             )
-        session.send(f"break {EXIT_PROBE}:1")
-        session.expect("Breakpoint 1 pending")
-        session.expect("(moondbg) ")
         run_started = time.monotonic()
         session.send("run")
-        session.expect("Breakpoint 1 verified")
+        session.expect("Stopped (breakpoint) in fake.main")
         run_elapsed = time.monotonic() - run_started
         if run_elapsed < initialize_delay / 3:
             raise ReplError(
                 "run did not wait for the in-flight adapter preparation: "
                 f"{run_elapsed:.3f}s"
             )
-        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send(f"break {EXIT_PROBE}:1")
+        session.expect("Breakpoint 1 verified")
         session.expect("(moondbg) ")
         session.send("p answer")
         session.expect("answer: int = 42")
@@ -462,9 +496,9 @@ def test_fake_adapter_flow(
         [
             "initialize",
             "launch",
-            "setBreakpoints",
             "configurationDone",
             "stackTrace",
+            "setBreakpoints",
             "scopes",
             "variables",
             "continue",
@@ -816,6 +850,84 @@ def test_fake_continue_failure_recovery(
         raise ReplError(f"continue failure recovery was not isolated: {records!r}")
 
 
+def test_fake_dynamic_breakpoint_failure_recovery(
+    moondbg: Path,
+    executable: Path,
+    env: dict[str, str],
+    timeout: float,
+    directory: Path,
+) -> None:
+    trace = directory / "fake-dynamic-breakpoint-recovery.jsonl"
+    marker = directory / "fake-dynamic-breakpoint-recovery.once"
+    fake_env = dict(env)
+    fake_env.update(
+        {
+            "MOONDBG_LLDB_DAP": str(FAKE_DAP),
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_COMMAND": "setBreakpoints",
+            "MOONDBG_FAKE_DAP_FAIL_ONCE_MARKER": str(marker),
+            "MOONDBG_FAKE_DAP_SOURCE": str(EXIT_PROBE),
+            "MOONDBG_FAKE_DAP_SOURCE_LINE": "1",
+            "MOONDBG_FAKE_DAP_TRACE": str(trace),
+        }
+    )
+
+    def drive(session: PtyProcess) -> None:
+        session.send("run")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send(f"break {EXIT_PROBE}:1")
+        session.expect("moondbg: debugger adapter failed:")
+        session.expect("(moondbg) ")
+        records = wait_for_trace(
+            trace,
+            lambda items: sum(
+                1
+                for item in items
+                if item["kind"] == "request"
+                and item.get("command") == "initialize"
+            )
+            >= 2,
+            timeout,
+        )
+        commands = [
+            item["command"] for item in records if item["kind"] == "request"
+        ]
+        if commands.count("launch") != 1:
+            raise ReplError(
+                "dynamic breakpoint failure silently relaunched the program"
+            )
+        session.send("run")
+        session.expect("Breakpoint 1 verified")
+        session.expect("Stopped (breakpoint) in fake.main")
+        session.expect("(moondbg) ")
+        session.send("quit")
+        session.expect("Debugger exited.")
+
+    run_session(
+        [str(moondbg), str(executable)],
+        cwd=ROOT,
+        env=fake_env,
+        timeout=timeout,
+        drive=drive,
+    )
+    records = read_trace(trace)
+    adapter_pids = {
+        item["pid"]
+        for item in records
+        if item["kind"] == "request" and item.get("command") == "initialize"
+    }
+    commands = traced_commands(trace)
+    if (
+        len(adapter_pids) != 2
+        or commands.count("launch") != 2
+        or commands.count("setBreakpoints") != 2
+    ):
+        raise ReplError(
+            "dynamic breakpoint recovery did not replay retained configuration: "
+            f"{records!r}"
+        )
+
+
 def test_fake_preparation_timeout(
     moondbg: Path,
     executable: Path,
@@ -992,6 +1104,9 @@ def main() -> int:
                 test_fake_continue_failure_recovery(
                     moondbg, executable, env, args.timeout, test_directory
                 )
+                test_fake_dynamic_breakpoint_failure_recovery(
+                    moondbg, executable, env, args.timeout, test_directory
+                )
                 test_fake_preparation_timeout(
                     moondbg, executable, env, args.timeout, test_directory
                 )
@@ -1012,7 +1127,8 @@ def main() -> int:
     if args.fake_only:
         print(
             "repl e2e passed: prompt prewarm, fake adapter flow, stepping, "
-            "early quit, failure recovery, timeout, terminal controls"
+            "dynamic breakpoints, early quit, failure recovery, timeout, "
+            "terminal controls"
         )
     elif args.real_only:
         print("repl e2e passed: MoonBit flow, abnormal exit, quit, adapter failure")

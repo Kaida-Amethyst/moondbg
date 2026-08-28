@@ -50,8 +50,9 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moon debug` 子命令存在。
 
 随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`，通过 PTY 完成
-`break`、`run`、`print`、`next`、`list` 和 `quit`。该层负责工具链集成、MoonBit DWARF、
-真实 lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
+运行前入口断点、stopped 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、
+跨 execution 重放和 `quit`。该层负责工具链集成、MoonBit DWARF、真实 lldb-dap 映射和
+`moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
 
 ## 可选 Python 诊断回归
 
@@ -65,8 +66,9 @@ python3 tools/repl_e2e.py --real-only
 
 新 MoonBit 测试已经等价覆盖正常 fake lifecycle、stepping、preparation/launch failure
 恢复、readline 控制键和 early quit。Python E2E 仍额外覆盖独立解释器 fake adapter 进程、
-跨进程 trace、running/continue failure、真实 wall-clock initialization timeout、异常退出和
-进程组资源回收，因此目前保留为显式诊断回归，而不是默认依赖。
+跨进程 trace、stopped 动态断点与失败后重放、running/continue failure、真实 wall-clock
+initialization timeout、异常退出和进程组资源回收，因此目前保留为显式诊断回归，而不是
+默认依赖。
 
 `tools/dap_capability_probe.py` 是面向真实 adapter 的原始协议诊断工具，不属于默认测试，也
 不因测试语言迁移而删除。用法见其 `--help`；它适合检查新 lldb-dap 版本的 capability、

@@ -201,7 +201,7 @@ failure 使用统一的 adapter 错误事件。session、command 与 recording b
 
 ### P4. 真实链路、重放与异常回归
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 验证动态断点既作用于当前 execution，也作为持久配置正确作用于后续 execution。
 
@@ -217,6 +217,21 @@ failure 使用统一的 adapter 错误事件。session、command 与 recording b
 
 **完成条件：** 当前 execution 与后续 execution 都能命中动态添加的断点；断点编号、location、
 重放、错误反馈和资源清理稳定，项目规定检查全部通过。
+
+**验收结果：** MoonBit toolchain acceptance 与 Python real E2E 均通过真实 `moon debug main`：
+运行前 `b main` 后，在 stopped 状态依次动态添加源码 line 13、`sum`、
+`@probe.increment`、`@probe.identity` 和 `missing`。前三类断点均立即 verified 并在 continue
+后命中；identity 报告两个 locations 并依次命中 `Int`、`String`；missing 立即 rejected。
+再次 `run` 后编号 1..6 原样呈现，所有配置重新同步，identity 仍为两个 locations，源码与
+sum 在新 execution 中再次命中。
+
+fake/PTY 回归已把首个断点改为 stopped 动态安装，并新增 `setBreakpoints` 期间 adapter 退出
+场景：当前 stop 失效但逻辑编号 1 保留，下一次显式 `run` 使用新 adapter 重放并 verified。
+PTY 驱动现在显式为真实 `moon debug` 子进程建立 controlling terminal，避免 lldb-dap 在无
+控制终端的伪终端验收中阻塞。真实/脚本化会话均检查了请求顺序、adapter 进程清理和重放。
+
+最终已通过 `moon info`、`moon fmt`、`moon check`、默认 `moon test`、独立 MoonBit PTY suite、
+真实 toolchain acceptance、Python fake-only/real-only E2E 和真实动态协议探针。
 
 ## 已决策事项
 

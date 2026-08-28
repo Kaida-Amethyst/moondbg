@@ -39,6 +39,7 @@ class FakeAdapter:
         )
         self.late_output = os.environ.get("MOONDBG_FAKE_DAP_LATE_OUTPUT") == "1"
         self.thread_id = int(os.environ.get("MOONDBG_FAKE_DAP_THREAD_ID", "1"))
+        self.next_lldb_breakpoint_id = 300
         self.step_outcome = os.environ.get(
             "MOONDBG_FAKE_DAP_STEP_OUTCOME", "stopped"
         )
@@ -170,6 +171,7 @@ class FakeAdapter:
                 request,
                 {
                     "supportsConfigurationDoneRequest": True,
+                    "supportsFunctionBreakpoints": True,
                     "supportsSteppingGranularity": True,
                     "supportsTerminateRequest": True,
                 },
@@ -193,6 +195,43 @@ class FakeAdapter:
                 for index, breakpoint in enumerate(requested)
             ]
             self.respond(request, {"breakpoints": breakpoints})
+        elif command == "setFunctionBreakpoints":
+            arguments = request.get("arguments") or {}
+            requested = arguments.get("breakpoints") or []
+            breakpoints = []
+            for index, breakpoint in enumerate(requested):
+                name = breakpoint.get("name", "")
+                if "missing" in name:
+                    breakpoints.append(
+                        {
+                            "id": index + 200,
+                            "verified": False,
+                            "message": "no matching functions were found",
+                        }
+                    )
+                else:
+                    breakpoints.append(
+                        {"id": index + 200, "verified": True}
+                    )
+            self.respond(request, {"breakpoints": breakpoints})
+        elif command == "evaluate":
+            arguments = request.get("arguments") or {}
+            expression = arguments.get("expression", "")
+            if "breakpoint set --func-regex" not in expression:
+                self.reject(request, "fake adapter only evaluates function regexes")
+                return True
+            breakpoint_id = self.next_lldb_breakpoint_id
+            self.next_lldb_breakpoint_id += 1
+            if "missing" in expression:
+                result = f"Breakpoint {breakpoint_id}: no locations (pending).\n"
+            elif "identity" in expression:
+                result = f"Breakpoint {breakpoint_id}: 2 locations.\n"
+            else:
+                result = (
+                    f"Breakpoint {breakpoint_id}: where = fake`function, "
+                    "address = 0x1\n"
+                )
+            self.respond(request, {"result": result, "variablesReference": 0})
         elif command == "configurationDone":
             self.respond(request)
             self.event(

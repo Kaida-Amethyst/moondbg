@@ -57,21 +57,71 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
     process.wait(timeout_ms=100) |> ignore
     fail("moon debug did not open a prompt (PTY status \{process.status()})")
   }
-  assert_true(process.write(b"break main/main.mbt:4\r"))
-  assert_true(process.expect(b"Breakpoint 1 pending at main/main.mbt:4"))
+  assert_true(process.write(b"b main\r"))
+  assert_true(process.expect(b"Breakpoint 1 pending at function main"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"run\r"))
-  assert_true(process.expect(b"Breakpoint 1 verified at", timeout_ms=20000))
-  assert_true(process.expect(b"Stopped (breakpoint", timeout_ms=10000))
+  assert_true(
+    process.expect(b"Breakpoint 1 verified at function main", timeout_ms=20000),
+  )
+  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
-  assert_true(process.write(b"print answer\r"))
-  assert_true(process.expect(b"answer: int = 42", timeout_ms=10000))
+
+  assert_true(process.write(b"b main/main.mbt:13\r"))
+  assert_true(process.expect(b"Breakpoint 2 verified at", timeout_ms=10000))
+  assert_true(process.expect(b"main/main.mbt:13"))
   assert_true(process.expect(b"(moondbg) "))
-  assert_true(process.write(b"next\r"))
-  assert_true(process.expect(b"Stopped (step over)", timeout_ms=10000))
+  assert_true(process.write(b"b sum\r"))
+  assert_true(process.expect(b"Breakpoint 3 verified at function sum"))
   assert_true(process.expect(b"(moondbg) "))
-  assert_true(process.write(b"list\r"))
-  assert_true(process.expect(b"MOONDBG_BREAKPOINT", timeout_ms=10000))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
+  assert_true(process.expect(b"main/main.mbt:13"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/main.sum", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"b @probe.increment\r"))
+  assert_true(
+    process.expect(b"Breakpoint 4 verified at function @probe.increment"),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/lib.increment"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"b @probe.identity\r"))
+  assert_true(
+    process.expect(
+      b"Breakpoint 5 verified at function @probe.identity (2 locations)",
+    ),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity|[Int]|"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity|[String]|"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"b missing\r"))
+  assert_true(process.expect(b"Breakpoint 6 rejected at function missing"))
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"Restarting program.", timeout_ms=20000))
+  assert_true(process.expect(b"Breakpoint 2 verified at", timeout_ms=10000))
+  assert_true(process.expect(b"Breakpoint 1 verified at function main"))
+  assert_true(process.expect(b"Breakpoint 3 verified at function sum"))
+  assert_true(
+    process.expect(b"Breakpoint 4 verified at function @probe.increment"),
+  )
+  assert_true(
+    process.expect(
+      b"Breakpoint 5 verified at function @probe.identity (2 locations)",
+    ),
+  )
+  assert_true(process.expect(b"Breakpoint 6 rejected at function missing"))
+  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"quit\r"))
   assert_true(process.expect(b"Debugger exited."))
