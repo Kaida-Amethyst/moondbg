@@ -1363,14 +1363,20 @@ test "lldb-dap variable caches are isolated by stop epoch" {
   cache.reset(1)
   cache.store_scopes(1, scopes)
   cache.store_variables(1, 1, variables)
+  let snapshot = variables[0].snapshot()
+  cache.store_snapshot(1, "10:1:answer", snapshot)
   assert_true(cache.cached_scopes(1) is Some(_))
   assert_true(cache.cached_variables(1, 1) is Some(_))
+  assert_eq(cache.cached_snapshot(1, "10:1:answer"), Some(snapshot))
   cache.reset(2)
   assert_true(cache.cached_scopes(1) is None)
   assert_true(cache.cached_variables(1, 1) is None)
+  assert_true(cache.cached_snapshot(1, "10:1:answer") is None)
   assert_true(cache.cached_scopes(2) is None)
   cache.store_variables(1, 1, variables)
+  cache.store_snapshot(1, "10:1:answer", snapshot)
   assert_true(cache.cached_variables(2, 1) is None)
+  assert_true(cache.cached_snapshot(2, "10:1:answer") is None)
 }
 
 ///|
@@ -1508,6 +1514,10 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       "variables", "readMemory", "readMemory", "variables", "readMemory", "readMemory",
       "readMemory", "variables", "readMemory", "variables",
     ])
+    assert_true(
+      sent[1] is { "arguments": Object(launch_arguments), .. } &&
+      launch_arguments.get("initCommands") is None,
+    )
     assert_true(
       sent[7]
       is {

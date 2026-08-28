@@ -182,3 +182,55 @@ async test "development toolchain recursively prints MoonBit structs" {
   assert_true(process.expect(b"Debugger exited."))
   assert_true(process.wait(timeout_ms=10000))
 }
+
+///|
+async test "development toolchain prints bounded FixedArray values across stops" {
+  guard toolchain_acceptance_enabled() else { return }
+  let (moon, _moon_home) = require_development_toolchain()
+  let repository = @fs.realpath(".")
+  let fixture = "\{repository}/testdata/dwarf_probe"
+  assert_true(@fs.exists("\{fixture}/fixed_array_int/main.mbt"))
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moon,
+    fixture,
+    package_name="fixed_array_int",
+  )
+  defer process.close()
+  assert_eq(process.status(), 0)
+  guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
+    process.wait(timeout_ms=100) |> ignore
+    fail(
+      "moon debug fixed_array_int did not open a prompt (PTY status \{process.status()})",
+    )
+  }
+  assert_true(process.write(b"b sum\r"))
+  assert_true(process.expect(b"Breakpoint 1 pending at function sum"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"fixed_array_int.sum", timeout_ms=20000))
+  assert_true(process.expect(b"(moondbg) "))
+
+  for _ in 0..<2 {
+    assert_true(process.write(b"p arr\r"))
+    assert_true(process.expect(b"arr: FixedArray[Int] with length = 10"))
+    assert_true(process.expect(b"[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"))
+    assert_true(process.expect(b"(moondbg) "))
+  }
+
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"fixed_array_int.sum", timeout_ms=10000))
+  assert_true(process.expect(b"(moondbg) "))
+  for _ in 0..<2 {
+    assert_true(process.write(b"p arr\r"))
+    assert_true(process.expect(b"arr: FixedArray[Int] with length = 100"))
+    assert_true(
+      process.expect(
+        b"[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, ..., 100]",
+      ),
+    )
+    assert_true(process.expect(b"(moondbg) "))
+  }
+  assert_true(process.write(b"quit\r"))
+  assert_true(process.expect(b"Debugger exited."))
+  assert_true(process.wait(timeout_ms=10000))
+}

@@ -233,7 +233,7 @@ scripted DAP 测试覆盖空、短、长、尾元素、各基础类型、非基�
 
 ### P4. 完成真实工具链与回归验收
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 在真实 `moon debug fixed_array_int` 链路中验证短数组和长数组，同时确认无 Python
 formatter 依赖及既有值打印无回归。
@@ -251,3 +251,12 @@ formatter 依赖及既有值打印无回归。
 
 **完成条件：** 新 fixture 的两个停点均得到预期 FixedArray 输出；读取量受固定预算约束；
 struct、标量、execution 生命周期、adapter 清理和开发工具链回归全部通过。
+
+**实施结果：** MoonBit toolchain acceptance 新增 `moon debug fixed_array_int` 的真实 PTY
+闭环：同一停点重复两次 `p arr`，长度 10 完整显示；`continue` 后在新 stop epoch 再重复两次，
+长度 100 有界显示且尾值为 100。scripted DAP 同时断言同 stop 快照缓存、epoch reset、固定的
+header/head/tail 请求范围，以及 launch arguments 不含 `moonbit.py`/`initCommands`。原始真实
+DAP 探针确认两个 payload 地址不同，`readMemory` 可用，header 长度为 10/100，首尾值为
+`1/10` 和 `1/100`。最终 `moon info`、`moon fmt`、`moon check`、默认 `moon test`、显式真实
+toolchain acceptance、FixedArray 原始探针，以及 Python fake-only/real-only E2E 均通过；
+adapter 与调试进程正常清理。

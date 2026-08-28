@@ -20,7 +20,7 @@ moon test
 | REPL command/presentation | 纯 MoonBit fake backend 与结构化结果断言 | parser、alias、registry、命令调用、事件顺序、human renderer 边界 |
 | DAP protocol/framing | 纯 MoonBit JSON 与字节测试 | message classification、UTF-8 framing、request/response inbox |
 | DAP dispatcher | `testkit/dap` 的进程内 scripted transport | 完整 request 与 seq、乱序 response、event、adapter request、非法/重复 response、EOF/error/close |
-| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、struct 递归物化与裁剪、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
+| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、struct 递归物化与裁剪、FixedArray 有界内存读取、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
 | readline/PTY | MoonBit 驱动与 `testkit/pty/pty.c` | 真实 `run_repl` + readline 链路、即时提示符、本地 help、quit/exit、Ctrl-C、Ctrl-D 和子进程清理 |
 | 源码渲染 | 纯 MoonBit renderer 测试 | 源码窗口、高亮、ANSI 状态和原文本保持 |
 
@@ -49,10 +49,10 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moonc build-package` 与 `moonc link-core` 支持完整 debug info；
 - `moon debug` 子命令存在。
 
-随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main` 和
-`moon debug point`，通过 PTY 完成运行前入口断点、stopped
+随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`、`moon debug point` 和
+`moon debug fixed_array_int`，通过 PTY 完成运行前入口断点、stopped
 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
-struct 一层/嵌套字段打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
+struct 一层/嵌套字段打印、FixedArray 短值/长值/跨 stop 打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
 lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
 
 ## 可选 Python 诊断回归
@@ -94,6 +94,16 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/struct_variable_probe.py
 
 它验证 `Point -> x/y` 和 `Line -> start/end -> x/y` 的 `variablesReference`、
 字段类型、值与递归请求。
+
+`tools/fixed_array_probe.py` 固化 Q-04 依赖的原始 FixedArray header、payload pointer 和
+首尾元素行为。先通过 `moon debug fixed_array_int` 生成完整 DWARF 产物，再从仓库根目录运行：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tools/fixed_array_probe.py
+```
+
+它不加载 `moonbit.py`，直接验证 `readMemory` capability、长度 10/100、`int *` payload
+以及两次停点的首尾值。
 
 ## 变更时应运行的层
 
