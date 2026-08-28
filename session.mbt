@@ -3,9 +3,11 @@
 /// session. Adapter resources and protocol state are held behind backend.
 pub struct DebugSession {
   priv executable : String
-  priv breakpoints : Array[SourceBreakpoint]
+  priv source_breakpoints : Array[SourceBreakpoint]
+  priv function_breakpoints : Array[FunctionBreakpoint]
   priv mut next_breakpoint_id : Int
   priv backend : &DebugBackend
+  priv debug_context : DebugContext
   priv application : DebugApplicationState
 }
 
@@ -14,12 +16,15 @@ pub struct DebugSession {
 pub fn DebugSession::new(
   executable : String,
   backend : &DebugBackend,
+  debug_context? : DebugContext = DebugContext::empty(),
 ) -> DebugSession {
   {
     executable,
-    breakpoints: [],
+    source_breakpoints: [],
+    function_breakpoints: [],
     next_breakpoint_id: 1,
     backend,
+    debug_context,
     application: DebugApplicationState::new(),
   }
 }
@@ -67,7 +72,44 @@ pub fn DebugSession::add_source_breakpoint(
     line,
   )
   self.next_breakpoint_id += 1
-  self.breakpoints.push(breakpoint)
+  self.source_breakpoints.push(breakpoint)
+  breakpoint.pending_snapshot()
+}
+
+///|
+pub fn DebugSession::add_function_breakpoint(
+  self : DebugSession,
+  request : FunctionBreakpointRequest,
+) -> FunctionBreakpointSnapshot raise {
+  guard self.application.phase is Ready else {
+    raise OperationNotAllowed(
+      state=self.application.phase,
+      action="add function breakpoint",
+    )
+  }
+  let current_package = self.debug_context.current_package()
+  let (package_name, function_name, entry_point) = match request {
+    CurrentPackageFunction(function_name) =>
+      (current_package, function_name, function_name == "main")
+    ImportedPackageFunction(package_alias, function_name) =>
+      (
+        self.debug_context.package_for_alias(package_alias),
+        function_name,
+        false,
+      )
+  }
+  let physical_name = if entry_point {
+    "moonbit_main"
+  } else {
+    @name_mangle.mangle_top_level_function_base(package_name, function_name)
+  }
+  let breakpoint = FunctionBreakpoint::new(
+    self.next_breakpoint_id,
+    request.display_name(),
+    physical_name,
+  )
+  self.next_breakpoint_id += 1
+  self.function_breakpoints.push(breakpoint)
   breakpoint.pending_snapshot()
 }
 
@@ -80,7 +122,24 @@ pub fn DebugSession::source_breakpoints(
   for snapshot in backend_snapshots {
     snapshots_by_id.set(snapshot.id(), snapshot)
   }
-  self.breakpoints.map(breakpoint => {
+  self.source_breakpoints.map(breakpoint => {
+    match snapshots_by_id.get(breakpoint.id()) {
+      Some(snapshot) => snapshot
+      None => breakpoint.pending_snapshot()
+    }
+  })
+}
+
+///|
+pub fn DebugSession::function_breakpoints(
+  self : DebugSession,
+) -> Array[FunctionBreakpointSnapshot] {
+  let backend_snapshots = self.backend.function_breakpoint_snapshots()
+  let snapshots_by_id : Map[Int, FunctionBreakpointSnapshot] = Map([])
+  for snapshot in backend_snapshots {
+    snapshots_by_id.set(snapshot.id(), snapshot)
+  }
+  self.function_breakpoints.map(breakpoint => {
     match snapshots_by_id.get(breakpoint.id()) {
       Some(snapshot) => snapshot
       None => breakpoint.pending_snapshot()
@@ -126,7 +185,11 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
     )
   }
   self.application.begin_execution()
-  let outcome = self.backend.launch(self.executable, self.breakpoints) catch {
+  let outcome = self.backend.launch(
+    self.executable,
+    self.source_breakpoints,
+    self.function_breakpoints,
+  ) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
     error => self.backend_failed(@debug.to_string(error), next_state=Failed)

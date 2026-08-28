@@ -6,6 +6,7 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn launch(
   _self,
   _executable,
   _breakpoints,
+  _function_breakpoints,
 ) {
   @moondbg.RunOutcome::exited(Some(0))
 }
@@ -48,6 +49,13 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn find_variable(
 
 ///|
 impl @moondbg.DebugBackend for FrameworkTestBackend with fn breakpoint_snapshots(
+  _self,
+) {
+  []
+}
+
+///|
+impl @moondbg.DebugBackend for FrameworkTestBackend with fn function_breakpoint_snapshots(
   _self,
 ) {
   []
@@ -170,10 +178,13 @@ test "P7 registry resolves every fixed alias through command specs" {
 test "P5 help metadata is derived from registry order" {
   let entries = default_command_registry().help_entries()
   assert_eq(entries.length(), 10)
-  assert_eq(entries[0].usage, "break <file>:<line>")
+  assert_eq(entries[0].usage, "break <location>")
   assert_eq(entries[0].aliases, ["b"])
-  assert_eq(entries[0].alias_usage(), "b <file>:<line>")
-  assert_eq(entries[0].summary, "Set a source breakpoint")
+  assert_eq(entries[0].alias_usage(), "b <location>")
+  assert_eq(
+    entries[0].summary,
+    "Set a breakpoint at file:line, function, or @alias.function",
+  )
   assert_eq(entries[8].usage, "help")
   assert_eq(entries[9].usage, "quit")
   assert_eq(entries[9].aliases, ["q", "exit"])
@@ -186,7 +197,7 @@ test "P5 human help renderer preserves existing column layout" {
   let entries = default_command_registry().help_entries()
   assert_eq(
     format_help_entry(entries[0]),
-    "  break <file>:<line>  b <file>:<line>  Set a source breakpoint",
+    "  break <location>     b <location>     Set a breakpoint at file:line, function, or @alias.function",
   )
   assert_eq(
     format_help_entry(entries[9]),

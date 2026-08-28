@@ -6,8 +6,49 @@ priv suberror BreakpointSourceError {
 
 ///|
 priv struct CommandBreak {
-  source : String
-  line : Int
+  target : BreakCommandTarget
+}
+
+///|
+priv enum BreakCommandTarget {
+  SourceBreakTarget(String, Int)
+  FunctionBreakTarget(@moondbg.FunctionBreakpointRequest)
+}
+
+///|
+fn parse_function_break_target(arguments : StringView) -> CommandParseResult {
+  guard !arguments.contains(" ") && !arguments.contains("\t") else {
+    return invalid_command("function breakpoint must be one function name")
+  }
+  if arguments.has_prefix("@") {
+    guard arguments[1:].split_once(".") is Some((package_alias, function_name)) &&
+      package_alias != "" &&
+      function_name != "" &&
+      !function_name.contains(".") &&
+      !function_name.contains("@") else {
+      return invalid_command(
+        "cross-package function must use @<alias>.<function>",
+      )
+    }
+    return parsed_command(CommandBreak::{
+      target: FunctionBreakTarget(
+        @moondbg.FunctionBreakpointRequest::imported(
+          package_alias.to_owned(),
+          function_name.to_owned(),
+        ),
+      ),
+    })
+  }
+  guard !arguments.contains(".") && !arguments.contains("@") else {
+    return invalid_command(
+      "function breakpoint must use <function> or @<alias>.<function>",
+    )
+  }
+  parsed_command(CommandBreak::{
+    target: FunctionBreakTarget(
+      @moondbg.FunctionBreakpointRequest::current(arguments.to_owned()),
+    ),
+  })
 }
 
 ///|
@@ -16,10 +57,10 @@ fn parse_break_command(
   arguments : StringView,
 ) -> CommandParseResult {
   guard arguments != "" else {
-    return invalid_command("break requires <file>:<line>")
+    return invalid_command("break requires <file>:<line> or <function>")
   }
   guard arguments.rev_find(":") is Some(separator) else {
-    return invalid_command("breakpoint must use <file>:<line>")
+    return parse_function_break_target(arguments)
   }
   let source = arguments[:separator].trim(char_set=" \t")
   let line_text = arguments[separator + 1:].trim(char_set=" \t")
@@ -35,7 +76,9 @@ fn parse_break_command(
   guard parsed_line is Some(line) && line > 0 else {
     return invalid_command("breakpoint line must be a positive integer")
   }
-  parsed_command(CommandBreak::{ source: source.to_owned(), line, })
+  parsed_command(CommandBreak::{
+    target: SourceBreakTarget(source.to_owned(), line),
+  })
 }
 
 ///|
@@ -43,8 +86,8 @@ fn break_command_spec() -> CommandSpec {
   CommandSpec::new(
     "break",
     ["b"],
-    "break <file>:<line>",
-    "Set a source breakpoint",
+    "break <location>",
+    "Set a breakpoint at file:line, function, or @alias.function",
     parse_break_command,
   )
 }
@@ -61,12 +104,22 @@ async fn resolve_breakpoint_source(path : String) -> String {
 ///|
 impl ReplCommand for CommandBreak with fn execute(self, context) {
   let event = try {
-    let canonical_source = resolve_breakpoint_source(self.source)
-    let breakpoint = context.session.add_source_breakpoint(
-      canonical_source,
-      self.line,
-    )
-    BreakpointPendingPresentation(breakpoint.id(), self.source, self.line)
+    match self.target {
+      SourceBreakTarget(source, line) => {
+        let canonical_source = resolve_breakpoint_source(source)
+        let breakpoint = context.session.add_source_breakpoint(
+          canonical_source, line,
+        )
+        BreakpointPendingPresentation(breakpoint.id(), source, line)
+      }
+      FunctionBreakTarget(request) => {
+        let breakpoint = context.session.add_function_breakpoint(request)
+        FunctionBreakpointPendingPresentation(
+          breakpoint.id(),
+          breakpoint.display_name(),
+        )
+      }
+    }
   } catch {
     BreakpointSourceMissing(path) =>
       BreakpointErrorPresentation(BreakpointSourceNotFound(path))
@@ -74,6 +127,10 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
       BreakpointErrorPresentation(BreakpointSourceNotAFile(path))
     @moondbg.OperationNotAllowed(state~, action~) =>
       BreakpointErrorPresentation(BreakpointOperationNotAllowed(state, action))
+    @moondbg.MissingCurrentPackage =>
+      BreakpointErrorPresentation(BreakpointFunctionContextMissing)
+    @moondbg.UnknownPackageAlias(package_alias) =>
+      BreakpointErrorPresentation(BreakpointUnknownPackageAlias(package_alias))
     error =>
       BreakpointErrorPresentation(
         BreakpointUnexpectedFailure(@debug.to_string(error)),

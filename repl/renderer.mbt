@@ -73,6 +73,26 @@ fn render_breakpoint_update(breakpoint : @moondbg.BreakpointSnapshot) -> Unit {
 }
 
 ///|
+fn render_function_breakpoint_update(
+  breakpoint : @moondbg.FunctionBreakpointSnapshot,
+) -> Unit {
+  match breakpoint.status() {
+    @moondbg.Pending =>
+      println(
+        "Breakpoint \{breakpoint.id()} is still pending at function \{breakpoint.display_name()}",
+      )
+    @moondbg.Verified =>
+      println(
+        "Breakpoint \{breakpoint.id()} verified at function \{breakpoint.display_name()}",
+      )
+    @moondbg.Rejected(message) =>
+      println(
+        "Breakpoint \{breakpoint.id()} rejected at function \{breakpoint.display_name()}: \{message}",
+      )
+  }
+}
+
+///|
 fn stop_location(snapshot : @moondbg.StopSnapshot) -> String {
   match (snapshot.source_path(), snapshot.line()) {
     (Some(source_path), Some(line)) => "\{source_path}:\{line}"
@@ -180,6 +200,14 @@ fn render_breakpoint_error(error : BreakpointCommandError) -> Unit {
       println(
         "Cannot set breakpoint: \{action} is not allowed while the debugger is \{@debug.to_string(state)}",
       )
+    BreakpointFunctionContextMissing =>
+      println(
+        "Cannot set function breakpoint: package context is missing; launch moondbg through moon debug.",
+      )
+    BreakpointUnknownPackageAlias(package_alias) =>
+      println(
+        "Cannot set function breakpoint: unknown package alias '@\{package_alias}'.",
+      )
     BreakpointUnexpectedFailure(message) =>
       println("Cannot set breakpoint: \{message}")
   }
@@ -196,6 +224,10 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
       println("Breakpoint \{id} pending at \{source}:\{line}")
     BreakpointUpdatePresentation(breakpoint) =>
       render_breakpoint_update(breakpoint)
+    FunctionBreakpointPendingPresentation(id, display_name) =>
+      println("Breakpoint \{id} pending at function \{display_name}")
+    FunctionBreakpointUpdatePresentation(breakpoint) =>
+      render_function_breakpoint_update(breakpoint)
     BreakpointErrorPresentation(error) => render_breakpoint_error(error)
     StopPresentation(snapshot) => render_stop_header(snapshot)
     SourceViewPresentation(view) => render_source_view(view)

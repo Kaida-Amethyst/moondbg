@@ -16,6 +16,9 @@ fn append_breakpoint_updates(
   for breakpoint in session.source_breakpoints() {
     events.push(BreakpointUpdatePresentation(breakpoint))
   }
+  for breakpoint in session.function_breakpoints() {
+    events.push(FunctionBreakpointUpdatePresentation(breakpoint))
+  }
 }
 
 ///|

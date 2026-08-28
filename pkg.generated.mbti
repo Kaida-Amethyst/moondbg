@@ -82,6 +82,7 @@ pub fn DebugOutputKind::to_repr(Self) -> @debug.Repr
 pub struct DebugSession {
   // private fields
 }
+pub fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot raise
 pub fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnapshot raise DebugSessionError
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
@@ -89,8 +90,9 @@ pub async fn DebugSession::disconnect(Self) -> Unit
 pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
 pub async fn DebugSession::find_variable(Self, String) -> VariableLookupResult
 pub async fn DebugSession::finish(Self) -> RunOutcome
+pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnapshot]
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
-pub fn DebugSession::new(String, &DebugBackend) -> Self
+pub fn DebugSession::new(String, &DebugBackend, debug_context? : DebugContext) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
 pub fn DebugSession::selected_frame(Self) -> FrameSelection?
@@ -127,6 +129,34 @@ pub fn FrameSelection::equal(Self, Self) -> Bool
 pub fn FrameSelection::index(Self) -> Int
 pub fn FrameSelection::not_equal(Self, Self) -> Bool
 pub fn FrameSelection::to_repr(Self) -> @debug.Repr
+
+pub struct FunctionBreakpoint {
+  // private fields
+}
+pub fn FunctionBreakpoint::display_name(Self) -> String
+pub fn FunctionBreakpoint::id(Self) -> Int
+pub fn FunctionBreakpoint::physical_name(Self) -> String
+
+pub enum FunctionBreakpointRequest {
+  CurrentPackageFunction(String)
+  ImportedPackageFunction(String, String)
+} derive(Eq, @debug.Debug)
+pub fn FunctionBreakpointRequest::current(String) -> Self
+pub fn FunctionBreakpointRequest::display_name(Self) -> String
+pub fn FunctionBreakpointRequest::equal(Self, Self) -> Bool
+pub fn FunctionBreakpointRequest::imported(String, String) -> Self
+pub fn FunctionBreakpointRequest::not_equal(Self, Self) -> Bool
+pub fn FunctionBreakpointRequest::to_repr(Self) -> @debug.Repr
+
+pub struct FunctionBreakpointSnapshot {
+  // private fields
+}
+pub fn FunctionBreakpointSnapshot::display_name(Self) -> String
+pub fn FunctionBreakpointSnapshot::id(Self) -> Int
+pub fn FunctionBreakpointSnapshot::pending(Int, String) -> Self
+pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
+pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
+pub fn FunctionBreakpointSnapshot::verified(Int, String) -> Self
 
 pub enum RunOutcome {
   Stopped(StopSnapshot)
@@ -188,13 +218,14 @@ pub fn VariableSnapshot::value(Self) -> String
 
 // Traits
 pub(open) trait DebugBackend {
-  async fn launch(Self, String, Array[SourceBreakpoint]) -> RunOutcome
+  async fn launch(Self, String, Array[SourceBreakpoint], Array[FunctionBreakpoint]) -> RunOutcome
   async fn continue_execution(Self, ThreadSelection) -> RunOutcome
   async fn next(Self, ThreadSelection) -> RunOutcome
   async fn step(Self, ThreadSelection) -> RunOutcome
   async fn finish(Self, ThreadSelection) -> RunOutcome
   async fn find_variable(Self, ThreadSelection, FrameSelection, String) -> VariableLookupResult
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
+  fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]
   fn take_output(Self) -> Array[DebugOutput]
   async fn disconnect(Self) -> Unit
   fn close(Self) -> Unit

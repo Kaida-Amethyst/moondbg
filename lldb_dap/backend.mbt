@@ -3,7 +3,8 @@
 /// Protocol processes and execution-scoped identifiers remain private here.
 pub struct LldbDapBackend {
   priv session : LldbDapSession
-  priv mut imported_breakpoints : Int
+  priv mut imported_source_breakpoints : Int
+  priv mut imported_function_breakpoints : Int
 }
 
 ///|
@@ -16,29 +17,46 @@ pub fn[X] LldbDapBackend::start(
 ) -> LldbDapBackend {
   {
     session: LldbDapSession::start(group, adapter, preparation_timeout_ms~),
-    imported_breakpoints: 0,
+    imported_source_breakpoints: 0,
+    imported_function_breakpoints: 0,
   }
 }
 
 ///|
-fn LldbDapBackend::sync_breakpoints(
+fn LldbDapBackend::sync_source_breakpoints(
   self : LldbDapBackend,
   breakpoints : Array[@moondbg.SourceBreakpoint],
 ) -> Unit raise {
-  for index in self.imported_breakpoints..<breakpoints.length() {
+  for index in self.imported_source_breakpoints..<breakpoints.length() {
     let breakpoint = breakpoints[index]
     self.session.add_source_breakpoint(breakpoint) |> ignore
   }
-  self.imported_breakpoints = breakpoints.length()
+  self.imported_source_breakpoints = breakpoints.length()
+}
+
+///|
+fn LldbDapBackend::sync_function_breakpoints(
+  self : LldbDapBackend,
+  breakpoints : Array[@moondbg.FunctionBreakpoint],
+) -> Unit raise {
+  for index in self.imported_function_breakpoints..<breakpoints.length() {
+    let breakpoint = breakpoints[index]
+    self.session.add_function_breakpoint(breakpoint) |> ignore
+  }
+  self.imported_function_breakpoints = breakpoints.length()
 }
 
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
   self,
   executable,
-  breakpoints,
+  source_breakpoints,
+  function_breakpoints,
 ) {
-  self.sync_breakpoints(breakpoints) catch {
+  self.sync_source_breakpoints(source_breakpoints) catch {
+    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  }
+  self.sync_function_breakpoints(function_breakpoints) catch {
     error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
   }
   self.session.run(executable) catch {
@@ -104,6 +122,13 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
 ///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn breakpoint_snapshots(self) {
   self.session.source_breakpoints()
+}
+
+///|
+impl @moondbg.DebugBackend for LldbDapBackend with fn function_breakpoint_snapshots(
+  self,
+) {
+  self.session.function_breakpoints()
 }
 
 ///|

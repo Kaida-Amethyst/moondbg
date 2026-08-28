@@ -1,10 +1,19 @@
 ///|
-fn LogicalBreakpoint::new(
+fn LogicalSourceBreakpoint::new(
   id : Int,
   source_path : String,
   requested_line : Int,
-) -> LogicalBreakpoint {
+) -> LogicalSourceBreakpoint {
   { id, source_path, requested_line, }
+}
+
+///|
+fn LogicalFunctionBreakpoint::new(
+  id : Int,
+  display_name : String,
+  physical_name : String,
+) -> LogicalFunctionBreakpoint {
+  { id, display_name, physical_name, }
 }
 
 ///|
@@ -236,7 +245,8 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     )
     let backend = LldbDapBackend::{
       session: lldb_session,
-      imported_breakpoints: 0,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
     }
     let session = @moondbg.DebugSession::new(executable, backend)
     defer session.close()
@@ -254,7 +264,7 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     guard session.run() is @moondbg.Stopped(_) else {
       fail("scripted execution should stop after launch")
     }
-    guard backend.session.breakpoints is [logical] else {
+    guard backend.session.source_breakpoints is [logical] else {
       fail("backend should import one stable source breakpoint")
     }
     assert_eq(logical.id, pending.id())
@@ -340,7 +350,8 @@ async test "scripted launch failure is recovered by a fresh prepared execution" 
     )
     let backend = LldbDapBackend::{
       session: lldb_session,
-      imported_breakpoints: 0,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
     }
     let session = @moondbg.DebugSession::new(
       "/tmp/moondbg-recovery-program", backend,
@@ -393,7 +404,8 @@ async test "scripted preparation failure is recovered before the next run" {
     )
     let backend = LldbDapBackend::{
       session: lldb_session,
-      imported_breakpoints: 0,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
     }
     let session = @moondbg.DebugSession::new(
       "/tmp/moondbg-preparation-recovery-program", backend,
@@ -524,8 +536,8 @@ test "a fallback thread id is retained in the current stop epoch" {
 
 ///|
 test "breakpoint responses preserve moondbg ids and adapter outcomes" {
-  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
-  let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
+  let first = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalSourceBreakpoint::new(2, "/tmp/main.mbt", 9)
   let state = ExecutionBreakpointState::new()
   apply_breakpoint_response(
     state,
@@ -537,12 +549,12 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
       ],
     }),
   )
-  let first_snapshot = state.snapshot(first)
+  let first_snapshot = state.source_snapshot(first)
   assert_eq(first_snapshot.id(), 1)
   assert_eq(first_snapshot.requested_line(), 4)
   assert_eq(first_snapshot.actual_line(), Some(5))
   assert_true(first_snapshot.status() is @moondbg.Verified)
-  let second_snapshot = state.snapshot(second)
+  let second_snapshot = state.source_snapshot(second)
   assert_eq(second_snapshot.id(), 2)
   assert_true(
     second_snapshot.status()
@@ -552,8 +564,8 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
 
 ///|
 test "a failed setBreakpoints response rejects the complete source set" {
-  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
-  let second = LogicalBreakpoint::new(2, "/tmp/main.mbt", 9)
+  let first = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalSourceBreakpoint::new(2, "/tmp/main.mbt", 9)
   let state = ExecutionBreakpointState::new()
   apply_breakpoint_response(
     state,
@@ -561,30 +573,31 @@ test "a failed setBreakpoints response rejects the complete source set" {
     test_failed_response(41, 5, "setBreakpoints", "source is unavailable"),
   )
   assert_true(
-    state.snapshot(first).status() is @moondbg.Rejected("source is unavailable"),
+    state.source_snapshot(first).status()
+    is @moondbg.Rejected("source is unavailable"),
   )
   assert_true(
-    state.snapshot(second).status()
+    state.source_snapshot(second).status()
     is @moondbg.Rejected("source is unavailable"),
   )
 }
 
 ///|
 test "adapter breakpoint outcomes are isolated per execution" {
-  let breakpoint = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let breakpoint = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
   let first = ExecutionBreakpointState::new()
   let second = ExecutionBreakpointState::new()
-  first.verify(breakpoint, Some(5), Some(17))
-  assert_true(first.snapshot(breakpoint).status() is @moondbg.Verified)
-  assert_true(second.snapshot(breakpoint).status() is @moondbg.Pending)
-  assert_eq(second.snapshot(breakpoint).actual_line(), None)
+  first.verify(breakpoint.id, Some(5), Some(17))
+  assert_true(first.source_snapshot(breakpoint).status() is @moondbg.Verified)
+  assert_true(second.source_snapshot(breakpoint).status() is @moondbg.Pending)
+  assert_eq(second.source_snapshot(breakpoint).actual_line(), None)
 }
 
 ///|
 test "setBreakpoints arguments replace the complete set for one source" {
-  let first = LogicalBreakpoint::new(1, "/tmp/main.mbt", 4)
-  let second = LogicalBreakpoint::new(2, "/tmp/other.mbt", 7)
-  let third = LogicalBreakpoint::new(3, "/tmp/main.mbt", 9)
+  let first = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
+  let second = LogicalSourceBreakpoint::new(2, "/tmp/other.mbt", 7)
+  let third = LogicalSourceBreakpoint::new(3, "/tmp/main.mbt", 9)
   let selected = breakpoints_for_source([first, second, third], "/tmp/main.mbt")
   assert_eq(selected.length(), 2)
   let arguments = set_breakpoints_arguments("/tmp/main.mbt", selected)
@@ -600,6 +613,51 @@ test "setBreakpoints arguments replace the complete set for one source" {
   assert_eq(breakpoints.length(), 2)
   assert_true(breakpoints[0] is { "line": Number(4, ..), .. })
   assert_true(breakpoints[1] is { "line": Number(9, ..), .. })
+}
+
+///|
+test "setFunctionBreakpoints uses exact resolved physical names" {
+  let local_breakpoint = LogicalFunctionBreakpoint::new(
+    1, "helper", "_M0FP37example3app4main6helper",
+  )
+  let entry = LogicalFunctionBreakpoint::new(2, "main", "moonbit_main")
+  let arguments = set_function_breakpoints_arguments([local_breakpoint, entry])
+  guard arguments is { "breakpoints": Array(breakpoints), .. } else {
+    fail("expected function breakpoint arguments")
+  }
+  assert_eq(breakpoints.length(), 2)
+  assert_true(
+    breakpoints[0] is { "name": String("_M0FP37example3app4main6helper"), .. },
+  )
+  assert_true(breakpoints[1] is { "name": String("moonbit_main"), .. })
+}
+
+///|
+test "function breakpoint responses preserve stable ids and verification" {
+  let local_breakpoint = LogicalFunctionBreakpoint::new(
+    1, "helper", "_M0FP37example3app4main6helper",
+  )
+  let missing = LogicalFunctionBreakpoint::new(
+    2, "absent", "_M0FP37example3app4main6absent",
+  )
+  let state = ExecutionBreakpointState::new()
+  apply_function_breakpoint_response(
+    state,
+    [local_breakpoint, missing],
+    test_response(50, 6, "setFunctionBreakpoints", {
+      "breakpoints": [
+        { "id": 31, "verified": true },
+        { "verified": false, "message": "no locations found" },
+      ],
+    }),
+  )
+  let verified = state.function_snapshot(local_breakpoint)
+  assert_eq(verified.id(), 1)
+  assert_eq(verified.display_name(), "helper")
+  assert_true(verified.status() is @moondbg.Verified)
+  let rejected = state.function_snapshot(missing)
+  assert_eq(rejected.id(), 2)
+  assert_true(rejected.status() is @moondbg.Rejected("no locations found"))
 }
 
 ///|

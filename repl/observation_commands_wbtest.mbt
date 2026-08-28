@@ -37,6 +37,7 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn launch(
   self,
   _executable,
   _breakpoints,
+  _function_breakpoints,
 ) {
   self.launches += 1
   @moondbg.RunOutcome::stopped(observation_command_stop())
@@ -96,6 +97,13 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variab
 
 ///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn breakpoint_snapshots(
+  _self,
+) {
+  []
+}
+
+///|
+impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn function_breakpoint_snapshots(
   _self,
 ) {
   []

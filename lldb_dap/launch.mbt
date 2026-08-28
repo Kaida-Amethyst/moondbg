@@ -45,13 +45,15 @@ fn LldbDapSession::new_with_preparation(
   preparation_timeout_ms : Int,
 ) -> LldbDapSession {
   {
-    breakpoints: [],
+    source_breakpoints: [],
+    function_breakpoints: [],
     spawn_preparation,
     preparation: Some(spawn_preparation()),
     preparation_timeout_ms,
     execution: None,
     detached_state: Ready,
-    last_breakpoint_snapshots: Map([]),
+    last_source_breakpoint_snapshots: Map([]),
+    last_function_breakpoint_snapshots: Map([]),
     pending_output: [],
   }
 }
@@ -117,7 +119,8 @@ async fn DebugExecution::wait_for_initialized(
 async fn DebugExecution::run_transaction(
   self : DebugExecution,
   executable : String,
-  breakpoints : Array[LogicalBreakpoint],
+  source_breakpoints : Array[LogicalSourceBreakpoint],
+  function_breakpoints : Array[LogicalFunctionBreakpoint],
 ) -> @moondbg.RunOutcome {
   errdefer self.machine.fail("run transaction failed")
   self.machine.begin_execution()
@@ -129,7 +132,8 @@ async fn DebugExecution::run_transaction(
   if self.machine.state is Exited {
     return @moondbg.RunOutcome::exited(self.exit_code)
   }
-  self.configure_breakpoints(breakpoints)
+  self.configure_breakpoints(source_breakpoints)
+  self.configure_function_breakpoints(function_breakpoints)
   self.machine.mark_running()
   self.request("configurationDone", {}) |> ignore
   if launch_response is None {
@@ -145,7 +149,8 @@ async fn DebugExecution::run_transaction(
 async fn DebugExecution::run(
   self : DebugExecution,
   executable : String,
-  breakpoints : Array[LogicalBreakpoint],
+  source_breakpoints : Array[LogicalSourceBreakpoint],
+  function_breakpoints : Array[LogicalFunctionBreakpoint],
 ) -> @moondbg.RunOutcome {
   guard self.machine.state is Ready else {
     raise LldbDapBackendError::OperationNotAllowed(
@@ -153,7 +158,7 @@ async fn DebugExecution::run(
       action="run the program",
     )
   }
-  self.run_transaction(executable, breakpoints) catch {
+  self.run_transaction(executable, source_breakpoints, function_breakpoints) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
   }
 }

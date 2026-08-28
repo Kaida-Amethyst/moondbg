@@ -6,6 +6,7 @@ priv struct ExecutionCommandTestBackend {
   mut steps : Int
   mut finishes : Int
   breakpoints : Array[@moondbg.SourceBreakpoint]
+  function_breakpoints : Array[@moondbg.FunctionBreakpoint]
   output : Array[@moondbg.DebugOutput]
   mut fail_next : Bool
 }
@@ -19,6 +20,7 @@ fn ExecutionCommandTestBackend::new() -> ExecutionCommandTestBackend {
     steps: 0,
     finishes: 0,
     breakpoints: [],
+    function_breakpoints: [],
     output: [],
     fail_next: false,
   }
@@ -40,11 +42,16 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn launch(
   self,
   _executable,
   breakpoints,
+  function_breakpoints,
 ) {
   self.launches += 1
   self.breakpoints.clear()
   for breakpoint in breakpoints {
     self.breakpoints.push(breakpoint)
+  }
+  self.function_breakpoints.clear()
+  for breakpoint in function_breakpoints {
+    self.function_breakpoints.push(breakpoint)
   }
   @moondbg.RunOutcome::stopped(execution_command_stop())
 }
@@ -113,6 +120,18 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn breakpoint_sn
 }
 
 ///|
+impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn function_breakpoint_snapshots(
+  self,
+) {
+  self.function_breakpoints.map(breakpoint => {
+    @moondbg.FunctionBreakpointSnapshot::verified(
+      breakpoint.id(),
+      breakpoint.display_name(),
+    )
+  })
+}
+
+///|
 impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn take_output(
   self,
 ) {
@@ -140,6 +159,25 @@ fn execution_command_test_context() -> (
 ) raise {
   let backend = ExecutionCommandTestBackend::new()
   let session = @moondbg.DebugSession::new("/tmp/program", backend)
+  let renderer = HumanRenderer::new()
+  let context = ReplContext::new(session, default_command_registry(), renderer)
+  (backend, context)
+}
+
+///|
+fn function_breakpoint_test_context() -> (
+  ExecutionCommandTestBackend,
+  ReplContext,
+) raise {
+  let backend = ExecutionCommandTestBackend::new()
+  let debug_context = @moondbg.DebugContext::new("example/app/main", [
+    ("util", "example/lib/util"),
+  ])
+  let session = @moondbg.DebugSession::new(
+    "/tmp/program",
+    backend,
+    debug_context~,
+  )
   let renderer = HumanRenderer::new()
   let context = ReplContext::new(session, default_command_registry(), renderer)
   (backend, context)
@@ -217,6 +255,62 @@ test "P6 break parser retains source and line validation" {
     ] {
     assert_true(registry.parse_line(command) is RegistryInvalid(_), msg=command)
   }
+}
+
+///|
+test "function break parser accepts local_breakpoint and imported top-level names" {
+  let registry = default_command_registry()
+  for command in ["b main", "break helper", "b @util.parse"] {
+    assert_true(registry.parse_line(command) is RegistryCommand(_), msg=command)
+  }
+  for
+    command in [
+      "b @util", "b @.parse", "b @util.", "b @util.foo.more", "b foo bar",
+    ] {
+    assert_true(registry.parse_line(command) is RegistryInvalid(_), msg=command)
+  }
+}
+
+///|
+async test "function break command resolves local_breakpoint imported and entry symbols" {
+  let (backend, context) = function_breakpoint_test_context()
+  for
+    expected in [
+      ("b helper", 1, "helper"),
+      ("b @util.parse", 2, "@util.parse"),
+      ("b main", 3, "main"),
+    ] {
+    let result = execute_framework_command(context, expected.0)
+    guard result.events
+      is [FunctionBreakpointPendingPresentation(actual_id, actual_name)] else {
+      fail("expected a pending function breakpoint for '\{expected.0}'")
+    }
+    assert_eq(actual_id, expected.1)
+    assert_eq(actual_name, expected.2)
+  }
+  context.session.run() |> ignore
+  guard backend.function_breakpoints is [local_breakpoint, imported, entry] else {
+    fail("run should pass function breakpoints to the backend")
+  }
+  assert_eq(local_breakpoint.physical_name(), "_M0FP37example3app4main6helper")
+  assert_eq(imported.physical_name(), "_M0FP37example3lib4util5parse")
+  assert_eq(entry.physical_name(), "moonbit_main")
+}
+
+///|
+async test "function break command reports missing and unknown package context" {
+  let (_backend, context) = execution_command_test_context()
+  let missing = execute_framework_command(context, "b helper")
+  assert_true(
+    missing.events
+    is [BreakpointErrorPresentation(BreakpointFunctionContextMissing)],
+  )
+  let (_backend, context) = function_breakpoint_test_context()
+  let unknown = execute_framework_command(context, "b @missing.helper")
+  assert_true(
+    unknown.events
+    is [BreakpointErrorPresentation(BreakpointUnknownPackageAlias("missing"))],
+  )
 }
 
 ///|

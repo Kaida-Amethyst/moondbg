@@ -1,4 +1,5 @@
-fn sum(arr: FixedArray[Int]) -> Int {
+///|
+fn sum(arr : FixedArray[Int]) -> Int {
   let mut total = 0
   for i in arr {
     total += i
@@ -6,11 +7,11 @@ fn sum(arr: FixedArray[Int]) -> Int {
   total
 }
 
-
-
 ///|
 fn main {
-  let arr: FixedArray[Int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-  let result = sum(arr)
+  let arr : FixedArray[Int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  let result = @probe.increment(sum(arr)) - 1
+  let result = @probe.identity(result)
+  let _message = @probe.identity("dwarf probe")
   println(result)
 }

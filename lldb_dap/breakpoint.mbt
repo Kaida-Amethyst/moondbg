@@ -1,14 +1,14 @@
 ///|
-priv struct LogicalBreakpoint {
+priv struct LogicalSourceBreakpoint {
   id : Int
   source_path : String
   requested_line : Int
 }
 
 ///|
-fn LogicalBreakpoint::from_domain(
+fn LogicalSourceBreakpoint::from_domain(
   breakpoint : @moondbg.SourceBreakpoint,
-) -> LogicalBreakpoint {
+) -> LogicalSourceBreakpoint {
   {
     id: breakpoint.id(),
     source_path: breakpoint.source_path(),
@@ -17,14 +17,39 @@ fn LogicalBreakpoint::from_domain(
 }
 
 ///|
-fn LogicalBreakpoint::pending_snapshot(
-  self : LogicalBreakpoint,
+fn LogicalSourceBreakpoint::pending_snapshot(
+  self : LogicalSourceBreakpoint,
 ) -> @moondbg.BreakpointSnapshot {
   @moondbg.BreakpointSnapshot::pending(
     self.id,
     self.source_path,
     self.requested_line,
   )
+}
+
+///|
+priv struct LogicalFunctionBreakpoint {
+  id : Int
+  display_name : String
+  physical_name : String
+}
+
+///|
+fn LogicalFunctionBreakpoint::from_domain(
+  breakpoint : @moondbg.FunctionBreakpoint,
+) -> LogicalFunctionBreakpoint {
+  {
+    id: breakpoint.id(),
+    display_name: breakpoint.display_name(),
+    physical_name: breakpoint.physical_name(),
+  }
+}
+
+///|
+fn LogicalFunctionBreakpoint::pending_snapshot(
+  self : LogicalFunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot {
+  @moondbg.FunctionBreakpointSnapshot::pending(self.id, self.display_name)
 }
 
 ///|
@@ -55,11 +80,11 @@ fn ExecutionBreakpointState::new() -> ExecutionBreakpointState {
 ///|
 fn ExecutionBreakpointState::verify(
   self : ExecutionBreakpointState,
-  breakpoint : LogicalBreakpoint,
+  breakpoint_id : Int,
   actual_line : Int?,
   dap_id : Int?,
 ) -> Unit {
-  self.outcomes.set(breakpoint.id, {
+  self.outcomes.set(breakpoint_id, {
     actual_line,
     dap_id,
     status: AdapterVerified,
@@ -69,10 +94,10 @@ fn ExecutionBreakpointState::verify(
 ///|
 fn ExecutionBreakpointState::reject(
   self : ExecutionBreakpointState,
-  breakpoint : LogicalBreakpoint,
+  breakpoint_id : Int,
   message : String,
 ) -> Unit {
-  self.outcomes.set(breakpoint.id, {
+  self.outcomes.set(breakpoint_id, {
     actual_line: None,
     dap_id: None,
     status: AdapterRejected(message),
@@ -80,9 +105,9 @@ fn ExecutionBreakpointState::reject(
 }
 
 ///|
-fn ExecutionBreakpointState::snapshot(
+fn ExecutionBreakpointState::source_snapshot(
   self : ExecutionBreakpointState,
-  breakpoint : LogicalBreakpoint,
+  breakpoint : LogicalSourceBreakpoint,
 ) -> @moondbg.BreakpointSnapshot {
   guard self.outcomes.get(breakpoint.id) is Some(outcome) else {
     return breakpoint.pending_snapshot()
@@ -106,6 +131,29 @@ fn ExecutionBreakpointState::snapshot(
 }
 
 ///|
+fn ExecutionBreakpointState::function_snapshot(
+  self : ExecutionBreakpointState,
+  breakpoint : LogicalFunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot {
+  guard self.outcomes.get(breakpoint.id) is Some(outcome) else {
+    return breakpoint.pending_snapshot()
+  }
+  match outcome.status {
+    AdapterVerified =>
+      @moondbg.FunctionBreakpointSnapshot::verified(
+        breakpoint.id,
+        breakpoint.display_name,
+      )
+    AdapterRejected(message) =>
+      @moondbg.FunctionBreakpointSnapshot::rejected(
+        breakpoint.id,
+        breakpoint.display_name,
+        message,
+      )
+  }
+}
+
+///|
 fn LldbDapSession::add_source_breakpoint(
   self : LldbDapSession,
   source_breakpoint : @moondbg.SourceBreakpoint,
@@ -117,8 +165,8 @@ fn LldbDapSession::add_source_breakpoint(
       action="add source breakpoint",
     )
   }
-  let breakpoint = LogicalBreakpoint::from_domain(source_breakpoint)
-  self.breakpoints.push(breakpoint)
+  let breakpoint = LogicalSourceBreakpoint::from_domain(source_breakpoint)
+  self.source_breakpoints.push(breakpoint)
   breakpoint.pending_snapshot()
 }
 
@@ -128,12 +176,48 @@ fn LldbDapSession::source_breakpoints(
 ) -> Array[@moondbg.BreakpointSnapshot] {
   match self.execution {
     Some(execution) =>
-      self.breakpoints.map(breakpoint => {
-        execution.breakpoint_state.snapshot(breakpoint)
+      self.source_breakpoints.map(breakpoint => {
+        execution.breakpoint_state.source_snapshot(breakpoint)
       })
     None =>
-      self.breakpoints.map(breakpoint => {
-        match self.last_breakpoint_snapshots.get(breakpoint.id) {
+      self.source_breakpoints.map(breakpoint => {
+        match self.last_source_breakpoint_snapshots.get(breakpoint.id) {
+          Some(snapshot) => snapshot
+          None => breakpoint.pending_snapshot()
+        }
+      })
+  }
+}
+
+///|
+fn LldbDapSession::add_function_breakpoint(
+  self : LldbDapSession,
+  function_breakpoint : @moondbg.FunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot raise LldbDapBackendError {
+  let state = self.state()
+  guard state is Ready else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state~,
+      action="add function breakpoint",
+    )
+  }
+  let breakpoint = LogicalFunctionBreakpoint::from_domain(function_breakpoint)
+  self.function_breakpoints.push(breakpoint)
+  breakpoint.pending_snapshot()
+}
+
+///|
+fn LldbDapSession::function_breakpoints(
+  self : LldbDapSession,
+) -> Array[@moondbg.FunctionBreakpointSnapshot] {
+  match self.execution {
+    Some(execution) =>
+      self.function_breakpoints.map(breakpoint => {
+        execution.breakpoint_state.function_snapshot(breakpoint)
+      })
+    None =>
+      self.function_breakpoints.map(breakpoint => {
+        match self.last_function_breakpoint_snapshots.get(breakpoint.id) {
           Some(snapshot) => snapshot
           None => breakpoint.pending_snapshot()
         }
@@ -173,35 +257,36 @@ fn breakpoint_result_message(result : Json) -> String {
 ///|
 fn update_breakpoint_from_result(
   breakpoint_state : ExecutionBreakpointState,
-  breakpoint : LogicalBreakpoint,
+  breakpoint : LogicalSourceBreakpoint,
   result : Json,
 ) -> Unit {
   match result {
     { "verified": True, .. } =>
       breakpoint_state.verify(
-        breakpoint,
+        breakpoint.id,
         breakpoint_result_line(result),
         breakpoint_result_id(result),
       )
-    _ => breakpoint_state.reject(breakpoint, breakpoint_result_message(result))
+    _ =>
+      breakpoint_state.reject(breakpoint.id, breakpoint_result_message(result))
   }
 }
 
 ///|
 fn reject_breakpoints(
   breakpoint_state : ExecutionBreakpointState,
-  breakpoints : Array[LogicalBreakpoint],
+  breakpoints : Array[LogicalSourceBreakpoint],
   message : String,
 ) -> Unit {
   for breakpoint in breakpoints {
-    breakpoint_state.reject(breakpoint, message)
+    breakpoint_state.reject(breakpoint.id, message)
   }
 }
 
 ///|
 fn apply_breakpoint_response(
   breakpoint_state : ExecutionBreakpointState,
-  breakpoints : Array[LogicalBreakpoint],
+  breakpoints : Array[LogicalSourceBreakpoint],
   response : @dap.DapResponse,
 ) -> Unit {
   guard response.success() else {
@@ -224,7 +309,8 @@ fn apply_breakpoint_response(
         update_breakpoint_from_result(breakpoint_state, breakpoint, result)
       None =>
         breakpoint_state.reject(
-          breakpoint, "lldb-dap omitted this breakpoint result",
+          breakpoint.id,
+          "lldb-dap omitted this breakpoint result",
         )
     }
   }
@@ -232,10 +318,10 @@ fn apply_breakpoint_response(
 
 ///|
 fn breakpoints_for_source(
-  breakpoints : Array[LogicalBreakpoint],
+  breakpoints : Array[LogicalSourceBreakpoint],
   source_path : String,
-) -> Array[LogicalBreakpoint] {
-  let selected : Array[LogicalBreakpoint] = []
+) -> Array[LogicalSourceBreakpoint] {
+  let selected : Array[LogicalSourceBreakpoint] = []
   for breakpoint in breakpoints {
     if breakpoint.source_path == source_path {
       selected.push(breakpoint)
@@ -247,7 +333,7 @@ fn breakpoints_for_source(
 ///|
 fn set_breakpoints_arguments(
   source_path : String,
-  breakpoints : Array[LogicalBreakpoint],
+  breakpoints : Array[LogicalSourceBreakpoint],
 ) -> Json {
   let dap_breakpoints : Array[Json] = []
   for breakpoint in breakpoints {
@@ -263,7 +349,7 @@ fn set_breakpoints_arguments(
 ///|
 async fn DebugExecution::configure_breakpoints(
   self : DebugExecution,
-  breakpoints : Array[LogicalBreakpoint],
+  breakpoints : Array[LogicalSourceBreakpoint],
 ) -> Unit {
   let configured : Map[String, Bool] = Map([])
   for breakpoint in breakpoints {
@@ -292,4 +378,93 @@ async fn DebugExecution::configure_breakpoints(
       response,
     )
   }
+}
+
+///|
+fn set_function_breakpoints_arguments(
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Json {
+  let dap_breakpoints : Array[Json] = []
+  for breakpoint in breakpoints {
+    dap_breakpoints.push({ "name": breakpoint.physical_name })
+  }
+  { "breakpoints": dap_breakpoints }
+}
+
+///|
+fn reject_function_breakpoints(
+  breakpoint_state : ExecutionBreakpointState,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+  message : String,
+) -> Unit {
+  for breakpoint in breakpoints {
+    breakpoint_state.reject(breakpoint.id, message)
+  }
+}
+
+///|
+fn apply_function_breakpoint_response(
+  breakpoint_state : ExecutionBreakpointState,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+  response : @dap.DapResponse,
+) -> Unit {
+  guard response.success() else {
+    reject_function_breakpoints(
+      breakpoint_state,
+      breakpoints,
+      response.message().unwrap_or("lldb-dap rejected the function breakpoints"),
+    )
+    return
+  }
+  guard response.body() is { "breakpoints": Array(results), .. } else {
+    reject_function_breakpoints(
+      breakpoint_state, breakpoints, "lldb-dap returned no function breakpoint results",
+    )
+    return
+  }
+  for index, breakpoint in breakpoints {
+    match results.get(index) {
+      Some({ "verified": True, .. } as result) =>
+        breakpoint_state.verify(
+          breakpoint.id,
+          breakpoint_result_line(result),
+          breakpoint_result_id(result),
+        )
+      Some(result) =>
+        breakpoint_state.reject(
+          breakpoint.id,
+          breakpoint_result_message(result),
+        )
+      None =>
+        breakpoint_state.reject(
+          breakpoint.id,
+          "lldb-dap omitted this function breakpoint result",
+        )
+    }
+  }
+}
+
+///|
+async fn DebugExecution::configure_function_breakpoints(
+  self : DebugExecution,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Unit {
+  guard breakpoints is [_, ..] else { return }
+  let seq = self.dispatcher.send_request(
+    "setFunctionBreakpoints",
+    set_function_breakpoints_arguments(breakpoints),
+  )
+  guard self.wait_for_response(seq, "setFunctionBreakpoints") is Some(response) else {
+    reject_function_breakpoints(
+      self.breakpoint_state,
+      breakpoints,
+      "lldb-dap exited before verifying the function breakpoints",
+    )
+    return
+  }
+  apply_function_breakpoint_response(
+    self.breakpoint_state,
+    breakpoints,
+    response,
+  )
 }

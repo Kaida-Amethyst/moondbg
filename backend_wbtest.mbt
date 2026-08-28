@@ -8,6 +8,7 @@ priv struct RecordingBackend {
   mut variable_lookups : Int
   mut executable : String?
   breakpoints : Array[SourceBreakpoint]
+  function_breakpoints : Array[FunctionBreakpoint]
   breakpoint_launches : Array[Array[Int]]
   thread_selections : Array[Int]
   frame_selections : Array[Int]
@@ -29,6 +30,7 @@ fn RecordingBackend::new() -> RecordingBackend {
     variable_lookups: 0,
     executable: None,
     breakpoints: [],
+    function_breakpoints: [],
     breakpoint_launches: [],
     thread_selections: [],
     frame_selections: [],
@@ -64,6 +66,7 @@ impl DebugBackend for RecordingBackend with fn launch(
   self,
   executable,
   breakpoints,
+  function_breakpoints,
 ) {
   self.record_running_entry()
   self.launches += 1
@@ -71,6 +74,10 @@ impl DebugBackend for RecordingBackend with fn launch(
   self.breakpoints.clear()
   for breakpoint in breakpoints {
     self.breakpoints.push(breakpoint)
+  }
+  self.function_breakpoints.clear()
+  for breakpoint in function_breakpoints {
+    self.function_breakpoints.push(breakpoint)
   }
   self.breakpoint_launches.push(breakpoints.map(breakpoint => breakpoint.id()))
   RunOutcome::stopped(recording_stop())
@@ -132,6 +139,18 @@ impl DebugBackend for RecordingBackend with fn breakpoint_snapshots(self) {
     requested_line: breakpoint.requested_line(),
     actual_line: Some(breakpoint.requested_line()),
     status: Verified,
+  })
+}
+
+///|
+impl DebugBackend for RecordingBackend with fn function_breakpoint_snapshots(
+  self,
+) {
+  self.function_breakpoints.map(breakpoint => {
+    FunctionBreakpointSnapshot::verified(
+      breakpoint.id(),
+      breakpoint.display_name(),
+    )
   })
 }
 
@@ -300,4 +319,74 @@ async test "P4 backend failure invalidates the stable stop and preserves executi
   assert_eq(backend.running_entries, 2)
   assert_eq(backend.invalid_running_entries, 0)
   session.close()
+}
+
+///|
+async test "function breakpoints resolve package context and native symbols" {
+  let backend = RecordingBackend::new()
+  let debug_context = DebugContext::new("example/app/main", [
+    ("util", "example/lib/util"),
+  ])
+  let session = DebugSession::new("/tmp/program", backend, debug_context~)
+  let local_breakpoint = session.add_function_breakpoint(
+    FunctionBreakpointRequest::current("helper"),
+  )
+  let imported = session.add_function_breakpoint(
+    FunctionBreakpointRequest::imported("util", "parse"),
+  )
+  let entry = session.add_function_breakpoint(
+    FunctionBreakpointRequest::current("main"),
+  )
+  assert_eq(local_breakpoint.id(), 1)
+  assert_eq(imported.id(), 2)
+  assert_eq(entry.id(), 3)
+  session.run() |> ignore
+  guard backend.function_breakpoints is [local_breakpoint, imported, entry] else {
+    fail("backend should receive all stable function breakpoints")
+  }
+  assert_eq(local_breakpoint.physical_name(), "_M0FP37example3app4main6helper")
+  assert_eq(imported.physical_name(), "_M0FP37example3lib4util5parse")
+  assert_eq(entry.physical_name(), "moonbit_main")
+  guard session.function_breakpoints() is [one, two, three] else {
+    fail("function breakpoint results should be visible through the session")
+  }
+  assert_true(one.status() is Verified)
+  assert_true(two.status() is Verified)
+  assert_true(three.status() is Verified)
+}
+
+///|
+test "function breakpoints reject missing and unknown package context" {
+  let backend = RecordingBackend::new()
+  let missing = DebugSession::new("/tmp/program", backend)
+  assert_true(
+    try {
+      missing.add_function_breakpoint(
+        FunctionBreakpointRequest::current("helper"),
+      )
+      |> ignore
+      false
+    } catch {
+      MissingCurrentPackage => true
+      _ => false
+    },
+  )
+  let context = DebugContext::new("example/app", [])
+  let unknown = DebugSession::new(
+    "/tmp/program",
+    backend,
+    debug_context=context,
+  )
+  assert_true(
+    try {
+      unknown.add_function_breakpoint(
+        FunctionBreakpointRequest::imported("missing", "helper"),
+      )
+      |> ignore
+      false
+    } catch {
+      UnknownPackageAlias("missing") => true
+      _ => false
+    },
+  )
 }

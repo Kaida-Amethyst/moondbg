@@ -179,7 +179,7 @@ moondbg 仍允许省略上下文，以保留源码行断点和独立调试用法
 
 ### P3. 实现非泛型函数名断点
 
-**状态：待实施**
+**状态：已完成**
 
 **目标：** 建立 `b foo` 和 `b @pkg.foo` 到精确 LLDB 函数断点的第一个闭环。
 
@@ -198,6 +198,18 @@ moondbg 仍允许省略上下文，以保留源码行断点和独立调试用法
 
 **完成条件：** 普通 `b foo`、跨包 `b @pkg.foo` 和 `b main` 能在真实 `moon debug` 链路中
 停住；未知 alias、非法函数语法和不存在的函数得到稳定反馈；源码行断点不回归。
+
+**实施结果：** 新增结构化 `FunctionBreakpointRequest`、稳定的应用层
+`FunctionBreakpoint` 与独立 snapshot；`DebugSession` 现在拥有 `DebugContext`，统一负责把
+当前包函数和 import alias 函数解析为规范包名，再调用 `name_mangle`。REPL 只解析
+`b foo`/`b @alias.foo` 语法并展示语义化结果，不接触物理符号；缺少 package context 和未知
+alias 有专门提示。当前 executable package 的 `main` 在 session 的入口策略中集中映射为
+`moonbit_main`，普通顶层函数仍按通用规则 mangle。
+
+lldb-dap backend 增加独立的函数断点集合，通过标准 `setFunctionBreakpoints` 配置精确物理
+名字，并在每次执行时与源码断点一起重放。fixture 新增 `probe` 依赖包以及普通函数
+`increment`；真实开发链路已分别验证 `b sum`、`b main` 和 `b @probe.increment` 均 verified
+并停在对应 MoonBit 源码。`moon check` 与 128 个测试通过，源码行断点原有测试保持通过。
 
 ### P4. 实现泛型函数 family 断点
 

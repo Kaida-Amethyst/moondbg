@@ -2,13 +2,18 @@
 /// Owns the currently prepared or active lldb-dap execution and its
 /// adapter-scoped mappings. Stable configuration remains owned by DebugSession.
 priv struct LldbDapSession {
-  breakpoints : Array[LogicalBreakpoint]
+  source_breakpoints : Array[LogicalSourceBreakpoint]
+  function_breakpoints : Array[LogicalFunctionBreakpoint]
   spawn_preparation : () -> @async.Task[DebugExecution]
   mut preparation : @async.Task[DebugExecution]?
   preparation_timeout_ms : Int
   mut execution : DebugExecution?
   mut detached_state : DapSessionState
-  last_breakpoint_snapshots : Map[Int, @moondbg.BreakpointSnapshot]
+  last_source_breakpoint_snapshots : Map[Int, @moondbg.BreakpointSnapshot]
+  last_function_breakpoint_snapshots : Map[
+    Int,
+    @moondbg.FunctionBreakpointSnapshot,
+  ]
   pending_output : Array[@moondbg.DebugOutput]
 }
 
@@ -75,10 +80,15 @@ fn LldbDapSession::archive_execution(
   for output in execution.take_output() {
     self.pending_output.push(output)
   }
-  self.last_breakpoint_snapshots.clear()
-  for breakpoint in self.breakpoints {
-    let snapshot = execution.breakpoint_state.snapshot(breakpoint)
-    self.last_breakpoint_snapshots.set(snapshot.id(), snapshot)
+  self.last_source_breakpoint_snapshots.clear()
+  for breakpoint in self.source_breakpoints {
+    let snapshot = execution.breakpoint_state.source_snapshot(breakpoint)
+    self.last_source_breakpoint_snapshots.set(snapshot.id(), snapshot)
+  }
+  self.last_function_breakpoint_snapshots.clear()
+  for breakpoint in self.function_breakpoints {
+    let snapshot = execution.breakpoint_state.function_snapshot(breakpoint)
+    self.last_function_breakpoint_snapshots.set(snapshot.id(), snapshot)
   }
 }
 
@@ -140,7 +150,11 @@ async fn LldbDapSession::run(
     self.restart_stopped_execution(execution)
   }
   let execution = self.prepared_execution()
-  let outcome = execution.run(executable, self.breakpoints) catch {
+  let outcome = execution.run(
+    executable,
+    self.source_breakpoints,
+    self.function_breakpoints,
+  ) catch {
     LldbDapBackendError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()

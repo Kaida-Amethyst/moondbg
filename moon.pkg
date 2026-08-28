@@ -1,4 +1,5 @@
 import {
+  "Kaida-Amethyst/moondbg/name_mangle",
   "moonbitlang/core/debug",
 }
 

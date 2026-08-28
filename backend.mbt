@@ -24,7 +24,8 @@ pub(open) trait DebugBackend {
   async fn launch(
     Self,
     executable : String,
-    breakpoints : Array[SourceBreakpoint],
+    source_breakpoints : Array[SourceBreakpoint],
+    function_breakpoints : Array[FunctionBreakpoint],
   ) -> RunOutcome
   async fn continue_execution(Self, thread : ThreadSelection) -> RunOutcome
   async fn next(Self, thread : ThreadSelection) -> RunOutcome
@@ -37,6 +38,7 @@ pub(open) trait DebugBackend {
     name : String,
   ) -> VariableLookupResult
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
+  fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]
   fn take_output(Self) -> Array[DebugOutput]
   async fn disconnect(Self) -> Unit
   fn close(Self) -> Unit

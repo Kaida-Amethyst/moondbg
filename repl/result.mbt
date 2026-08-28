@@ -36,6 +36,8 @@ priv enum PresentationEvent {
   ProgramRestartingPresentation
   BreakpointPendingPresentation(Int, String, Int)
   BreakpointUpdatePresentation(@moondbg.BreakpointSnapshot)
+  FunctionBreakpointPendingPresentation(Int, String)
+  FunctionBreakpointUpdatePresentation(@moondbg.FunctionBreakpointSnapshot)
   BreakpointErrorPresentation(BreakpointCommandError)
   StopPresentation(@moondbg.StopSnapshot)
   SourceViewPresentation(SourceView)
@@ -72,6 +74,8 @@ priv enum BreakpointCommandError {
   BreakpointSourceNotFound(String)
   BreakpointSourceNotAFile(String)
   BreakpointOperationNotAllowed(@moondbg.DebugSessionState, String)
+  BreakpointFunctionContextMissing
+  BreakpointUnknownPackageAlias(String)
   BreakpointUnexpectedFailure(String)
 }
 

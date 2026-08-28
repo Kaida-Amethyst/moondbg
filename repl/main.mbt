@@ -136,13 +136,14 @@ async fn run(
     let session = @moondbg.DebugSession::new(
       executable,
       backend.as_debug_backend(),
+      debug_context~,
     )
     defer session.close()
     let history = @readline.History::new()
     let editor = @readline.LineEditor::open(history~)
     let registry = default_command_registry()
     let renderer = HumanRenderer::new()
-    let context = ReplContext::new(session, registry, renderer, debug_context~)
+    let context = ReplContext::new(session, registry, renderer)
     run_repl(editor, history, context)
     session.disconnect()
     println("Debugger exited.")
