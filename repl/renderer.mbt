@@ -197,16 +197,14 @@ fn moonbit_variable_type_name(type_name : StringView) -> String {
     "uint32_t" => "UInt"
     "int64_t" => "Int64"
     "uint64_t" => "UInt64"
-    _ =>
-      match type_name.strip_suffix(" &") {
-        Some(base) =>
-          match base.rev_split_once("/") {
-            Some((package_name, source_name)) if package_name != "" &&
-              source_name != "" => source_name.to_owned()
-            _ => type_name.to_owned()
-          }
-        None => type_name.to_owned()
+    _ => {
+      let base = type_name.strip_suffix(" &").unwrap_or(type_name)
+      match base.rev_split_once("/") {
+        Some((package_name, source_name)) if package_name != "" &&
+          source_name != "" => source_name.to_owned()
+        _ => base.to_owned()
       }
+    }
   }
 }
 
@@ -284,6 +282,30 @@ fn append_indexed_collection_lines(
 }
 
 ///|
+fn enum_payload_text(payload : @moondbg.VariableEnumPayload) -> String {
+  payload.scalar_value().unwrap_or(payload.type_name())
+}
+
+///|
+fn append_enum_lines(
+  lines : Array[String],
+  variable : @moondbg.VariableSnapshot,
+  enum_value : @moondbg.VariableEnumSnapshot,
+  indentation : Int,
+) -> Unit {
+  let prefix = " ".repeat(indentation)
+  let payload = enum_value.payload().map(enum_payload_text)
+  let rendered = if payload is [] {
+    enum_value.constructor_name()
+  } else {
+    "\{enum_value.constructor_name()}(\{payload.join(", ")})"
+  }
+  lines.push("\{prefix}\{variable_label(variable)}")
+  lines.push("")
+  lines.push("\{prefix}  \{rendered}")
+}
+
+///|
 fn append_variable_lines(
   lines : Array[String],
   variable : @moondbg.VariableSnapshot,
@@ -311,6 +333,8 @@ fn append_variable_lines(
     }
     @moondbg.VariableIndexedCollection(collection) =>
       append_indexed_collection_lines(lines, variable, collection, indentation)
+    @moondbg.VariableEnum(enum_value) =>
+      append_enum_lines(lines, variable, enum_value, indentation)
   }
 }
 

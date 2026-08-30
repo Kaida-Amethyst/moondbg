@@ -2,6 +2,7 @@
 priv suberror DapSessionError {
   InvalidMessage(Json)
   InvalidIndexedCollectionValue(String)
+  InvalidEnumValue(String)
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
   MismatchedResponseCommand(expected~ : String, actual~ : String)

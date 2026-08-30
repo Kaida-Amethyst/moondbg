@@ -335,3 +335,41 @@ async test "development toolchain prints bounded Array values across stops" {
   assert_true(process.expect(b"Debugger exited."))
   assert_true(process.wait(timeout_ms=10000))
 }
+
+///|
+async test "development toolchain shallowly prints an active boxed enum" {
+  guard toolchain_acceptance_enabled() else { return }
+  let (moon, _moon_home) = require_development_toolchain()
+  let repository = @fs.realpath(".")
+  let fixture = "\{repository}/testdata/dwarf_probe"
+  assert_true(@fs.exists("\{fixture}/list/main.mbt"))
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moon,
+    fixture,
+    package_name="list",
+  )
+  defer process.close()
+  assert_eq(process.status(), 0)
+  guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
+    process.wait(timeout_ms=100) |> ignore
+    fail(
+      "moon debug list did not open a prompt (PTY status \{process.status()})",
+    )
+  }
+  assert_true(process.write(b"b list/main.mbt:34\r"))
+  assert_true(process.expect(b"Breakpoint 1 pending at list/main.mbt:34"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"list/main.mbt:34", timeout_ms=20000))
+  assert_true(process.expect(b"(moondbg) "))
+
+  for _ in 0..<2 {
+    assert_true(process.write(b"p list\r"))
+    assert_true(process.expect(b"list: List"))
+    assert_true(process.expect(b"Cons(3, List)"))
+    assert_true(process.expect(b"(moondbg) "))
+  }
+  assert_true(process.write(b"quit\r"))
+  assert_true(process.expect(b"Debugger exited."))
+  assert_true(process.wait(timeout_ms=10000))
+}

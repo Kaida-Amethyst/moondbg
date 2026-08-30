@@ -4,6 +4,9 @@ pub(all) suberror VariableSnapshotError {
   InvalidIndexedCollectionLength(Int)
   InvalidIndexedCollectionIndex(index~ : Int, total_length~ : Int)
   UnorderedIndexedCollectionIndex(previous~ : Int, index~ : Int)
+  InvalidEnumConstructor(String)
+  InvalidEnumPayloadType(position~ : Int, type_name~ : String)
+  InvalidEnumPayloadPosition(expected~ : Int, actual~ : Int)
 } derive(Eq, Debug)
 
 ///|
@@ -198,10 +201,112 @@ pub fn IndexedCollectionSnapshot::is_complete(
 }
 
 ///|
+/// One direct payload slot in an active MoonBit enum constructor.
+///
+/// The position is retained explicitly for a future PayloadIndex lookup step.
+/// A missing scalar value means the payload is represented by its source type
+/// only; it does not mean that adapter children remain available.
+pub struct VariableEnumPayload {
+  priv position : Int
+  priv type_name : String
+  priv scalar_value : String?
+} derive(Eq, Debug)
+
+///|
+pub extend VariableEnumPayload with Eq::{equal, not_equal}
+
+///|
+pub extend VariableEnumPayload with @debug.Debug::{to_repr}
+
+///|
+pub fn VariableEnumPayload::scalar(
+  position : Int,
+  type_name : String,
+  value : String,
+) -> VariableEnumPayload {
+  { position, type_name, scalar_value: Some(value), }
+}
+
+///|
+pub fn VariableEnumPayload::aggregate(
+  position : Int,
+  type_name : String,
+) -> VariableEnumPayload {
+  { position, type_name, scalar_value: None, }
+}
+
+///|
+pub fn VariableEnumPayload::position(self : VariableEnumPayload) -> Int {
+  self.position
+}
+
+///|
+pub fn VariableEnumPayload::type_name(self : VariableEnumPayload) -> String {
+  self.type_name
+}
+
+///|
+pub fn VariableEnumPayload::scalar_value(self : VariableEnumPayload) -> String? {
+  self.scalar_value
+}
+
+///|
+pub struct VariableEnumSnapshot {
+  priv constructor_name : String
+  priv payload : Array[VariableEnumPayload]
+} derive(Eq, Debug)
+
+///|
+pub extend VariableEnumSnapshot with Eq::{equal, not_equal}
+
+///|
+pub extend VariableEnumSnapshot with @debug.Debug::{to_repr}
+
+///|
+pub fn VariableEnumSnapshot::new(
+  constructor_name : String,
+  payload : Array[VariableEnumPayload],
+) -> VariableEnumSnapshot raise VariableSnapshotError {
+  guard constructor_name.trim() != "" else {
+    raise InvalidEnumConstructor(constructor_name)
+  }
+  for index, element in payload {
+    guard element.position() == index else {
+      raise InvalidEnumPayloadPosition(
+        expected=index,
+        actual=element.position(),
+      )
+    }
+    guard element.type_name().trim() != "" else {
+      raise InvalidEnumPayloadType(
+        position=element.position(),
+        type_name=element.type_name(),
+      )
+    }
+  }
+  { constructor_name, payload: payload.copy(), }
+}
+
+///|
+pub fn VariableEnumSnapshot::constructor_name(
+  self : VariableEnumSnapshot,
+) -> String {
+  self.constructor_name
+}
+
+///|
+pub fn VariableEnumSnapshot::payload(
+  self : VariableEnumSnapshot,
+) -> ReadOnlyArray[VariableEnumPayload] {
+  ReadOnlyArray::from_array(self.payload)
+}
+
+///|
 pub enum VariableContent {
   VariableLeaf
   VariableStructure(VariableStructureSnapshot)
   VariableIndexedCollection(IndexedCollectionSnapshot)
+  VariableEnum(VariableEnumSnapshot)
 } derive(Eq, Debug)
 
 ///|
@@ -275,6 +380,16 @@ pub fn VariableSnapshot::indexed_collection(
   collection : IndexedCollectionSnapshot,
 ) -> VariableSnapshot {
   { name, value, type_name, content: VariableIndexedCollection(collection), }
+}
+
+///|
+/// Creates a debugger-domain enum value without retaining an adapter pointer.
+pub fn VariableSnapshot::enum_value(
+  name : String,
+  type_name : String?,
+  enum_value : VariableEnumSnapshot,
+) -> VariableSnapshot {
+  { name, value: "", type_name, content: VariableEnum(enum_value), }
 }
 
 ///|

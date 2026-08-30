@@ -93,6 +93,75 @@ test "scalar and unsupported container rendering remains one line" {
 }
 
 ///|
+fn enum_variable(
+  name : String,
+  type_name : String,
+  constructor_name : String,
+  payload : Array[@moondbg.VariableEnumPayload],
+) -> @moondbg.VariableSnapshot raise {
+  @moondbg.VariableSnapshot::enum_value(
+    name,
+    Some(type_name),
+    @moondbg.VariableEnumSnapshot::new(constructor_name, payload),
+  )
+}
+
+///|
+test "enum renderer shows payloadless scalar and aggregate constructors" {
+  inspect(
+    variable_lines(enum_variable("a", "example/E", "A", [])).join("\n"),
+    content=(
+      #|a: E
+      #|
+      #|  A
+    ),
+  )
+  inspect(
+    variable_lines(
+      enum_variable("b", "example/E", "B", [
+        @moondbg.VariableEnumPayload::scalar(0, "Int", "7"),
+      ]),
+    ).join("\n"),
+    content=(
+      #|b: E
+      #|
+      #|  B(7)
+    ),
+  )
+  inspect(
+    variable_lines(
+      enum_variable("c", "example/E", "C", [
+        @moondbg.VariableEnumPayload::scalar(0, "Double", "1.5"),
+        @moondbg.VariableEnumPayload::scalar(1, "Int", "2"),
+      ]),
+    ).join("\n"),
+    content=(
+      #|c: E
+      #|
+      #|  C(1.5, 2)
+    ),
+  )
+  inspect(
+    variable_lines(
+      enum_variable(
+        "list",
+        "Kaida-Amethyst/moondbg-dwarf-probe/list/List",
+        "Cons",
+        [
+          @moondbg.VariableEnumPayload::scalar(0, "Int", "3"),
+          @moondbg.VariableEnumPayload::aggregate(1, "List"),
+        ],
+      ),
+    ).join("\n"),
+    content=(
+      #|list: List
+      #|
+      #|  Cons(3, List)
+    ),
+  )
+}
+
+///|
 fn indexed_value(
   index : Int,
   value : String,

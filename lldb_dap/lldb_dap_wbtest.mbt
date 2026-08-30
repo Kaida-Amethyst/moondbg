@@ -306,6 +306,7 @@ fn struct_variable_script() -> Array[@dap_testkit.ScriptedInput] {
   [
     scripted_response(1300, 1, "initialize", {
       "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
     }),
     scripted_event(1301, "initialized", {}),
     scripted_response(1302, 3, "configurationDone", {}),
@@ -374,17 +375,40 @@ fn struct_variable_script() -> Array[@dap_testkit.ScriptedInput] {
     scripted_response(1311, 10, "variables", {
       "variables": [
         {
+          "name": "opaque",
+          "type": "example/OpaqueChild",
+          "value": "opaque",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1312, 11, "variables", {
+      "variables": [
+        {
           "name": "__moonbit_enum_marker",
           "type": "moonbit.enum",
           "value": "0",
           "variablesReference": 0,
         },
         {
-          "name": "Some",
-          "type": "example/geometry/Choice.Some *",
-          "value": "0x3000",
+          "name": "None_0",
+          "type": "example/geometry/Choice.None *",
+          "value": "0x0000000000003000",
           "variablesReference": 113,
         },
+        {
+          "name": "Some_1",
+          "type": "example/geometry/Choice.Some *",
+          "value": "0x0000000000003000",
+          "memoryReference": "0xdead3000",
+          "variablesReference": 114,
+        },
+      ],
+    }),
+    scripted_response(1313, 12, "readMemory", { "data": "AQAAQA==" }),
+    scripted_response(1314, 13, "variables", {
+      "variables": [
+        { "name": ".0", "type": "int", "value": "9", "variablesReference": 0 },
       ],
     }),
   ]
@@ -800,6 +824,377 @@ fn array_double_variable_script() -> Array[@dap_testkit.ScriptedInput] {
       ],
     }),
     scripted_response(1826, 24, "readMemory", { "data": "AAAAAIAAAAA=" }),
+  ]
+}
+
+///|
+fn boxed_enum_variable_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(1900, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+    }),
+    scripted_event(1901, "initialized", {}),
+    scripted_response(1902, 3, "configurationDone", {}),
+    scripted_response(1903, 2, "launch", {}),
+    scripted_event(1904, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1905, 4, "stackTrace", scripted_stack_body(130, 34)),
+    scripted_response(1906, 5, "scopes", {
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 400,
+        },
+      ],
+    }),
+    scripted_response(1907, 6, "variables", {
+      "variables": [
+        {
+          "name": "empty",
+          "type": "example/E",
+          "value": "example/E @ 0x1000",
+          "variablesReference": 401,
+        },
+        {
+          "name": "scalar",
+          "type": "example/E",
+          "value": "example/E @ 0x2000",
+          "variablesReference": 402,
+        },
+        {
+          "name": "list",
+          "type": "example/List",
+          "value": "example/List @ 0x3000",
+          "variablesReference": 403,
+        },
+        {
+          "name": "pair",
+          "type": "example/E",
+          "value": "example/E @ 0x4000",
+          "variablesReference": 404,
+        },
+        {
+          "name": "unknown",
+          "type": "example/Opaque",
+          "value": "opaque",
+          "variablesReference": 405,
+        },
+      ],
+    }),
+    scripted_response(1908, 7, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "moonbit.enum @ 0x1000",
+          "variablesReference": 499,
+        },
+        {
+          "name": "Empty_0",
+          "type": "example/E.Empty *",
+          "value": "0x0000000000001000",
+          "memoryReference": "0xdead1000",
+          "variablesReference": 411,
+        },
+      ],
+    }),
+    scripted_response(1909, 8, "readMemory", { "data": "AAAAQA==" }),
+    scripted_response(1910, 9, "variables", { "variables": [] }),
+    scripted_response(1911, 10, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "moonbit.enum @ 0x2000",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x0000000000002000",
+          "variablesReference": 421,
+        },
+        {
+          "name": "B_1",
+          "type": "example/E.B *",
+          "value": "0x0000000000002000",
+          "memoryReference": "0xdead2000",
+          "variablesReference": 422,
+        },
+      ],
+    }),
+    scripted_response(1912, 11, "readMemory", { "data": "AQAAQA==" }),
+    scripted_response(1913, 12, "variables", {
+      "variables": [
+        { "name": ".0", "type": "int", "value": "7", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(1914, 13, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "moonbit.enum @ 0x3000",
+          "variablesReference": 0,
+        },
+        {
+          "name": "Empty_0",
+          "type": "example/List.Empty *",
+          "value": "0x0000000000003000",
+          "variablesReference": 431,
+        },
+        {
+          "name": "Cons_1",
+          "type": "example/List.Cons *",
+          "value": "0x0000000000003000",
+          "memoryReference": "0xdead3000",
+          "variablesReference": 432,
+        },
+      ],
+    }),
+    scripted_response(1915, 14, "readMemory", { "data": "AQAAQA==" }),
+    scripted_response(1916, 15, "variables", {
+      "variables": [
+        { "name": ".0", "type": "int", "value": "3", "variablesReference": 0 },
+        {
+          "name": ".1",
+          "type": "example/List",
+          "value": "example/List @ 0x3010",
+          "memoryReference": "0xdead3010",
+          "variablesReference": 439,
+        },
+      ],
+    }),
+    scripted_response(1917, 16, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "moonbit.enum @ 0x4000",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x0000000000004000",
+          "variablesReference": 441,
+        },
+        {
+          "name": "B_1",
+          "type": "example/E.B *",
+          "value": "0x0000000000004000",
+          "variablesReference": 442,
+        },
+        {
+          "name": "C_2",
+          "type": "example/E.C *",
+          "value": "0x0000000000004000",
+          "memoryReference": "0xdead4000",
+          "variablesReference": 443,
+        },
+      ],
+    }),
+    scripted_response(1918, 17, "readMemory", { "data": "AgAAQA==" }),
+    scripted_response(1919, 18, "variables", {
+      "variables": [
+        { "name": ".1", "type": "int", "value": "2", "variablesReference": 0 },
+        {
+          "name": ".0",
+          "type": "double",
+          "value": "1.5",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1920, 19, "variables", {
+      "variables": [
+        {
+          "name": "opaque",
+          "type": "example/OpaqueChild",
+          "value": "opaque",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+  ]
+}
+
+///|
+fn malformed_boxed_enum_script() -> Array[@dap_testkit.ScriptedInput] {
+  [
+    scripted_response(1950, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+    }),
+    scripted_event(1951, "initialized", {}),
+    scripted_response(1952, 3, "configurationDone", {}),
+    scripted_response(1953, 2, "launch", {}),
+    scripted_event(1954, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1955, 4, "stackTrace", scripted_stack_body(140, 34)),
+    scripted_response(1956, 5, "scopes", {
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 500,
+        },
+      ],
+    }),
+    scripted_response(1957, 6, "variables", {
+      "variables": [
+        {
+          "name": "unknown_tag",
+          "type": "example/E",
+          "value": "example/E @ 0x5000",
+          "variablesReference": 501,
+        },
+        {
+          "name": "duplicate_tag",
+          "type": "example/E",
+          "value": "example/E @ 0x5100",
+          "variablesReference": 502,
+        },
+        {
+          "name": "illegal_tag",
+          "type": "example/E",
+          "value": "example/E @ 0x5200",
+          "variablesReference": 503,
+        },
+        {
+          "name": "bad_pointer",
+          "type": "example/E",
+          "value": "example/E @ 0x5300",
+          "variablesReference": 504,
+        },
+        {
+          "name": "duplicate_marker",
+          "type": "example/E",
+          "value": "example/E @ 0x5400",
+          "variablesReference": 505,
+        },
+        {
+          "name": "unreadable",
+          "type": "example/E",
+          "value": "example/E @ 0x5500",
+          "variablesReference": 506,
+        },
+      ],
+    }),
+    scripted_response(1958, 7, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x5000",
+          "variablesReference": 511,
+        },
+      ],
+    }),
+    scripted_response(1959, 8, "readMemory", { "data": "AQAAQA==" }),
+    scripted_response(1960, 9, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x5100",
+          "variablesReference": 521,
+        },
+        {
+          "name": "B_0",
+          "type": "example/E.B *",
+          "value": "0x5100",
+          "variablesReference": 522,
+        },
+      ],
+    }),
+    scripted_response(1961, 10, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_tag",
+          "type": "example/E.A *",
+          "value": "0x5200",
+          "variablesReference": 531,
+        },
+      ],
+    }),
+    scripted_response(1962, 11, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "(example/E.A *) 0x5300",
+          "memoryReference": "0x5300",
+          "variablesReference": 541,
+        },
+      ],
+    }),
+    scripted_response(1963, 12, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x5400",
+          "variablesReference": 551,
+        },
+      ],
+    }),
+    scripted_response(1964, 13, "variables", {
+      "variables": [
+        {
+          "name": "__moonbit_enum_marker",
+          "type": "moonbit.enum",
+          "value": "marker",
+          "variablesReference": 0,
+        },
+        {
+          "name": "A_0",
+          "type": "example/E.A *",
+          "value": "0x5500",
+          "variablesReference": 561,
+        },
+      ],
+    }),
+    scripted_response(1965, 14, "readMemory", {
+      "data": "",
+      "unreadableBytes": 4,
+    }),
   ]
 }
 
@@ -1751,15 +2146,21 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     assert_true(array.content() is @moondbg.VariableLeaf)
     assert_eq(array.value(), "moonbit.array_i32 @ 0x2000")
     guard session.find_variable(@moondbg.VariablePath::root("choice"))
-      is @moondbg.VariableFound(choice) else {
-      fail("boxed enum root should remain printable")
+      is @moondbg.VariableFound(choice) &&
+      choice.content() is @moondbg.VariableEnum(enum_value) &&
+      enum_value.payload() is [payload] else {
+      fail("boxed enum root should expose its active shallow constructor")
     }
-    assert_true(choice.content() is @moondbg.VariableLeaf)
-    assert_eq(choice.value(), "0x3000")
+    assert_eq(choice.value(), "")
+    assert_eq(enum_value.constructor_name(), "Some")
+    assert_eq(payload.position(), 0)
+    assert_eq(payload.type_name(), "Int")
+    assert_eq(payload.scalar_value(), Some("9"))
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
       "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
-      "variables", "variables", "variables", "variables",
+      "variables", "variables", "variables", "variables", "variables", "readMemory",
+      "variables",
     ])
   })
 }
@@ -2160,6 +2561,186 @@ async test "lldb-dap materializes Array logical values within bounded storage re
           "memoryReference": String("0x6000"),
           "offset": Number(792, ..),
           "count": Number(8, ..),
+          ..
+        },
+        ..
+      },
+    )
+  })
+}
+
+///|
+async test "lldb-dap materializes only the active enum constructor shallowly" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      boxed_enum_variable_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/enum-program", backend)
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted enum execution should stop")
+    }
+    guard session.find_variable(@moondbg.VariablePath::root("empty"))
+      is @moondbg.VariableFound(empty) &&
+      empty.content() is @moondbg.VariableEnum(empty_value) else {
+      fail("payloadless enum should expose its active constructor")
+    }
+    assert_eq(empty.value(), "")
+    assert_eq(empty_value.constructor_name(), "Empty")
+    assert_true(empty_value.payload() is [])
+
+    guard session.find_variable(@moondbg.VariablePath::root("scalar"))
+      is @moondbg.VariableFound(scalar) &&
+      scalar.content() is @moondbg.VariableEnum(scalar_value) &&
+      scalar_value.payload() is [scalar_payload] else {
+      fail("scalar enum payload should retain its DAP scalar value")
+    }
+    assert_eq(scalar_value.constructor_name(), "B")
+    assert_eq(scalar_payload.position(), 0)
+    assert_eq(scalar_payload.type_name(), "Int")
+    assert_eq(scalar_payload.scalar_value(), Some("7"))
+
+    guard session.find_variable(@moondbg.VariablePath::root("list"))
+      is @moondbg.VariableFound(list) &&
+      list.content() is @moondbg.VariableEnum(list_value) &&
+      list_value.payload() is [head, tail] else {
+      fail("Cons should expose only its direct payload")
+    }
+    assert_eq(list_value.constructor_name(), "Cons")
+    assert_eq(head.type_name(), "Int")
+    assert_eq(head.scalar_value(), Some("3"))
+    assert_eq(tail.position(), 1)
+    assert_eq(tail.type_name(), "List")
+    assert_eq(tail.scalar_value(), None)
+    guard session.find_variable(@moondbg.VariablePath::root("list"))
+      is @moondbg.VariableFound(cached_list) else {
+      fail("same-stop enum lookup should use its snapshot cache")
+    }
+    assert_eq(cached_list, list)
+
+    guard session.find_variable(@moondbg.VariablePath::root("pair"))
+      is @moondbg.VariableFound(pair) &&
+      pair.content() is @moondbg.VariableEnum(pair_value) &&
+      pair_value.payload() is [left, right] else {
+      fail("C(Double, Int) should retain both scalar payloads")
+    }
+    assert_eq(pair_value.constructor_name(), "C")
+    assert_eq(left.type_name(), "Double")
+    assert_eq(left.scalar_value(), Some("1.5"))
+    assert_eq(right.type_name(), "Int")
+    assert_eq(right.scalar_value(), Some("2"))
+
+    guard session.find_variable(@moondbg.VariablePath::root("unknown"))
+      is @moondbg.VariableFound(unknown) else {
+      fail("unknown non-enum aggregate should remain printable")
+    }
+    assert_true(unknown.content() is @moondbg.VariableLeaf)
+    assert_eq(unknown.value(), "opaque")
+
+    assert_eq(transport.remaining_inputs(), 0)
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "readMemory", "variables", "variables", "readMemory", "variables",
+      "variables", "readMemory", "variables", "variables", "readMemory", "variables",
+      "variables",
+    ])
+    assert_false(sent.any(message => sent_command(message) == Some("evaluate")))
+    assert_false(
+      sent.any(message => {
+        message
+        is { "arguments": { "variablesReference": Number(439, ..), .. }, .. }
+      }),
+    )
+    assert_true(
+      sent[13]
+      is {
+        "arguments": {
+          "memoryReference": String("0x0000000000003000"),
+          "offset": Number(-4, ..),
+          "count": Number(4, ..),
+          ..
+        },
+        ..
+      },
+    )
+  })
+}
+
+///|
+async test "lldb-dap rejects malformed enum protocol instead of guessing" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      malformed_boxed_enum_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/malformed-enum-program", backend,
+    )
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) &&
+      backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("malformed enum fixture should retain one stopped execution")
+    }
+    let cases = [
+      ("unknown_tag", "unknown tag 1"),
+      ("duplicate_tag", "repeats tag 0"),
+      ("illegal_tag", "does not end in a decimal tag"),
+      ("bad_pointer", "malformed payload pointer"),
+      ("duplicate_marker", "exactly one moonbit.enum marker"),
+      ("unreadable", "failed to read boxed enum descriptor"),
+    ]
+    for _, case in cases {
+      let (name, expected) = case
+      let rejected = try {
+        execution.find_variable_inner(
+          epoch,
+          140,
+          @moondbg.VariablePath::root(name),
+        )
+        |> ignore
+        false
+      } catch {
+        InvalidEnumValue(message) => message.contains(expected)
+        _ => false
+      }
+      assert_true(rejected)
+    }
+    assert_eq(transport.remaining_inputs(), 0)
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "readMemory", "variables", "variables", "variables", "variables",
+      "variables", "readMemory",
+    ])
+    assert_false(sent.any(message => sent_command(message) == Some("evaluate")))
+    assert_true(
+      sent[7]
+      is {
+        "arguments": {
+          "memoryReference": String("0x5000"),
+          "offset": Number(-4, ..),
+          "count": Number(4, ..),
           ..
         },
         ..

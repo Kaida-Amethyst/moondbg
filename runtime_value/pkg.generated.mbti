@@ -12,11 +12,21 @@ pub const NATIVE_ARRAY_HEADER_OFFSET : Int = -8
 
 pub const NATIVE_ARRAY_HEADER_SIZE : Int = 8
 
+pub const NATIVE_ENUM_DESCRIPTOR_OFFSET : Int = -4
+
+pub const NATIVE_ENUM_DESCRIPTOR_SIZE : Int = 4
+
+pub fn decode_boxed_enum_tag(Bytes) -> Int raise NativeValueError
+
 pub fn decode_native_array_capacity(Bytes) -> Int raise NativeValueError
 
 pub fn decode_scalar_payload(NativeScalarType, Bytes, Int) -> Array[String] raise NativeValueError
 
 pub fn native_array_element_from_pointer_type(String) -> NativeArrayElementType?
+
+pub fn native_scalar_from_debug_type(String) -> NativeScalarType?
+
+pub fn source_name_from_debug_type(String) -> String?
 
 pub fn validate_array_length(Int, Int) -> Unit raise NativeValueError
 
@@ -29,6 +39,7 @@ pub(all) suberror NativeValueError {
   InvalidIndexedPreviewBudget(Int)
   InvalidScalarPayload(expected~ : Int, actual~ : Int)
   InvalidBoolValue(UInt)
+  InvalidEnumDescriptorSize(Int)
 } derive(Eq, @debug.Debug)
 pub fn NativeValueError::equal(Self, Self) -> Bool
 pub fn NativeValueError::not_equal(Self, Self) -> Bool

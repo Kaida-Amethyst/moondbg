@@ -23,6 +23,34 @@ test "native array element types follow raw DAP pointer types" {
 }
 
 ///|
+test "debug payload types reduce to scalar or short source names" {
+  assert_eq(
+    @runtime_value.native_scalar_from_debug_type("int"),
+    Some(@runtime_value.NativeInt),
+  )
+  assert_eq(
+    @runtime_value.native_scalar_from_debug_type("Kaida-Amethyst/example/List"),
+    None,
+  )
+  assert_eq(
+    @runtime_value.source_name_from_debug_type("double"),
+    Some("Double"),
+  )
+  assert_eq(
+    @runtime_value.source_name_from_debug_type("Kaida-Amethyst/example/List"),
+    Some("List"),
+  )
+  assert_eq(
+    @runtime_value.source_name_from_debug_type("moonbit_string_t"),
+    Some("String"),
+  )
+  assert_eq(
+    @runtime_value.source_name_from_debug_type("moonbit.array_i32"),
+    Some("FixedArray[Int]"),
+  )
+}
+
+///|
 test "native storage capacity is decoded before planning a bounded preview" {
   assert_eq(
     @runtime_value.decode_native_array_capacity(

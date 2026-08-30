@@ -36,6 +36,9 @@ pub(all) suberror VariableSnapshotError {
   InvalidIndexedCollectionLength(Int)
   InvalidIndexedCollectionIndex(index~ : Int, total_length~ : Int)
   UnorderedIndexedCollectionIndex(previous~ : Int, index~ : Int)
+  InvalidEnumConstructor(String)
+  InvalidEnumPayloadType(position~ : Int, type_name~ : String)
+  InvalidEnumPayloadPosition(expected~ : Int, actual~ : Int)
 } derive(Eq, @debug.Debug)
 pub fn VariableSnapshotError::equal(Self, Self) -> Bool
 pub fn VariableSnapshotError::not_equal(Self, Self) -> Bool
@@ -258,10 +261,33 @@ pub enum VariableContent {
   VariableLeaf
   VariableStructure(VariableStructureSnapshot)
   VariableIndexedCollection(IndexedCollectionSnapshot)
+  VariableEnum(VariableEnumSnapshot)
 } derive(Eq, @debug.Debug)
 pub fn VariableContent::equal(Self, Self) -> Bool
 pub fn VariableContent::not_equal(Self, Self) -> Bool
 pub fn VariableContent::to_repr(Self) -> @debug.Repr
+
+pub struct VariableEnumPayload {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableEnumPayload::aggregate(Int, String) -> Self
+pub fn VariableEnumPayload::equal(Self, Self) -> Bool
+pub fn VariableEnumPayload::not_equal(Self, Self) -> Bool
+pub fn VariableEnumPayload::position(Self) -> Int
+pub fn VariableEnumPayload::scalar(Int, String, String) -> Self
+pub fn VariableEnumPayload::scalar_value(Self) -> String?
+pub fn VariableEnumPayload::to_repr(Self) -> @debug.Repr
+pub fn VariableEnumPayload::type_name(Self) -> String
+
+pub struct VariableEnumSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableEnumSnapshot::constructor_name(Self) -> String
+pub fn VariableEnumSnapshot::equal(Self, Self) -> Bool
+pub fn VariableEnumSnapshot::new(String, Array[VariableEnumPayload]) -> Self raise VariableSnapshotError
+pub fn VariableEnumSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableEnumSnapshot::payload(Self) -> ReadOnlyArray[VariableEnumPayload]
+pub fn VariableEnumSnapshot::to_repr(Self) -> @debug.Repr
 
 pub enum VariableLookupFailure {
   VariableRootNotFound(String)
@@ -310,6 +336,7 @@ pub struct VariableSnapshot {
   // private fields
 } derive(Eq, @debug.Debug)
 pub fn VariableSnapshot::content(Self) -> VariableContent
+pub fn VariableSnapshot::enum_value(String, String?, VariableEnumSnapshot) -> Self
 pub fn VariableSnapshot::equal(Self, Self) -> Bool
 pub fn VariableSnapshot::expanded(String, String, String?, Array[Self]) -> Self
 pub fn VariableSnapshot::indexed_collection(String, String, String?, IndexedCollectionSnapshot) -> Self

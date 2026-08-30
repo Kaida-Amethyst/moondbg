@@ -20,7 +20,7 @@ moon test
 | REPL command/presentation | 纯 MoonBit fake backend 与结构化结果断言 | parser、alias、registry、命令调用、事件顺序、human renderer 边界 |
 | DAP protocol/framing | 纯 MoonBit JSON 与字节测试 | message classification、UTF-8 framing、request/response inbox |
 | DAP dispatcher | `testkit/dap` 的进程内 scripted transport | 完整 request 与 seq、乱序 response、event、adapter request、非法/重复 response、EOF/error/close |
-| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、struct 递归物化与裁剪、FixedArray/Array 有界内存读取、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
+| lldb-dap mapping/lifecycle | 进程内 scripted DAP 会话 | initialize、launch、断点、stop、stack/scopes/variables、struct 递归物化与裁剪、FixedArray/Array 有界内存读取、boxed enum active constructor 浅层物化、next/step/finish、disconnect、稳定断点 ID、cache/epoch、output filtering、失败恢复 |
 | readline/PTY | MoonBit 驱动与 `testkit/pty/pty.c` | 真实 `run_repl` + readline 链路、即时提示符、本地 help、quit/exit、Ctrl-C、Ctrl-D 和子进程清理 |
 | 源码渲染 | 纯 MoonBit renderer 测试 | 源码窗口、高亮、ANSI 状态和原文本保持 |
 
@@ -50,10 +50,10 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moon debug` 子命令存在。
 
 随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`、`moon debug point`、
-`moon debug fixed_array_int` 和 `moon debug array_double`，通过 PTY 完成运行前入口断点、stopped
+`moon debug fixed_array_int`、`moon debug array_double` 和 `moon debug list`，通过 PTY 完成运行前入口断点、stopped
 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
 struct 递归打印、字段路径逐层查询、查询失败分类、同 stop cache 与跨 stop 失效、
-FixedArray/Array 短值、长值、跨 stop 打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
+FixedArray/Array 短值、长值、跨 stop 打印、boxed enum 浅层打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
 lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
 
 ## 可选 Python 诊断回归

@@ -55,6 +55,70 @@ test "variable snapshot owns its read-only structure children" {
 }
 
 ///|
+test "enum snapshot retains ordered shallow payload without adapter state" {
+  let payload = [
+    @moondbg.VariableEnumPayload::scalar(0, "Int", "3"),
+    @moondbg.VariableEnumPayload::aggregate(1, "List"),
+  ]
+  let enum_value = @moondbg.VariableEnumSnapshot::new("Cons", payload)
+  payload.clear()
+  let snapshot = @moondbg.VariableSnapshot::enum_value(
+    "list",
+    Some("example/list/List"),
+    enum_value,
+  )
+  guard snapshot.content() is @moondbg.VariableEnum(active) &&
+    active.payload() is [head, tail] else {
+    fail("enum should retain its active constructor and direct payload")
+  }
+  assert_eq(snapshot.value(), "")
+  assert_eq(active.constructor_name(), "Cons")
+  assert_eq(head.position(), 0)
+  assert_eq(head.type_name(), "Int")
+  assert_eq(head.scalar_value(), Some("3"))
+  assert_eq(tail.position(), 1)
+  assert_eq(tail.type_name(), "List")
+  assert_eq(tail.scalar_value(), None)
+}
+
+///|
+test "enum snapshot rejects malformed constructor and payload metadata" {
+  assert_true(
+    try {
+      @moondbg.VariableEnumSnapshot::new("", []) |> ignore
+      false
+    } catch {
+      @moondbg.InvalidEnumConstructor("") => true
+      _ => false
+    },
+  )
+  assert_true(
+    try {
+      @moondbg.VariableEnumSnapshot::new("C", [
+        @moondbg.VariableEnumPayload::scalar(1, "Int", "1"),
+      ])
+      |> ignore
+      false
+    } catch {
+      @moondbg.InvalidEnumPayloadPosition(expected=0, actual=1) => true
+      _ => false
+    },
+  )
+  assert_true(
+    try {
+      @moondbg.VariableEnumSnapshot::new("C", [
+        @moondbg.VariableEnumPayload::aggregate(0, ""),
+      ])
+      |> ignore
+      false
+    } catch {
+      @moondbg.InvalidEnumPayloadType(position=0, type_name="") => true
+      _ => false
+    },
+  )
+}
+
+///|
 test "variable snapshot represents nested and truncated structures" {
   let point = @moondbg.VariableSnapshot::expanded(
     "start",

@@ -168,11 +168,92 @@ fn Array::named_child(self : Array[DapVariable], name : String) -> DapVariable? 
 }
 
 ///|
-fn Array::has_moonbit_enum_marker(self : Array[DapVariable]) -> Bool {
-  self.any(fn(variable) {
-    variable.name == "__moonbit_enum_marker" &&
-    variable.type_name == Some("moonbit.enum")
-  })
+priv struct DapEnumVariant {
+  variant_name : String
+  tag : Int
+  payload_reference : Int
+  payload_pointer : String
+}
+
+///|
+priv enum DapEnumLayout {
+  NotDapEnum
+  DapEnum(Array[DapEnumVariant])
+}
+
+///|
+fn parse_dap_enum_variant(
+  variable : DapVariable,
+) -> DapEnumVariant raise DapSessionError {
+  guard variable.name.rev_split_once("_") is Some((variant_name, tag_text)) &&
+    variant_name != "" &&
+    tag_text != "" &&
+    tag_text.all(char => char is ('0'..='9')) else {
+    raise InvalidEnumValue(
+      "enum variant '\{variable.name}' does not end in a decimal tag",
+    )
+  }
+  let tag = Some(@string.parse_int(tag_text, base=10)) catch { _ => None }
+  guard tag is Some(tag) && tag >= 0 && tag <= 255 else {
+    raise InvalidEnumValue(
+      "enum variant '\{variable.name}' has an out-of-range tag",
+    )
+  }
+  guard parse_native_payload_pointer(variable.value)
+    is Some(PayloadPointer(payload_pointer)) else {
+    raise InvalidEnumValue(
+      "enum variant '\{variable.name}' has malformed payload pointer '\{variable.value}'",
+    )
+  }
+  {
+    variant_name: variant_name.to_owned(),
+    tag,
+    payload_reference: variable.variables_reference,
+    payload_pointer,
+  }
+}
+
+///|
+fn detect_dap_enum_layout(
+  children : Array[DapVariable],
+) -> DapEnumLayout raise DapSessionError {
+  let mut marker_count = 0
+  let mut marker_type_valid = false
+  for child in children {
+    guard child.name == "__moonbit_enum_marker" else { continue }
+    marker_count += 1
+    marker_type_valid = child.type_name == Some("moonbit.enum")
+  }
+  guard marker_count > 0 else { return NotDapEnum }
+  guard marker_count == 1 && marker_type_valid else {
+    raise InvalidEnumValue(
+      "boxed enum must have exactly one moonbit.enum marker",
+    )
+  }
+  let variants : Array[DapEnumVariant] = []
+  let tags : Map[Int, Unit] = Map([])
+  let mut shared_pointer : String? = None
+  for child in children {
+    guard child.name != "__moonbit_enum_marker" else { continue }
+    let variant = parse_dap_enum_variant(child)
+    guard tags.get(variant.tag) is None else {
+      raise InvalidEnumValue("boxed enum repeats tag \{variant.tag}")
+    }
+    tags.set(variant.tag, ())
+    match shared_pointer {
+      None => shared_pointer = Some(variant.payload_pointer)
+      Some(pointer) if pointer == variant.payload_pointer => ()
+      Some(_) =>
+        raise InvalidEnumValue(
+          "boxed enum variants do not share one payload pointer",
+        )
+    }
+    variants.push(variant)
+  }
+  guard variants.length() > 0 else {
+    raise InvalidEnumValue("boxed enum marker has no variant views")
+  }
+  DapEnum(variants)
 }
 
 ///|
@@ -660,6 +741,128 @@ async fn DebugExecution::materialize_array(
 }
 
 ///|
+fn direct_enum_payload_position(name : String) -> Int raise DapSessionError {
+  guard name.strip_prefix(".") is Some(position_text) &&
+    position_text != "" &&
+    position_text.all(char => char is ('0'..='9')) else {
+    raise InvalidEnumValue(
+      "active enum payload '\{name}' has no decimal position",
+    )
+  }
+  let position = Some(@string.parse_int(position_text, base=10)) catch {
+    _ => None
+  }
+  guard position is Some(position) && position >= 0 else {
+    raise InvalidEnumValue(
+      "active enum payload '\{name}' has an invalid position",
+    )
+  }
+  position
+}
+
+///|
+fn direct_enum_payload(
+  variable : DapVariable,
+  position : Int,
+) -> @moondbg.VariableEnumPayload raise DapSessionError {
+  guard variable.type_name is Some(debug_type) &&
+    @runtime_value.source_name_from_debug_type(debug_type) is Some(source_type) else {
+    raise InvalidEnumValue("enum payload '.\{position}' has no usable type")
+  }
+  match @runtime_value.native_scalar_from_debug_type(debug_type) {
+    Some(_) => {
+      guard variable.is_available() else {
+        raise InvalidEnumValue(
+          "scalar enum payload '.\{position}' is unavailable",
+        )
+      }
+      @moondbg.VariableEnumPayload::scalar(
+        position,
+        source_type,
+        variable.value,
+      )
+    }
+    None => @moondbg.VariableEnumPayload::aggregate(position, source_type)
+  }
+}
+
+///|
+async fn DebugExecution::materialize_enum(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+  variants : Array[DapEnumVariant],
+) -> @moondbg.VariableSnapshot {
+  guard variants is [first, ..] else {
+    raise InvalidEnumValue("boxed enum has no variant views")
+  }
+  let descriptor = self.read_memory(
+    first.payload_pointer,
+    @runtime_value.NATIVE_ENUM_DESCRIPTOR_OFFSET,
+    @runtime_value.NATIVE_ENUM_DESCRIPTOR_SIZE,
+  ) catch {
+    error =>
+      raise InvalidEnumValue(
+        "failed to read boxed enum descriptor: \{@debug.to_string(error)}",
+      )
+  }
+  let active_tag = @runtime_value.decode_boxed_enum_tag(descriptor) catch {
+    error =>
+      raise InvalidEnumValue(
+        "invalid boxed enum descriptor: \{@debug.to_string(error)}",
+      )
+  }
+  let mut active : DapEnumVariant? = None
+  for variant in variants {
+    if variant.tag == active_tag {
+      active = Some(variant)
+      break
+    }
+  }
+  guard active is Some(active) else {
+    raise InvalidEnumValue(
+      "boxed enum descriptor selects unknown tag \{active_tag}",
+    )
+  }
+  let direct_payload = if active.payload_reference > 0 {
+    self.load_variables(epoch, active.payload_reference)
+  } else {
+    []
+  }
+  let payload_by_position : Map[Int, @moondbg.VariableEnumPayload] = Map([])
+  for child in direct_payload {
+    let position = direct_enum_payload_position(child.name)
+    guard position < direct_payload.length() &&
+      payload_by_position.get(position) is None else {
+      raise InvalidEnumValue(
+        "active enum payload repeats or exceeds position \{position}",
+      )
+    }
+    payload_by_position.set(position, direct_enum_payload(child, position))
+  }
+  let payload : Array[@moondbg.VariableEnumPayload] = []
+  for position in 0..<direct_payload.length() {
+    guard payload_by_position.get(position) is Some(element) else {
+      raise InvalidEnumValue(
+        "active enum payload is missing position \{position}",
+      )
+    }
+    payload.push(element)
+  }
+  let enum_value = @moondbg.VariableEnumSnapshot::new(
+    active.variant_name,
+    payload,
+  ) catch {
+    error => raise InvalidEnumValue(@debug.to_string(error))
+  }
+  @moondbg.VariableSnapshot::enum_value(
+    variable.name,
+    variable.type_name,
+    enum_value,
+  )
+}
+
+///|
 async fn DebugExecution::materialize_variable(
   self : DebugExecution,
   epoch : Int,
@@ -681,12 +884,12 @@ async fn DebugExecution::materialize_variable(
   if variable.is_moonbit_fixed_array_candidate() {
     return self.materialize_fixed_array(epoch, variable)
   }
-  guard variable.is_moonbit_struct_candidate() else {
-    return variable.snapshot()
-  }
-  guard !budget.is_empty() &&
-    depth < budget.max_depth &&
-    !budget.is_visiting(variable.variables_reference) else {
+  if variable.is_moonbit_struct_candidate() &&
+    (
+      budget.is_empty() ||
+      depth >= budget.max_depth ||
+      budget.is_visiting(variable.variables_reference)
+    ) {
     return @moondbg.VariableSnapshot::truncated(
       variable.name,
       variable.value,
@@ -694,12 +897,17 @@ async fn DebugExecution::materialize_variable(
       [],
     )
   }
-  budget.enter_reference(variable.variables_reference)
-  defer budget.leave_reference(variable.variables_reference)
+  guard variable.variables_reference > 0 else { return variable.snapshot() }
   let dap_children = self.load_variables(epoch, variable.variables_reference)
-  guard !dap_children.has_moonbit_enum_marker() else {
+  match detect_dap_enum_layout(dap_children) {
+    DapEnum(variants) => return self.materialize_enum(epoch, variable, variants)
+    NotDapEnum => ()
+  }
+  guard variable.is_moonbit_struct_candidate() else {
     return variable.snapshot()
   }
+  budget.enter_reference(variable.variables_reference)
+  defer budget.leave_reference(variable.variables_reference)
   let children : Array[@moondbg.VariableSnapshot] = []
   let mut truncated = false
   for child in dap_children {
@@ -800,14 +1008,16 @@ async fn DebugExecution::resolve_variable_path(
       )
     }
     let children = self.load_variables(epoch, variable.variables_reference)
-    guard !children.has_moonbit_enum_marker() else {
-      return DapVariableResolutionFailed(
-        @moondbg.VariableLookupResult::field_access_on_non_struct(
-          owner,
-          field,
-          variable.type_name,
-        ),
-      )
+    match detect_dap_enum_layout(children) {
+      DapEnum(_) =>
+        return DapVariableResolutionFailed(
+          @moondbg.VariableLookupResult::field_access_on_non_struct(
+            owner,
+            field,
+            variable.type_name,
+          ),
+        )
+      NotDapEnum => ()
     }
     match children.select_field_variable(field) {
       DapVariableSelected(child) => {

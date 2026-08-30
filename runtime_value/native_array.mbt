@@ -7,6 +7,7 @@ pub(all) suberror NativeValueError {
   InvalidIndexedPreviewBudget(Int)
   InvalidScalarPayload(expected~ : Int, actual~ : Int)
   InvalidBoolValue(UInt)
+  InvalidEnumDescriptorSize(Int)
 } derive(Eq, Debug)
 
 ///|
@@ -77,7 +78,7 @@ pub fn NativeArrayElementType::source_name(
 }
 
 ///|
-fn scalar_type_from_debug_name(name : String) -> NativeScalarType? {
+pub fn native_scalar_from_debug_type(name : String) -> NativeScalarType? {
   match name {
     "Bool" | "bool" | "_Bool" => Some(NativeBool)
     "Int" | "int" | "int32_t" => Some(NativeInt)
@@ -112,6 +113,41 @@ fn opaque_source_name(debug_name : String) -> String {
 }
 
 ///|
+/// Reduces a raw debugger type to a source-facing MoonBit name without
+/// retaining module paths, pointers, or references.
+pub fn source_name_from_debug_type(debug_name : String) -> String? {
+  let trimmed = debug_name.trim().to_owned()
+  guard trimmed != "" else { return None }
+  match trimmed {
+    "moonbit.array_i32" | "$moonbit.array_i32" => return Some("FixedArray[Int]")
+    "moonbit.array_u32" | "$moonbit.array_u32" =>
+      return Some("FixedArray[UInt]")
+    "moonbit.array_i64" | "$moonbit.array_i64" =>
+      return Some("FixedArray[Int64]")
+    "moonbit.array_u64" | "$moonbit.array_u64" =>
+      return Some("FixedArray[UInt64]")
+    "moonbit.array_f32" | "$moonbit.array_f32" =>
+      return Some("FixedArray[Float]")
+    "moonbit.array_f64" | "$moonbit.array_f64" =>
+      return Some("FixedArray[Double]")
+    _ if trimmed.has_prefix("moonbit.array_") ||
+      trimmed.has_prefix("$moonbit.array_") => return Some("FixedArray")
+    _ => ()
+  }
+  match native_scalar_from_debug_type(trimmed) {
+    Some(scalar) => Some(scalar.source_name())
+    None => {
+      let source_name = opaque_source_name(trimmed)
+      if source_name == "" {
+        None
+      } else {
+        Some(source_name)
+      }
+    }
+  }
+}
+
+///|
 /// Interprets the raw DAP type of a native array-storage `body` field. The
 /// final pointer belongs to the contiguous payload; any remaining pointer
 /// belongs to the source element representation.
@@ -122,7 +158,7 @@ pub fn native_array_element_from_pointer_type(
     return None
   }
   let element_debug_type = element_debug_type.trim().to_owned()
-  match scalar_type_from_debug_name(element_debug_type) {
+  match native_scalar_from_debug_type(element_debug_type) {
     Some(scalar) => Some(NativeArrayScalar(scalar))
     None => {
       let source_name = opaque_source_name(element_debug_type)
