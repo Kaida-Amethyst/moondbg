@@ -10,6 +10,7 @@
 - stopped 状态动态添加与下一 execution 重放；
 - `point` 包中 `Point` 和嵌套 `Line` 的 struct 变量打印与字段路径查询。
 - `fixed_array_int` 包中长度 10/100 的 `FixedArray[Int]` 有界打印。
+- `array_double` 包中长度 10/100 的 `Array[Double]` 逻辑长度与有界打印。
 
 ## 使用完整调试信息构建
 
@@ -117,7 +118,18 @@ moon debug fixed_array_int
 (moondbg) p arr
 ```
 
-## 2026-08-29 验收结果
+Array REPL 闭环可以通过以下命令人工验证：
+
+```text
+moon debug array_double
+(moondbg) b sum
+(moondbg) run
+(moondbg) p arr
+(moondbg) continue
+(moondbg) p arr
+```
+
+## 2026-08-30 验收结果
 
 当前开发工具链上的真实 lldb-dap 验收结果如下：
 
@@ -132,6 +144,7 @@ moon debug fixed_array_int
 | struct 变量 | `Point` 展开为 `x`/`y`，`Line` 递归展开 `start`/`end` |
 | struct 字段路径 | 支持一层/多层/最终 struct，精确区分缺失字段、非 struct 与当前位置不可用 |
 | FixedArray 变量 | 长度 10 完整显示；长度 100 有界显示并保留尾值 100 |
+| Array 变量 | 使用逻辑长度而非底层容量；长度 10 完整显示；长度 100 有界显示并保留尾值 100 |
 
 ## 运行 REPL 端到端验收
 

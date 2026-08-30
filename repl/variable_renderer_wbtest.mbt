@@ -110,12 +110,15 @@ fn indexed_array(
   element_type : String,
   length : Int,
   elements : Array[@moondbg.IndexedVariableElement],
+  kind? : @moondbg.IndexedCollectionKind = @moondbg.FixedArrayCollection,
 ) -> @moondbg.VariableSnapshot raise {
   @moondbg.VariableSnapshot::indexed_collection(
     name,
     "raw array",
     None,
-    @moondbg.IndexedCollectionSnapshot::new(element_type, length, elements),
+    @moondbg.IndexedCollectionSnapshot::new(
+      kind, element_type, length, elements,
+    ),
   )
 }
 
@@ -181,7 +184,7 @@ test "FixedArray renderer applies its character budget without losing endpoints"
   guard variable_lines(array) is [_, "", content] else {
     fail("FixedArray should render as a header, blank line, and content line")
   }
-  assert_true(content.length() <= FIXED_ARRAY_CONTENT_WIDTH + 2)
+  assert_true(content.length() <= INDEXED_COLLECTION_CONTENT_WIDTH + 2)
   assert_true(content.has_prefix("  [18446744073709551615"))
   assert_true(content.has_suffix("..., 100]"))
   inspect(
@@ -197,8 +200,32 @@ test "FixedArray renderer applies its character budget without losing endpoints"
     fail("exact-width fixture should remain an indexed collection")
   }
   let exact_content = bounded_indexed_content_text(collection)
-  assert_eq(exact_content.length(), FIXED_ARRAY_CONTENT_WIDTH)
+  assert_eq(exact_content.length(), INDEXED_COLLECTION_CONTENT_WIDTH)
   assert_false(exact_content.contains("..."))
+}
+
+///|
+test "Array renderer uses the collection kind without changing preview rules" {
+  inspect(
+    variable_lines(
+      indexed_array(
+        "arr",
+        "Double",
+        3,
+        [
+          indexed_value(0, "1", "Double"),
+          indexed_value(1, "2", "Double"),
+          indexed_value(2, "3", "Double"),
+        ],
+        kind=@moondbg.ArrayCollection,
+      ),
+    ).join("\n"),
+    content=(
+      #|arr: Array[Double] with length = 3
+      #|
+      #|  [1, 2, 3]
+    ),
+  )
 }
 
 ///|

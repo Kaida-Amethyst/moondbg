@@ -179,13 +179,23 @@ pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
 pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
 pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
 
+pub(all) enum IndexedCollectionKind {
+  FixedArrayCollection
+  ArrayCollection
+} derive(Eq, @debug.Debug)
+pub fn IndexedCollectionKind::equal(Self, Self) -> Bool
+pub fn IndexedCollectionKind::not_equal(Self, Self) -> Bool
+pub fn IndexedCollectionKind::source_name(Self) -> String
+pub fn IndexedCollectionKind::to_repr(Self) -> @debug.Repr
+
 pub struct IndexedCollectionSnapshot {
   // private fields
 } derive(Eq, @debug.Debug)
 pub fn IndexedCollectionSnapshot::element_type_name(Self) -> String
 pub fn IndexedCollectionSnapshot::equal(Self, Self) -> Bool
 pub fn IndexedCollectionSnapshot::is_complete(Self) -> Bool
-pub fn IndexedCollectionSnapshot::new(String, Int, Array[IndexedVariableElement]) -> Self raise VariableSnapshotError
+pub fn IndexedCollectionSnapshot::kind(Self) -> IndexedCollectionKind
+pub fn IndexedCollectionSnapshot::new(IndexedCollectionKind, String, Int, Array[IndexedVariableElement]) -> Self raise VariableSnapshotError
 pub fn IndexedCollectionSnapshot::not_equal(Self, Self) -> Bool
 pub fn IndexedCollectionSnapshot::omitted_count(Self) -> Int
 pub fn IndexedCollectionSnapshot::preview_elements(Self) -> ReadOnlyArray[IndexedVariableElement]

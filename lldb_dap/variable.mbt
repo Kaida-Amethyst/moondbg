@@ -17,7 +17,6 @@ priv struct DapVariable {
   type_name : String?
   variables_reference : Int
   evaluate_name : String?
-  memory_reference : String?
 }
 
 ///|
@@ -93,6 +92,24 @@ fn DapVariable::is_moonbit_struct_candidate(self : DapVariable) -> Bool {
 }
 
 ///|
+fn DapVariable::moonbit_array_element_name(self : DapVariable) -> String? {
+  guard self.type_name is Some(raw_type_name) &&
+    raw_type_name.trim().strip_suffix(" &") is Some(base_type) &&
+    base_type.strip_prefix("moonbitlang/core/builtin/Array[")
+    is Some(type_argument) &&
+    type_argument.strip_suffix("]") is Some(element_type) &&
+    element_type != "" else {
+    return None
+  }
+  Some(element_type.to_owned())
+}
+
+///|
+fn DapVariable::is_moonbit_array_candidate(self : DapVariable) -> Bool {
+  self.variables_reference > 0 && self.moonbit_array_element_name() is Some(_)
+}
+
+///|
 fn DapVariable::is_moonbit_fixed_array_candidate(self : DapVariable) -> Bool {
   guard self.variables_reference > 0 && self.type_name is Some(raw_type_name) else {
     return false
@@ -112,22 +129,38 @@ fn DapVariable::is_moonbit_fixed_array_candidate(self : DapVariable) -> Bool {
 }
 
 ///|
-fn DapVariable::is_null_pointer(self : DapVariable) -> Bool {
-  let value = self.memory_reference.unwrap_or(self.value).trim()
-  match value {
-    "0" | "0x0" | "(nil)" | "nullptr" => true
-    _ =>
-      match value.strip_prefix("0x") {
-        Some(hex) => hex != "" && hex.all(char => char == '0')
-        None => false
-      }
+priv enum NativePayloadPointer {
+  NullPayloadPointer
+  PayloadPointer(String)
+}
+
+///|
+fn is_ascii_hex_digit(char : Char) -> Bool {
+  match char {
+    '0'..='9' | 'a'..='f' | 'A'..='F' => true
+    _ => false
   }
 }
 
 ///|
-fn Array::fixed_array_body(self : Array[DapVariable]) -> DapVariable? {
+fn parse_native_payload_pointer(value : String) -> NativePayloadPointer? {
+  let address = value.trim()
+  guard address.strip_prefix("0x") is Some(hex) &&
+    hex != "" &&
+    hex.all(is_ascii_hex_digit) else {
+    return None
+  }
+  if hex.all(char => char == '0') {
+    Some(NullPayloadPointer)
+  } else {
+    Some(PayloadPointer(address.to_owned()))
+  }
+}
+
+///|
+fn Array::named_child(self : Array[DapVariable], name : String) -> DapVariable? {
   for variable in self {
-    if variable.name == "body" {
+    if variable.name == name {
       return Some(variable)
     }
   }
@@ -345,7 +378,6 @@ fn parse_variable(json : Json) -> DapVariable? {
     type_name: json_string_field(json, "type"),
     variables_reference: json_int_field(json, "variablesReference").unwrap_or(0),
     evaluate_name: json_string_field(json, "evaluateName"),
-    memory_reference: json_string_field(json, "memoryReference"),
   })
 }
 
@@ -408,7 +440,7 @@ async fn DebugExecution::read_memory(
 ) -> Bytes {
   guard json_bool_field(self.capabilities, "supportsReadMemoryRequest") ==
     Some(true) else {
-    raise InvalidFixedArrayValue("lldb-dap does not support readMemory")
+    raise InvalidIndexedCollectionValue("lldb-dap does not support readMemory")
   }
   let response = self.request("readMemory", {
     "memoryReference": memory_reference,
@@ -418,16 +450,18 @@ async fn DebugExecution::read_memory(
   let body = response.body()
   guard json_string_field(body, "data") is Some(encoded) &&
     json_int_field(body, "unreadableBytes").unwrap_or(0) == 0 else {
-    raise InvalidFixedArrayValue("lldb-dap returned an incomplete memory range")
+    raise InvalidIndexedCollectionValue(
+      "lldb-dap returned an incomplete memory range",
+    )
   }
   let bytes = @base64.decode(encoded) catch {
     _ =>
-      raise InvalidFixedArrayValue(
+      raise InvalidIndexedCollectionValue(
         "lldb-dap returned malformed base64 memory data",
       )
   }
   guard bytes.length() == count else {
-    raise InvalidFixedArrayValue(
+    raise InvalidIndexedCollectionValue(
       "lldb-dap returned \{bytes.length()} bytes for a \{count}-byte memory request",
     )
   }
@@ -435,7 +469,7 @@ async fn DebugExecution::read_memory(
 }
 
 ///|
-fn fixed_array_elements(
+fn indexed_scalar_elements(
   scalar : @runtime_value.NativeScalarType,
   first_index : Int,
   payload : Bytes,
@@ -458,22 +492,36 @@ fn fixed_array_elements(
 }
 
 ///|
-async fn DebugExecution::materialize_fixed_array(
+async fn DebugExecution::materialize_native_indexed_collection(
   self : DebugExecution,
-  epoch : Int,
   variable : DapVariable,
+  kind : @moondbg.IndexedCollectionKind,
+  body : DapVariable,
+  logical_length : Int?,
 ) -> @moondbg.VariableSnapshot {
-  let children = self.load_variables(epoch, variable.variables_reference)
-  guard children.fixed_array_body() is Some(body) &&
-    body.type_name is Some(pointer_type) &&
-    body.evaluate_name is Some(_) &&
-    @runtime_value.fixed_array_element_from_pointer_type(pointer_type)
+  guard body.type_name is Some(pointer_type) &&
+    @runtime_value.native_array_element_from_pointer_type(pointer_type)
     is Some(element_type) else {
-    raise InvalidFixedArrayValue("FixedArray has no typed body pointer")
+    raise InvalidIndexedCollectionValue(
+      "\{kind.source_name()} has no typed body pointer",
+    )
   }
   let element_type_name = element_type.source_name()
-  if body.is_null_pointer() {
+  guard parse_native_payload_pointer(body.value) is Some(payload_pointer) else {
+    raise InvalidIndexedCollectionValue(
+      "\{kind.source_name()} body has malformed payload pointer '\{body.value}'",
+    )
+  }
+  if payload_pointer is NullPayloadPointer {
+    match logical_length {
+      Some(length) =>
+        @runtime_value.validate_array_length(length, 0) catch {
+          error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
+        }
+      None => ()
+    }
     let collection = @moondbg.IndexedCollectionSnapshot::new(
+      kind,
       element_type_name,
       0,
       [],
@@ -485,47 +533,53 @@ async fn DebugExecution::materialize_fixed_array(
       collection,
     )
   }
-  guard body.memory_reference is Some(memory_reference) else {
-    raise InvalidFixedArrayValue("FixedArray body has no memory reference")
+  guard payload_pointer is PayloadPointer(memory_reference) else {
+    raise InvalidIndexedCollectionValue(
+      "\{kind.source_name()} payload pointer was unexpectedly null",
+    )
   }
   let header = self.read_memory(
     memory_reference,
-    @runtime_value.NATIVE_FIXED_ARRAY_HEADER_OFFSET,
-    @runtime_value.NATIVE_FIXED_ARRAY_HEADER_SIZE,
+    @runtime_value.NATIVE_ARRAY_HEADER_OFFSET,
+    @runtime_value.NATIVE_ARRAY_HEADER_SIZE,
   )
-  let total_length = @runtime_value.decode_fixed_array_length(header) catch {
-    error => raise InvalidFixedArrayValue(@debug.to_string(error))
+  let capacity = @runtime_value.decode_native_array_capacity(header) catch {
+    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
   }
-  let plan = @runtime_value.FixedArrayPreviewPlan::new(total_length) catch {
-    error => raise InvalidFixedArrayValue(@debug.to_string(error))
+  let total_length = logical_length.unwrap_or(capacity)
+  @runtime_value.validate_array_length(total_length, capacity) catch {
+    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
+  }
+  let plan = @runtime_value.IndexedPreviewPlan::new(total_length) catch {
+    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
   }
   let elements : Array[@moondbg.IndexedVariableElement] = []
   match element_type {
-    @runtime_value.FixedArrayScalar(scalar) => {
+    @runtime_value.NativeArrayScalar(scalar) => {
       let width = scalar.byte_width()
       if plan.head_count() > 0 {
         let count = plan.head_count() * width
         let payload = self.read_memory(memory_reference, 0, count)
         elements.push_iter(
-          fixed_array_elements(scalar, 0, payload, plan.head_count()).iter(),
+          indexed_scalar_elements(scalar, 0, payload, plan.head_count()).iter(),
         )
       }
       if plan.tail_index() is Some(tail_index) {
         let offset = plan.tail_byte_offset(width) catch {
-          error => raise InvalidFixedArrayValue(@debug.to_string(error))
+          error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
         }
         guard offset is Some(offset) else {
-          raise InvalidFixedArrayValue(
-            "FixedArray preview lost its tail offset",
+          raise InvalidIndexedCollectionValue(
+            "\{kind.source_name()} preview lost its tail offset",
           )
         }
         let payload = self.read_memory(memory_reference, offset, width)
         elements.push_iter(
-          fixed_array_elements(scalar, tail_index, payload, 1).iter(),
+          indexed_scalar_elements(scalar, tail_index, payload, 1).iter(),
         )
       }
     }
-    @runtime_value.FixedArrayOpaque(_) => {
+    @runtime_value.NativeArrayOpaque(_) => {
       for index in 0..<plan.head_count() {
         elements.push(@moondbg.IndexedVariableElement::placeholder(index))
       }
@@ -535,13 +589,73 @@ async fn DebugExecution::materialize_fixed_array(
     }
   }
   let collection = @moondbg.IndexedCollectionSnapshot::new(
-    element_type_name, total_length, elements,
+    kind, element_type_name, total_length, elements,
   )
   @moondbg.VariableSnapshot::indexed_collection(
     variable.name,
     variable.value,
     variable.type_name,
     collection,
+  )
+}
+
+///|
+fn parse_array_logical_length(variable : DapVariable) -> Int? {
+  let value = variable.value.trim()
+  guard value != "" && value.all(char => char is ('0'..='9')) else {
+    return None
+  }
+  Some(@string.parse_int(value, base=10)) catch {
+    _ => None
+  }
+}
+
+///|
+async fn DebugExecution::materialize_fixed_array(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> @moondbg.VariableSnapshot {
+  let children = self.load_variables(epoch, variable.variables_reference)
+  guard children.named_child("body") is Some(body) else {
+    raise InvalidIndexedCollectionValue("FixedArray has no body field")
+  }
+  self.materialize_native_indexed_collection(
+    variable,
+    @moondbg.FixedArrayCollection,
+    body,
+    None,
+  )
+}
+
+///|
+async fn DebugExecution::materialize_array(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> @moondbg.VariableSnapshot {
+  let children = self.load_variables(epoch, variable.variables_reference)
+  guard children.named_child("buf") is Some(buffer) &&
+    buffer.is_available() &&
+    buffer.variables_reference > 0 else {
+    raise InvalidIndexedCollectionValue("Array has no available buf field")
+  }
+  guard children.named_child("len") is Some(length_variable) &&
+    length_variable.is_available() &&
+    parse_array_logical_length(length_variable) is Some(logical_length) else {
+    raise InvalidIndexedCollectionValue(
+      "Array has no valid non-negative logical length",
+    )
+  }
+  let buffer_children = self.load_variables(epoch, buffer.variables_reference)
+  guard buffer_children.named_child("body") is Some(body) else {
+    raise InvalidIndexedCollectionValue("Array buffer has no body field")
+  }
+  self.materialize_native_indexed_collection(
+    variable,
+    @moondbg.ArrayCollection,
+    body,
+    Some(logical_length),
   )
 }
 
@@ -560,6 +674,9 @@ async fn DebugExecution::materialize_variable(
       variable.type_name,
       [],
     )
+  }
+  if variable.is_moonbit_array_candidate() {
+    return self.materialize_array(epoch, variable)
   }
   if variable.is_moonbit_fixed_array_candidate() {
     return self.materialize_fixed_array(epoch, variable)

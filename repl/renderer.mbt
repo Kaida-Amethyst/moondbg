@@ -220,7 +220,7 @@ fn variable_label(variable : @moondbg.VariableSnapshot) -> String {
 }
 
 ///|
-const FIXED_ARRAY_CONTENT_WIDTH : Int = 100
+const INDEXED_COLLECTION_CONTENT_WIDTH : Int = 100
 
 ///|
 fn indexed_element_text(
@@ -260,7 +260,8 @@ fn bounded_indexed_content_text(
   let selected : Array[@moondbg.IndexedVariableElement] = []
   selected.push_iter(collection.preview_elements().iter())
   let mut content = indexed_content_text(collection, selected)
-  while content.length() > FIXED_ARRAY_CONTENT_WIDTH && selected.length() > 2 {
+  while content.length() > INDEXED_COLLECTION_CONTENT_WIDTH &&
+        selected.length() > 2 {
     selected.remove(selected.length() - 2) |> ignore
     content = indexed_content_text(collection, selected)
   }
@@ -276,7 +277,7 @@ fn append_indexed_collection_lines(
 ) -> Unit {
   let prefix = " ".repeat(indentation)
   lines.push(
-    "\{prefix}\{variable.name()}: FixedArray[\{collection.element_type_name()}] with length = \{collection.total_length()}",
+    "\{prefix}\{variable.name()}: \{collection.kind().source_name()}[\{collection.element_type_name()}] with length = \{collection.total_length()}",
   )
   lines.push("")
   lines.push("\{prefix}  \{bounded_indexed_content_text(collection)}")

@@ -1,8 +1,10 @@
 ///|
 pub(all) suberror NativeValueError {
-  InvalidFixedArrayHeaderSize(Int)
-  InvalidFixedArrayLength(UInt)
-  InvalidFixedArrayPreviewBudget(Int)
+  InvalidNativeArrayHeaderSize(Int)
+  InvalidNativeArrayCapacity(UInt)
+  InvalidIndexedCollectionLength(Int)
+  InvalidArrayLength(length~ : Int, capacity~ : Int)
+  InvalidIndexedPreviewBudget(Int)
   InvalidScalarPayload(expected~ : Int, actual~ : Int)
   InvalidBoolValue(UInt)
 } derive(Eq, Debug)
@@ -53,24 +55,24 @@ pub fn NativeScalarType::byte_width(self : NativeScalarType) -> Int {
 }
 
 ///|
-pub(all) enum FixedArrayElementType {
-  FixedArrayScalar(NativeScalarType)
-  FixedArrayOpaque(String)
+pub(all) enum NativeArrayElementType {
+  NativeArrayScalar(NativeScalarType)
+  NativeArrayOpaque(String)
 } derive(Eq, Debug)
 
 ///|
-pub extend FixedArrayElementType with Eq::{equal, not_equal}
+pub extend NativeArrayElementType with Eq::{equal, not_equal}
 
 ///|
-pub extend FixedArrayElementType with @debug.Debug::{to_repr}
+pub extend NativeArrayElementType with @debug.Debug::{to_repr}
 
 ///|
-pub fn FixedArrayElementType::source_name(
-  self : FixedArrayElementType,
+pub fn NativeArrayElementType::source_name(
+  self : NativeArrayElementType,
 ) -> String {
   match self {
-    FixedArrayScalar(scalar) => scalar.source_name()
-    FixedArrayOpaque(name) => name
+    NativeArrayScalar(scalar) => scalar.source_name()
+    NativeArrayOpaque(name) => name
   }
 }
 
@@ -110,34 +112,34 @@ fn opaque_source_name(debug_name : String) -> String {
 }
 
 ///|
-/// Interprets the raw DAP type of a FixedArray `body` field. The final pointer
-/// belongs to the array payload; any remaining pointer belongs to the source
-/// element representation.
-pub fn fixed_array_element_from_pointer_type(
+/// Interprets the raw DAP type of a native array-storage `body` field. The
+/// final pointer belongs to the contiguous payload; any remaining pointer
+/// belongs to the source element representation.
+pub fn native_array_element_from_pointer_type(
   pointer_type : String,
-) -> FixedArrayElementType? {
+) -> NativeArrayElementType? {
   guard pointer_type.trim().strip_suffix("*") is Some(element_debug_type) else {
     return None
   }
   let element_debug_type = element_debug_type.trim().to_owned()
   match scalar_type_from_debug_name(element_debug_type) {
-    Some(scalar) => Some(FixedArrayScalar(scalar))
+    Some(scalar) => Some(NativeArrayScalar(scalar))
     None => {
       let source_name = opaque_source_name(element_debug_type)
       guard source_name != "" else { return None }
-      Some(FixedArrayOpaque(source_name))
+      Some(NativeArrayOpaque(source_name))
     }
   }
 }
 
 ///|
-pub const NATIVE_FIXED_ARRAY_HEADER_SIZE : Int = 8
+pub const NATIVE_ARRAY_HEADER_SIZE : Int = 8
 
 ///|
-pub const NATIVE_FIXED_ARRAY_HEADER_OFFSET : Int = -8
+pub const NATIVE_ARRAY_HEADER_OFFSET : Int = -8
 
 ///|
-pub const MAX_FIXED_ARRAY_PREVIEW_ELEMENTS : Int = 16
+pub const MAX_INDEXED_PREVIEW_ELEMENTS : Int = 16
 
 ///|
 fn read_uint32_le(bytes : Bytes, offset : Int) -> UInt {
@@ -160,38 +162,58 @@ fn read_uint64_le(bytes : Bytes, offset : Int) -> UInt64 {
 }
 
 ///|
-pub fn decode_fixed_array_length(header : Bytes) -> Int raise NativeValueError {
-  guard header.length() == NATIVE_FIXED_ARRAY_HEADER_SIZE else {
-    raise InvalidFixedArrayHeaderSize(header.length())
+/// Decodes the storage capacity kept immediately before a native array
+/// payload. FixedArray uses this value as its source-level length; Array keeps
+/// its logical length in a separate field.
+pub fn decode_native_array_capacity(
+  header : Bytes,
+) -> Int raise NativeValueError {
+  guard header.length() == NATIVE_ARRAY_HEADER_SIZE else {
+    raise InvalidNativeArrayHeaderSize(header.length())
   }
-  let length = read_uint32_le(header, 4)
-  guard length <= 0x7fff_ffff else { raise InvalidFixedArrayLength(length) }
-  length.reinterpret_as_int()
+  let capacity = read_uint32_le(header, 4)
+  guard capacity <= 0x7fff_ffff else {
+    raise InvalidNativeArrayCapacity(capacity)
+  }
+  capacity.reinterpret_as_int()
 }
 
 ///|
-pub struct FixedArrayPreviewPlan {
+/// Validates the logical length of a resizable Array against the initialized
+/// native storage range. Callers must never read elements between length and
+/// capacity.
+pub fn validate_array_length(
+  length : Int,
+  capacity : Int,
+) -> Unit raise NativeValueError {
+  guard length >= 0 && capacity >= 0 && length <= capacity else {
+    raise InvalidArrayLength(length~, capacity~)
+  }
+}
+
+///|
+pub struct IndexedPreviewPlan {
   priv total_length : Int
   priv head_count : Int
   priv tail_index : Int?
 } derive(Eq, Debug)
 
 ///|
-pub extend FixedArrayPreviewPlan with Eq::{equal, not_equal}
+pub extend IndexedPreviewPlan with Eq::{equal, not_equal}
 
 ///|
-pub extend FixedArrayPreviewPlan with @debug.Debug::{to_repr}
+pub extend IndexedPreviewPlan with @debug.Debug::{to_repr}
 
 ///|
-pub fn FixedArrayPreviewPlan::new(
+pub fn IndexedPreviewPlan::new(
   total_length : Int,
-  max_elements? : Int = MAX_FIXED_ARRAY_PREVIEW_ELEMENTS,
-) -> FixedArrayPreviewPlan raise NativeValueError {
+  max_elements? : Int = MAX_INDEXED_PREVIEW_ELEMENTS,
+) -> IndexedPreviewPlan raise NativeValueError {
   guard total_length >= 0 else {
-    raise InvalidFixedArrayLength(total_length.reinterpret_as_uint())
+    raise InvalidIndexedCollectionLength(total_length)
   }
   guard max_elements >= 2 else {
-    raise InvalidFixedArrayPreviewBudget(max_elements)
+    raise InvalidIndexedPreviewBudget(max_elements)
   }
   if total_length <= max_elements {
     { total_length, head_count: total_length, tail_index: None, }
@@ -205,35 +227,33 @@ pub fn FixedArrayPreviewPlan::new(
 }
 
 ///|
-pub fn FixedArrayPreviewPlan::total_length(self : FixedArrayPreviewPlan) -> Int {
+pub fn IndexedPreviewPlan::total_length(self : IndexedPreviewPlan) -> Int {
   self.total_length
 }
 
 ///|
-pub fn FixedArrayPreviewPlan::head_count(self : FixedArrayPreviewPlan) -> Int {
+pub fn IndexedPreviewPlan::head_count(self : IndexedPreviewPlan) -> Int {
   self.head_count
 }
 
 ///|
-pub fn FixedArrayPreviewPlan::tail_index(self : FixedArrayPreviewPlan) -> Int? {
+pub fn IndexedPreviewPlan::tail_index(self : IndexedPreviewPlan) -> Int? {
   self.tail_index
 }
 
 ///|
-pub fn FixedArrayPreviewPlan::selected_count(
-  self : FixedArrayPreviewPlan,
-) -> Int {
+pub fn IndexedPreviewPlan::selected_count(self : IndexedPreviewPlan) -> Int {
   self.head_count + (if self.tail_index is Some(_) { 1 } else { 0 })
 }
 
 ///|
-pub fn FixedArrayPreviewPlan::tail_byte_offset(
-  self : FixedArrayPreviewPlan,
+pub fn IndexedPreviewPlan::tail_byte_offset(
+  self : IndexedPreviewPlan,
   element_width : Int,
 ) -> Int? raise NativeValueError {
   guard self.tail_index is Some(index) else { return None }
   guard element_width > 0 && index <= 0x7fff_ffff / element_width else {
-    raise InvalidFixedArrayLength(self.total_length.reinterpret_as_uint())
+    raise InvalidIndexedCollectionLength(self.total_length)
   }
   Some(index * element_width)
 }

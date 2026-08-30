@@ -86,7 +86,31 @@ pub fn IndexedVariableElement::value(
 }
 
 ///|
+/// The source-level MoonBit collection represented by an indexed preview.
+pub(all) enum IndexedCollectionKind {
+  FixedArrayCollection
+  ArrayCollection
+} derive(Eq, Debug)
+
+///|
+pub extend IndexedCollectionKind with Eq::{equal, not_equal}
+
+///|
+pub extend IndexedCollectionKind with @debug.Debug::{to_repr}
+
+///|
+pub fn IndexedCollectionKind::source_name(
+  self : IndexedCollectionKind,
+) -> String {
+  match self {
+    FixedArrayCollection => "FixedArray"
+    ArrayCollection => "Array"
+  }
+}
+
+///|
 pub struct IndexedCollectionSnapshot {
+  priv kind : IndexedCollectionKind
   priv element_type_name : String
   priv total_length : Int
   priv preview_elements : Array[IndexedVariableElement]
@@ -100,6 +124,7 @@ pub extend IndexedCollectionSnapshot with @debug.Debug::{to_repr}
 
 ///|
 pub fn IndexedCollectionSnapshot::new(
+  kind : IndexedCollectionKind,
   element_type_name : String,
   total_length : Int,
   preview_elements : Array[IndexedVariableElement],
@@ -123,10 +148,18 @@ pub fn IndexedCollectionSnapshot::new(
     }
   }
   {
+    kind,
     element_type_name,
     total_length,
     preview_elements: preview_elements.copy(),
   }
+}
+
+///|
+pub fn IndexedCollectionSnapshot::kind(
+  self : IndexedCollectionSnapshot,
+) -> IndexedCollectionKind {
+  self.kind
 }
 
 ///|

@@ -1,42 +1,69 @@
 ///|
-test "FixedArray element types follow raw DAP pointer types" {
+test "native array element types follow raw DAP pointer types" {
   assert_eq(
-    @runtime_value.fixed_array_element_from_pointer_type("int *"),
-    Some(@runtime_value.FixedArrayScalar(@runtime_value.NativeInt)),
+    @runtime_value.native_array_element_from_pointer_type("int *"),
+    Some(@runtime_value.NativeArrayScalar(@runtime_value.NativeInt)),
   )
   assert_eq(
-    @runtime_value.fixed_array_element_from_pointer_type("unsigned long long *"),
-    Some(@runtime_value.FixedArrayScalar(@runtime_value.NativeUInt64)),
+    @runtime_value.native_array_element_from_pointer_type(
+      "unsigned long long *",
+    ),
+    Some(@runtime_value.NativeArrayScalar(@runtime_value.NativeUInt64)),
   )
   assert_eq(
-    @runtime_value.fixed_array_element_from_pointer_type(
+    @runtime_value.native_array_element_from_pointer_type(
       "example/geometry/Point **",
     ),
-    Some(@runtime_value.FixedArrayOpaque("Point")),
+    Some(@runtime_value.NativeArrayOpaque("Point")),
   )
   assert_eq(
-    @runtime_value.fixed_array_element_from_pointer_type("not a pointer"),
+    @runtime_value.native_array_element_from_pointer_type("not a pointer"),
     None,
   )
 }
 
 ///|
-test "FixedArray header length is decoded before planning its preview" {
+test "native storage capacity is decoded before planning a bounded preview" {
   assert_eq(
-    @runtime_value.decode_fixed_array_length(
+    @runtime_value.decode_native_array_capacity(
       b"\x00\x00\x00\x00\x64\x00\x00\x00",
     ),
     100,
   )
-  let short = @runtime_value.FixedArrayPreviewPlan::new(3)
+  let short = @runtime_value.IndexedPreviewPlan::new(3)
   assert_eq(short.head_count(), 3)
   assert_eq(short.tail_index(), None)
   assert_eq(short.selected_count(), 3)
-  let long = @runtime_value.FixedArrayPreviewPlan::new(100)
+  let long = @runtime_value.IndexedPreviewPlan::new(100)
   assert_eq(long.head_count(), 15)
   assert_eq(long.tail_index(), Some(99))
   assert_eq(long.selected_count(), 16)
   assert_eq(long.tail_byte_offset(4), Some(396))
+}
+
+///|
+test "Array logical length must stay within initialized native capacity" {
+  @runtime_value.validate_array_length(10, 10)
+  @runtime_value.validate_array_length(100, 128)
+  @runtime_value.validate_array_length(0, 0)
+  assert_true(
+    try {
+      @runtime_value.validate_array_length(11, 10)
+      false
+    } catch {
+      @runtime_value.InvalidArrayLength(length=11, capacity=10) => true
+      _ => false
+    },
+  )
+  assert_true(
+    try {
+      @runtime_value.validate_array_length(-1, 10)
+      false
+    } catch {
+      @runtime_value.InvalidArrayLength(length=-1, capacity=10) => true
+      _ => false
+    },
+  )
 }
 
 ///|
@@ -100,13 +127,13 @@ test "native scalar payload decoder covers supported FixedArray elements" {
 }
 
 ///|
-test "native FixedArray decoder rejects malformed metadata and payloads" {
+test "native array decoder rejects malformed metadata and payloads" {
   assert_true(
     try {
-      @runtime_value.decode_fixed_array_length(b"\x00") |> ignore
+      @runtime_value.decode_native_array_capacity(b"\x00") |> ignore
       false
     } catch {
-      @runtime_value.InvalidFixedArrayHeaderSize(1) => true
+      @runtime_value.InvalidNativeArrayHeaderSize(1) => true
       _ => false
     },
   )

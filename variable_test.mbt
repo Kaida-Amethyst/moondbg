@@ -105,7 +105,12 @@ test "indexed collection snapshot retains indices values and omission count" {
       @moondbg.VariableSnapshot::new("[9]", "10", Some("Int")),
     ),
   ]
-  let collection = @moondbg.IndexedCollectionSnapshot::new("Int", 10, elements)
+  let collection = @moondbg.IndexedCollectionSnapshot::new(
+    @moondbg.FixedArrayCollection,
+    "Int",
+    10,
+    elements,
+  )
   elements.clear()
   let array = @moondbg.VariableSnapshot::indexed_collection(
     "arr",
@@ -120,6 +125,7 @@ test "indexed collection snapshot retains indices values and omission count" {
     fail("array should retain its structured indexed preview")
   }
   assert_eq(indexed.element_type_name(), "Int")
+  assert_eq(indexed.kind(), @moondbg.FixedArrayCollection)
   assert_eq(indexed.total_length(), 10)
   assert_eq(indexed.omitted_count(), 7)
   assert_false(indexed.is_complete())
@@ -132,14 +138,25 @@ test "indexed collection snapshot retains indices values and omission count" {
 
 ///|
 test "indexed collection snapshot represents empty complete and placeholder previews" {
-  let empty = @moondbg.IndexedCollectionSnapshot::new("Int", 0, [])
+  let empty = @moondbg.IndexedCollectionSnapshot::new(
+    @moondbg.ArrayCollection,
+    "Int",
+    0,
+    [],
+  )
+  assert_eq(empty.kind(), @moondbg.ArrayCollection)
   assert_true(empty.is_complete())
   assert_eq(empty.omitted_count(), 0)
-  let points = @moondbg.IndexedCollectionSnapshot::new("Point", 100, [
-    @moondbg.IndexedVariableElement::placeholder(0),
-    @moondbg.IndexedVariableElement::placeholder(1),
-    @moondbg.IndexedVariableElement::placeholder(99),
-  ])
+  let points = @moondbg.IndexedCollectionSnapshot::new(
+    @moondbg.FixedArrayCollection,
+    "Point",
+    100,
+    [
+      @moondbg.IndexedVariableElement::placeholder(0),
+      @moondbg.IndexedVariableElement::placeholder(1),
+      @moondbg.IndexedVariableElement::placeholder(99),
+    ],
+  )
   guard points.preview_elements() is [first, second, last] else {
     fail("point preview should preserve three selected indices")
   }
@@ -152,7 +169,13 @@ test "indexed collection snapshot represents empty complete and placeholder prev
 ///|
 test "indexed collection snapshot rejects invalid metadata" {
   let empty_type_rejected = try {
-    @moondbg.IndexedCollectionSnapshot::new("", 0, []) |> ignore
+    @moondbg.IndexedCollectionSnapshot::new(
+      @moondbg.FixedArrayCollection,
+      "",
+      0,
+      [],
+    )
+    |> ignore
     false
   } catch {
     @moondbg.InvalidIndexedCollectionElementType("") => true
@@ -160,7 +183,13 @@ test "indexed collection snapshot rejects invalid metadata" {
   }
   assert_true(empty_type_rejected)
   let negative_length_rejected = try {
-    @moondbg.IndexedCollectionSnapshot::new("Int", -1, []) |> ignore
+    @moondbg.IndexedCollectionSnapshot::new(
+      @moondbg.FixedArrayCollection,
+      "Int",
+      -1,
+      [],
+    )
+    |> ignore
     false
   } catch {
     @moondbg.InvalidIndexedCollectionLength(-1) => true
@@ -168,9 +197,12 @@ test "indexed collection snapshot rejects invalid metadata" {
   }
   assert_true(negative_length_rejected)
   let out_of_bounds_rejected = try {
-    @moondbg.IndexedCollectionSnapshot::new("Int", 1, [
-      @moondbg.IndexedVariableElement::placeholder(1),
-    ])
+    @moondbg.IndexedCollectionSnapshot::new(
+      @moondbg.FixedArrayCollection,
+      "Int",
+      1,
+      [@moondbg.IndexedVariableElement::placeholder(1)],
+    )
     |> ignore
     false
   } catch {
@@ -179,10 +211,15 @@ test "indexed collection snapshot rejects invalid metadata" {
   }
   assert_true(out_of_bounds_rejected)
   let unordered_rejected = try {
-    @moondbg.IndexedCollectionSnapshot::new("Int", 3, [
-      @moondbg.IndexedVariableElement::placeholder(2),
-      @moondbg.IndexedVariableElement::placeholder(1),
-    ])
+    @moondbg.IndexedCollectionSnapshot::new(
+      @moondbg.FixedArrayCollection,
+      "Int",
+      3,
+      [
+        @moondbg.IndexedVariableElement::placeholder(2),
+        @moondbg.IndexedVariableElement::placeholder(1),
+      ],
+    )
     |> ignore
     false
   } catch {

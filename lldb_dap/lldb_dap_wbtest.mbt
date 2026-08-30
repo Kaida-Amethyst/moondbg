@@ -461,7 +461,7 @@ fn field_path_variable_script() -> Array[@dap_testkit.ScriptedInput] {
           "type": "int *",
           "value": "0x3300",
           "evaluateName": "line1.values.body",
-          "memoryReference": "0x3300",
+          "memoryReference": "0xdead3300",
           "variablesReference": 0,
         },
       ],
@@ -588,7 +588,7 @@ fn fixed_array_variable_script() -> Array[@dap_testkit.ScriptedInput] {
           "type": "int *",
           "value": "0x2000",
           "evaluateName": "short.body",
-          "memoryReference": "0x2000",
+          "memoryReference": "0xdead2000",
           "variablesReference": 0,
         },
       ],
@@ -602,7 +602,7 @@ fn fixed_array_variable_script() -> Array[@dap_testkit.ScriptedInput] {
           "type": "Int *",
           "value": "0x3000",
           "evaluateName": "long.body",
-          "memoryReference": "0x3000",
+          "memoryReference": "0xdead3000",
           "variablesReference": 0,
         },
       ],
@@ -619,7 +619,7 @@ fn fixed_array_variable_script() -> Array[@dap_testkit.ScriptedInput] {
           "type": "example/geometry/Point **",
           "value": "0x4000",
           "evaluateName": "points.body",
-          "memoryReference": "0x4000",
+          "memoryReference": "0xdead4000",
           "variablesReference": 0,
         },
       ],
@@ -636,6 +636,170 @@ fn fixed_array_variable_script() -> Array[@dap_testkit.ScriptedInput] {
         },
       ],
     }),
+  ]
+}
+
+///|
+fn array_double_variable_script() -> Array[@dap_testkit.ScriptedInput] {
+  let scopes : Json = {
+    "scopes": [
+      {
+        "name": "Locals",
+        "presentationHint": "locals",
+        "variablesReference": 300,
+      },
+    ],
+  }
+  let roots : Json = {
+    "variables": [
+      {
+        "name": "arr",
+        "type": "moonbitlang/core/builtin/Array[Double] &",
+        "value": "0x5000",
+        "variablesReference": 301,
+      },
+      {
+        "name": "empty",
+        "type": "moonbitlang/core/builtin/Array[Double] &",
+        "value": "0x7000",
+        "variablesReference": 302,
+      },
+      {
+        "name": "invalid",
+        "type": "moonbitlang/core/builtin/Array[Double] &",
+        "value": "0x8000",
+        "variablesReference": 303,
+      },
+    ],
+  }
+  [
+    scripted_response(1800, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+      "supportsSteppingGranularity": true,
+    }),
+    scripted_event(1801, "initialized", {}),
+    scripted_response(1802, 3, "configurationDone", {}),
+    scripted_response(1803, 2, "launch", {}),
+    scripted_event(1804, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(1805, 4, "stackTrace", scripted_stack_body(120, 20)),
+    scripted_response(1806, 5, "scopes", scopes),
+    scripted_response(1807, 6, "variables", roots),
+    scripted_response(1808, 7, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "moonbit.array_f64",
+          "value": "moonbit.array_f64 @ 0x5000",
+          "variablesReference": 311,
+        },
+        { "name": "len", "type": "int", "value": "10", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(1809, 8, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "double *",
+          "value": "0x5000",
+          "evaluateName": "arr.buf.body",
+          "memoryReference": "0xdead5000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1810, 9, "readMemory", { "data": "AAAAAAoAAAA=" }),
+    scripted_response(1811, 10, "readMemory", {
+      "data": "AAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAUQAAAAAAAABhAAAAAAAAAHEAAAAAAAAAgQAAAAAAAACJAAAAAAAAAJEA=",
+    }),
+    scripted_response(1812, 11, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "moonbit.array_f64",
+          "value": "moonbit.array_f64 @ 0x0",
+          "variablesReference": 312,
+        },
+        { "name": "len", "type": "int", "value": "0", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(1813, 12, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "double *",
+          "value": "0x0000000000000000",
+          "memoryReference": "0xdead7000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_event(1814, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(1815, 13, "next", {}),
+    scripted_response(1816, 14, "stackTrace", scripted_stack_body(121, 21)),
+    scripted_response(1817, 15, "scopes", scopes),
+    scripted_response(1818, 16, "variables", roots),
+    scripted_response(1819, 17, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "moonbit.array_f64",
+          "value": "moonbit.array_f64 @ 0x6000",
+          "variablesReference": 321,
+        },
+        {
+          "name": "len",
+          "type": "int",
+          "value": "100",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1820, 18, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "double *",
+          "value": "0x6000",
+          "evaluateName": "arr.buf.body",
+          "memoryReference": "0xdead6000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1821, 19, "readMemory", { "data": "AAAAAIAAAAA=" }),
+    scripted_response(1822, 20, "readMemory", {
+      "data": "AAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAUQAAAAAAAABhAAAAAAAAAHEAAAAAAAAAgQAAAAAAAACJAAAAAAAAAJEAAAAAAAAAmQAAAAAAAAChAAAAAAAAAKkAAAAAAAAAsQAAAAAAAAC5A",
+    }),
+    scripted_response(1823, 21, "readMemory", { "data": "AAAAAAAAWUA=" }),
+    scripted_response(1824, 22, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "moonbit.array_f64",
+          "value": "moonbit.array_f64 @ 0x8000",
+          "variablesReference": 322,
+        },
+        {
+          "name": "len",
+          "type": "int",
+          "value": "129",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1825, 23, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "double *",
+          "value": "0x8000",
+          "memoryReference": "0xdead8000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(1826, 24, "readMemory", { "data": "AAAAAIAAAAA=" }),
   ]
 }
 
@@ -1517,7 +1681,6 @@ test "lldb-dap variable caches are isolated by stop epoch" {
       type_name: Some("int"),
       variables_reference: 0,
       evaluate_name: None,
-      memory_reference: None,
     },
   ]
   cache.reset(1)
@@ -1738,6 +1901,7 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       third.value() is Some(third_value) else {
       fail("short FixedArray should be materialized completely")
     }
+    assert_eq(short_collection.kind(), @moondbg.FixedArrayCollection)
     assert_eq(short_collection.total_length(), 3)
     assert_true(short_collection.is_complete())
     assert_eq(first_value.value(), "1")
@@ -1751,6 +1915,7 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       last.value() is Some(last_value) else {
       fail("long FixedArray should retain its bounded head and true tail")
     }
+    assert_eq(long_collection.kind(), @moondbg.FixedArrayCollection)
     assert_eq(long_collection.total_length(), 100)
     assert_eq(long_collection.preview_elements().length(), 16)
     assert_eq(long_collection.omitted_count(), 84)
@@ -1821,6 +1986,189 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
 }
 
 ///|
+test "native payload pointers only accept explicit hexadecimal addresses" {
+  assert_true(
+    parse_native_payload_pointer("0x1234") is Some(PayloadPointer("0x1234")),
+  )
+  assert_true(
+    parse_native_payload_pointer("  0x0000  ") is Some(NullPayloadPointer),
+  )
+  assert_true(parse_native_payload_pointer("4096") is None)
+  assert_true(parse_native_payload_pointer("(int *) 0x1000") is None)
+  assert_true(parse_native_payload_pointer("0x1000 trailing") is None)
+  assert_true(parse_native_payload_pointer("0x") is None)
+}
+
+///|
+async test "lldb-dap materializes Array logical values within bounded storage reads" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      array_double_variable_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/array-program", backend)
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted Array execution should stop")
+    }
+    guard session.find_variable(@moondbg.VariablePath::root("arr"))
+      is @moondbg.VariableFound(short) &&
+      short.content() is @moondbg.VariableIndexedCollection(short_collection) &&
+      short_collection.preview_elements() is [first, .., last] &&
+      first.value() is Some(first_value) &&
+      last.value() is Some(last_value) else {
+      fail("short Array should be materialized completely")
+    }
+    assert_eq(short_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(short_collection.element_type_name(), "Double")
+    assert_eq(short_collection.total_length(), 10)
+    assert_true(short_collection.is_complete())
+    assert_eq(first.index(), 0)
+    assert_eq(first_value.value(), "1")
+    assert_eq(last.index(), 9)
+    assert_eq(last_value.value(), "10")
+    guard session.find_variable(@moondbg.VariablePath::root("arr"))
+      is @moondbg.VariableFound(cached_short) else {
+      fail("same-stop Array lookup should use its snapshot cache")
+    }
+    assert_eq(cached_short, short)
+    guard session.find_variable(@moondbg.VariablePath::root("empty"))
+      is @moondbg.VariableFound(empty) &&
+      empty.content() is @moondbg.VariableIndexedCollection(empty_collection) else {
+      fail("a null zero-length Array should be materialized safely")
+    }
+    assert_eq(empty_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(empty_collection.total_length(), 0)
+    assert_true(empty_collection.preview_elements() is [])
+
+    guard session.next() is @moondbg.Stopped(_) else {
+      fail("next should establish a second Array stop epoch")
+    }
+    guard session.find_variable(@moondbg.VariablePath::root("arr"))
+      is @moondbg.VariableFound(long) &&
+      long.content() is @moondbg.VariableIndexedCollection(long_collection) &&
+      long_collection.preview_elements() is [long_first, .., long_last] &&
+      long_first.value() is Some(long_first_value) &&
+      long_last.value() is Some(long_last_value) else {
+      fail("long Array should retain its bounded head and logical tail")
+    }
+    assert_eq(long_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(long_collection.total_length(), 100)
+    assert_eq(long_collection.preview_elements().length(), 16)
+    assert_eq(long_collection.omitted_count(), 84)
+    assert_eq(long_first.index(), 0)
+    assert_eq(long_first_value.value(), "1")
+    assert_eq(long_last.index(), 99)
+    assert_eq(long_last_value.value(), "100")
+    guard session.find_variable(@moondbg.VariablePath::root("arr"))
+      is @moondbg.VariableFound(cached_long) else {
+      fail("second-stop Array lookup should also be cached")
+    }
+    assert_eq(cached_long, long)
+
+    guard backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("scripted Array execution should retain its second stop epoch")
+    }
+    let invalid_rejected = try {
+      execution.find_variable_inner(
+        epoch,
+        121,
+        @moondbg.VariablePath::root("invalid"),
+      )
+      |> ignore
+      false
+    } catch {
+      InvalidIndexedCollectionValue(message) =>
+        message.contains("InvalidArrayLength") &&
+        message.contains("129") &&
+        message.contains("128")
+      _ => false
+    }
+    assert_true(invalid_rejected)
+
+    assert_eq(transport.remaining_inputs(), 0)
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "variables", "readMemory", "readMemory", "variables", "variables",
+      "next", "stackTrace", "scopes", "variables", "variables", "variables", "readMemory",
+      "readMemory", "readMemory", "variables", "variables", "readMemory",
+    ])
+    assert_false(sent.any(message => sent_command(message) == Some("evaluate")))
+    assert_true(
+      sent[8]
+      is {
+        "arguments": {
+          "memoryReference": String("0x5000"),
+          "offset": Number(-8, ..),
+          "count": Number(8, ..),
+          ..
+        },
+        ..
+      },
+    )
+    assert_true(
+      sent[9]
+      is {
+        "arguments": {
+          "memoryReference": String("0x5000"),
+          "offset": Number(0, ..),
+          "count": Number(80, ..),
+          ..
+        },
+        ..
+      },
+    )
+    assert_true(
+      sent[18]
+      is {
+        "arguments": {
+          "memoryReference": String("0x6000"),
+          "offset": Number(-8, ..),
+          "count": Number(8, ..),
+          ..
+        },
+        ..
+      },
+    )
+    assert_true(
+      sent[19]
+      is {
+        "arguments": {
+          "memoryReference": String("0x6000"),
+          "offset": Number(0, ..),
+          "count": Number(120, ..),
+          ..
+        },
+        ..
+      },
+    )
+    assert_true(
+      sent[20]
+      is {
+        "arguments": {
+          "memoryReference": String("0x6000"),
+          "offset": Number(792, ..),
+          "count": Number(8, ..),
+          ..
+        },
+        ..
+      },
+    )
+  })
+}
+
+///|
 async test "lldb-dap variable materialization obeys depth and node budgets" {
   @async.with_task_group(async fn(group) {
     let transport = @dap_testkit.ScriptedTransport::new(
@@ -1849,7 +2197,6 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       type_name: Some("example/geometry/Line &"),
       variables_reference: 101,
       evaluate_name: None,
-      memory_reference: None,
     }
     let snapshot = execution.materialize_variable_with_limits(epoch, line, 8, 2)
     guard snapshot.content() is @moondbg.VariableStructure(line_structure) &&
@@ -1905,7 +2252,6 @@ async test "lldb-dap variable materialization truncates recursive references" {
       type_name: Some("example/Node &"),
       variables_reference: 101,
       evaluate_name: None,
-      memory_reference: None,
     }
     let snapshot = execution.materialize_variable_with_limits(
       epoch, node, 8, 10,

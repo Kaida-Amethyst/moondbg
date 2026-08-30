@@ -1,7 +1,7 @@
 ///|
 priv suberror DapSessionError {
   InvalidMessage(Json)
-  InvalidFixedArrayValue(String)
+  InvalidIndexedCollectionValue(String)
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
   MismatchedResponseCommand(expected~ : String, actual~ : String)
