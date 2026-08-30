@@ -4,6 +4,8 @@ priv enum ObservationVariableMode {
   ObservationVariableRootMissing
   ObservationVariableFieldMissing
   ObservationVariableNonStruct
+  ObservationVariableNonCollection
+  ObservationVariableIndexOutOfBounds
   ObservationVariableUnavailable
   ObservationVariableFailure
 }
@@ -127,6 +129,14 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variab
         "value",
         Some("Double"),
       )
+    ObservationVariableNonCollection =>
+      @moondbg.VariableLookupResult::index_access_on_non_collection(
+        "point",
+        0,
+        Some("Point"),
+      )
+    ObservationVariableIndexOutOfBounds =>
+      @moondbg.VariableLookupResult::index_out_of_bounds("arr", 3, 3)
     ObservationVariableUnavailable =>
       @moondbg.VariableLookupResult::unavailable("line.start")
     ObservationVariableFailure =>
@@ -192,7 +202,7 @@ async fn stopped_observation_context(
 }
 
 ///|
-test "print spec accepts variables and struct field paths only" {
+test "print spec accepts deterministic field and index paths only" {
   let registry = default_command_registry()
   guard registry.lookup("print") is Some(command) &&
     registry.lookup("p") is Some(command_alias) else {
@@ -203,13 +213,16 @@ test "print spec accepts variables and struct field paths only" {
   for
     valid in [
       "print answer", "p input", "p 结果", "p point.x", "p line.start.x", "p 线段.起点.x1",
+      "p arr[0]", "p arr[00012].x", "p lines[0].start.x", "p matrix[1][2]",
     ] {
     assert_true(registry.parse_line(valid) is RegistryCommand(_), msg=valid)
   }
   for
     invalid in [
-      "p", "print", "p .x", "p x.", "p x..y", "p x .y", "p x. y", "p items[3]", "p answer + 1",
-      "p point()", "p 42", "p point.2x",
+      "p", "print", "p .x", "p x.", "p x..y", "p x .y", "p x. y", "p answer + 1",
+      "p point()", "p 42", "p point.2x", "p arr[]", "p arr[-1]", "p arr[+1]", "p arr[ 1]",
+      "p arr[1 ]", "p arr[1", "p arr1]", "p arr[1]tail", "p arr[999999999999999999999999999999999999999999]",
+      "p arr[0].0", "p arr[0]..x", "p arr[0].", "p arr [0]", "p arr[0] x",
     ] {
     assert_true(registry.parse_line(invalid) is RegistryInvalid(_), msg=invalid)
   }
@@ -219,8 +232,21 @@ test "print spec accepts variables and struct field paths only" {
   assert_eq(path.root_name(), "line")
   assert_true(path.steps() is [@moondbg.Field("start"), @moondbg.Field("x")])
   assert_eq(path.display_name(), "line.start.x")
+  guard parse_variable_path("lines[000].start[12].x") is Some(mixed) else {
+    fail("a valid mixed path should be structured")
+  }
+  assert_true(
+    mixed.steps()
+    is [
+      @moondbg.Index(0),
+      @moondbg.Field("start"),
+      @moondbg.Index(12),
+      @moondbg.Field("x"),
+    ],
+  )
+  assert_eq(mixed.display_name(), "lines[0].start[12].x")
   assert_eq(command.usage, "print <path>")
-  assert_eq(command.summary, "Show a variable or struct field path")
+  assert_eq(command.summary, "Show a variable, field, or indexed element path")
 }
 
 ///|
@@ -243,8 +269,13 @@ async test "P7 print and p call the session and return variable events" {
     fail("p should send the complete field path to the session")
   }
   assert_eq(variable.name(), "line.start.x")
-  assert_eq(backend.lookups, 3)
-  assert_eq(backend.last_name, Some("line.start.x"))
+  let indexed = execute_framework_command(context, "p lines[0].start.x")
+  guard indexed.events is [VariablePresentation(variable)] else {
+    fail("p should send the complete mixed path to the session")
+  }
+  assert_eq(variable.name(), "lines[0].start.x")
+  assert_eq(backend.lookups, 4)
+  assert_eq(backend.last_name, Some("lines[0].start.x"))
 }
 
 ///|
@@ -286,6 +317,34 @@ async test "print returns structured lookup failures and operation-not-allowed e
           "value",
           Some("Double")
         )
+      ),
+    ],
+  )
+  let (_, non_collection_context) = stopped_observation_context(
+    ObservationVariableNonCollection,
+  )
+  let non_collection = execute_framework_command(
+    non_collection_context, "p point[0]",
+  )
+  assert_true(
+    non_collection.events
+    is [
+      VariableLookupFailurePresentation(
+        @moondbg.VariableIndexAccessOnNonCollection("point", 0, Some("Point"))
+      ),
+    ],
+  )
+  let (_, out_of_bounds_context) = stopped_observation_context(
+    ObservationVariableIndexOutOfBounds,
+  )
+  let out_of_bounds = execute_framework_command(
+    out_of_bounds_context, "p arr[3]",
+  )
+  assert_true(
+    out_of_bounds.events
+    is [
+      VariableLookupFailurePresentation(
+        @moondbg.VariableIndexOutOfBounds("arr", 3, 3)
       ),
     ],
   )
@@ -351,6 +410,26 @@ test "variable lookup failures render stable MoonBit-oriented messages" {
       ),
     ),
     "Cannot access field 'value' because 'point.x' is not a struct.",
+  )
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(
+        @moondbg.VariableLookupResult::index_access_on_non_collection(
+          "point",
+          0,
+          Some("Point"),
+        ),
+      ),
+    ),
+    "Cannot access index 0 because 'point' is not an Array or FixedArray.",
+  )
+  assert_eq(
+    variable_lookup_failure_message(
+      test_lookup_failure(
+        @moondbg.VariableLookupResult::index_out_of_bounds("arr", 3, 3),
+      ),
+    ),
+    "Index 3 is out of bounds for 'arr' with length 3.",
   )
   assert_eq(
     variable_lookup_failure_message(

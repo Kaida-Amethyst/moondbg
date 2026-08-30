@@ -414,8 +414,9 @@ pub fn VariableSnapshot::content(self : VariableSnapshot) -> VariableContent {
 
 ///|
 /// One backend-independent step in a variable lookup path.
-pub enum VariablePathStep {
+pub(all) enum VariablePathStep {
   Field(String)
+  Index(Int)
 } derive(Eq, Debug)
 
 ///|
@@ -446,11 +447,20 @@ pub fn VariablePath::root(root : String) -> VariablePath {
 }
 
 ///|
+/// Creates a variable path from an ordered sequence of field and index steps.
+pub fn VariablePath::new(
+  root : String,
+  steps : Array[VariablePathStep],
+) -> VariablePath {
+  { root, steps: steps.copy(), }
+}
+
+///|
 pub fn VariablePath::with_fields(
   root : String,
   fields : Array[String],
 ) -> VariablePath {
-  { root, steps: fields.map(field => Field(field)), }
+  VariablePath::new(root, fields.map(field => Field(field)))
 }
 
 ///|
@@ -467,13 +477,22 @@ pub fn VariablePath::steps(
 
 ///|
 pub fn VariablePath::display_name(self : VariablePath) -> String {
-  guard self.steps is [_, ..] else { return self.root }
-  let fields = self.steps.map(step => {
+  let output = StringBuilder(size_hint=self.root.length() + self.steps.length())
+  output.write_string(self.root)
+  for step in self.steps {
     match step {
-      Field(field) => field
+      Field(field) => {
+        output.write_char('.')
+        output.write_string(field)
+      }
+      Index(index) => {
+        output.write_char('[')
+        output.write_string(index.to_string())
+        output.write_char(']')
+      }
     }
-  })
-  "\{self.root}.\{fields.join(".")}"
+  }
+  output.to_string()
 }
 
 ///|
@@ -482,6 +501,8 @@ pub enum VariableLookupFailure {
   VariableRootNotFound(String)
   VariableFieldNotFound(String, String)
   VariableFieldAccessOnNonStruct(String, String, String?)
+  VariableIndexAccessOnNonCollection(String, Int, String?)
+  VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
 } derive(Eq, Debug)
 
@@ -499,6 +520,8 @@ pub fn VariableLookupFailure::requested_path(
     VariableRootNotFound(root) => root
     VariableFieldNotFound(owner, field) => "\{owner}.\{field}"
     VariableFieldAccessOnNonStruct(owner, field, _) => "\{owner}.\{field}"
+    VariableIndexAccessOnNonCollection(owner, index, _) => "\{owner}[\{index}]"
+    VariableIndexOutOfBounds(owner, index, _) => "\{owner}[\{index}]"
     VariableUnavailable(path) => path
   }
 }
@@ -542,6 +565,26 @@ pub fn VariableLookupResult::field_access_on_non_struct(
   type_name : String?,
 ) -> VariableLookupResult {
   VariableLookupFailed(VariableFieldAccessOnNonStruct(owner, field, type_name))
+}
+
+///|
+pub fn VariableLookupResult::index_access_on_non_collection(
+  owner : String,
+  index : Int,
+  type_name : String?,
+) -> VariableLookupResult {
+  VariableLookupFailed(
+    VariableIndexAccessOnNonCollection(owner, index, type_name),
+  )
+}
+
+///|
+pub fn VariableLookupResult::index_out_of_bounds(
+  owner : String,
+  index : Int,
+  total_length : Int,
+) -> VariableLookupResult {
+  VariableLookupFailed(VariableIndexOutOfBounds(owner, index, total_length))
 }
 
 ///|

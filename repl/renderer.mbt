@@ -198,7 +198,14 @@ fn moonbit_variable_type_name(type_name : StringView) -> String {
     "int64_t" => "Int64"
     "uint64_t" => "UInt64"
     _ => {
-      let base = type_name.strip_suffix(" &").unwrap_or(type_name)
+      let base : StringView = match type_name.strip_suffix(" &") {
+        Some(base) => base
+        None =>
+          match type_name.strip_suffix(" *") {
+            Some(base) => base
+            None => type_name
+          }
+      }
       match base.rev_split_once("/") {
         Some((package_name, source_name)) if package_name != "" &&
           source_name != "" => source_name.to_owned()
@@ -396,6 +403,10 @@ fn variable_lookup_failure_message(
       "Field '\{field}' was not found in '\{owner}'."
     @moondbg.VariableFieldAccessOnNonStruct(owner, field, _) =>
       "Cannot access field '\{field}' because '\{owner}' is not a struct."
+    @moondbg.VariableIndexAccessOnNonCollection(owner, index, _) =>
+      "Cannot access index \{index} because '\{owner}' is not an Array or FixedArray."
+    @moondbg.VariableIndexOutOfBounds(owner, index, total_length) =>
+      "Index \{index} is out of bounds for '\{owner}' with length \{total_length}."
     @moondbg.VariableUnavailable(path) =>
       "Variable '\{path}' is unavailable at the current location."
   }

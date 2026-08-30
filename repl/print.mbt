@@ -25,21 +25,81 @@ fn is_variable_path_segment(segment : StringView) -> Bool {
 }
 
 ///|
+priv struct VariablePathCursor {
+  bytes : Bytes
+  mut offset : Int
+}
+
+///|
+fn VariablePathCursor::new(input : StringView) -> VariablePathCursor {
+  { bytes: @utf8.encode(input), offset: 0, }
+}
+
+///|
+fn VariablePathCursor::peek(self : VariablePathCursor) -> Byte? {
+  self.bytes.get(self.offset)
+}
+
+///|
+fn VariablePathCursor::is_at_end(self : VariablePathCursor) -> Bool {
+  self.offset == self.bytes.length()
+}
+
+///|
+fn VariablePathCursor::take_identifier(self : VariablePathCursor) -> String? {
+  let start = self.offset
+  while self.peek() is Some(byte) &&
+        byte != b'.' &&
+        byte != b'[' &&
+        byte != b']' {
+    self.offset += 1
+  }
+  guard start < self.offset else { return None }
+  let segment = @utf8.decode(self.bytes[start:self.offset].to_owned()) catch {
+    _ => return None
+  }
+  guard is_variable_path_segment(segment) else { return None }
+  Some(segment)
+}
+
+///|
+fn VariablePathCursor::take_index(self : VariablePathCursor) -> Int? {
+  guard self.peek() == Some(b'[') else { return None }
+  self.offset += 1
+  let start = self.offset
+  while self.peek() is Some(byte) && byte >= b'0' && byte <= b'9' {
+    self.offset += 1
+  }
+  guard start < self.offset && self.peek() == Some(b']') else { return None }
+  let digits = @utf8.decode(self.bytes[start:self.offset].to_owned()) catch {
+    _ => return None
+  }
+  self.offset += 1
+  let parsed = Some(@string.parse_int(digits, base=10)) catch { _ => None }
+  guard parsed is Some(index) && index >= 0 else { return None }
+  Some(index)
+}
+
+///|
 fn parse_variable_path(arguments : StringView) -> @moondbg.VariablePath? {
-  let segments : Array[String] = arguments
-    .to_owned()
-    .split(".")
-    .map(segment => segment.to_owned())
-    .collect()
-  guard segments.length() > 0 else { return None }
-  for segment in segments {
-    guard is_variable_path_segment(segment) else { return None }
+  let cursor = VariablePathCursor::new(arguments)
+  guard cursor.take_identifier() is Some(root) else { return None }
+  let steps : Array[@moondbg.VariablePathStep] = []
+  while !cursor.is_at_end() {
+    match cursor.peek() {
+      Some(b'.') => {
+        cursor.offset += 1
+        guard cursor.take_identifier() is Some(field) else { return None }
+        steps.push(@moondbg.Field(field))
+      }
+      Some(b'[') => {
+        guard cursor.take_index() is Some(index) else { return None }
+        steps.push(@moondbg.Index(index))
+      }
+      _ => return None
+    }
   }
-  let fields : Array[String] = []
-  for index in 1..<segments.length() {
-    fields.push(segments[index])
-  }
-  Some(@moondbg.VariablePath::with_fields(segments[0], fields))
+  Some(@moondbg.VariablePath::new(root, steps))
 }
 
 ///|
@@ -51,7 +111,9 @@ fn parse_print_command(
     return invalid_command("print requires a variable path")
   }
   guard parse_variable_path(arguments) is Some(path) else {
-    return invalid_command("print only accepts a variable or struct field path")
+    return invalid_command(
+      "print only accepts variable paths with fields and non-negative indices",
+    )
   }
   parsed_command(CommandPrint::{ path, })
 }
@@ -62,7 +124,7 @@ fn print_command_spec() -> CommandSpec {
     "print",
     ["p"],
     "print <path>",
-    "Show a variable or struct field path",
+    "Show a variable, field, or indexed element path",
     parse_print_command,
   )
 }

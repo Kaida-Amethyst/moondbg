@@ -322,12 +322,19 @@ priv struct StopVariableCache {
   mut epoch : Int
   mut scopes : Array[DapScope]?
   variables : Map[Int, Array[DapVariable]]
+  evaluated_variables : Map[String, DapVariable]
   snapshots : Map[String, @moondbg.VariableSnapshot]
 }
 
 ///|
 fn StopVariableCache::new() -> StopVariableCache {
-  { epoch: 0, scopes: None, variables: Map([]), snapshots: Map([]), }
+  {
+    epoch: 0,
+    scopes: None,
+    variables: Map([]),
+    evaluated_variables: Map([]),
+    snapshots: Map([]),
+  }
 }
 
 ///|
@@ -335,6 +342,7 @@ fn StopVariableCache::reset(self : StopVariableCache, epoch : Int) -> Unit {
   self.epoch = epoch
   self.scopes = None
   self.variables.clear()
+  self.evaluated_variables.clear()
   self.snapshots.clear()
 }
 
@@ -397,6 +405,27 @@ fn StopVariableCache::store_variables(
 ) -> Unit {
   guard self.epoch == epoch else { return }
   self.variables.set(reference, variables)
+}
+
+///|
+fn StopVariableCache::cached_evaluated_variable(
+  self : StopVariableCache,
+  epoch : Int,
+  key : String,
+) -> DapVariable? {
+  guard self.epoch == epoch else { return None }
+  self.evaluated_variables.get(key)
+}
+
+///|
+fn StopVariableCache::store_evaluated_variable(
+  self : StopVariableCache,
+  epoch : Int,
+  key : String,
+  variable : DapVariable,
+) -> Unit {
+  guard self.epoch == epoch else { return }
+  self.evaluated_variables.set(key, variable)
 }
 
 ///|
@@ -466,6 +495,49 @@ fn parse_variable(json : Json) -> DapVariable? {
 fn parse_variables(body : Json) -> Array[DapVariable]? {
   guard body is { "variables": Array(items), .. } else { return None }
   Some(items.filter_map(parse_variable))
+}
+
+///|
+fn normalize_indexed_element_type(type_name : String) -> String {
+  let trimmed = type_name.trim()
+  guard trimmed.strip_suffix(" *") is Some(base) &&
+    base.rev_split_once("/") is Some((package_name, source_name)) &&
+    package_name != "" &&
+    source_name != "" else {
+    return trimmed.to_owned()
+  }
+  "\{base} &"
+}
+
+///|
+fn parse_indexed_element_evaluate_response(
+  body : Json,
+  name : String,
+) -> DapVariable raise DapSessionError {
+  guard body is Object(object) &&
+    object.get("result") is Some(String(result)) &&
+    object.get("type") is Some(String(type_name)) &&
+    type_name.trim() != "" &&
+    object.get("variablesReference") is Some(Number(reference, ..)) &&
+    reference.to_int() >= 0 else {
+    raise InvalidIndexedElementValue(
+      "lldb-dap returned an incomplete indexed element",
+    )
+  }
+  match object.get("memoryReference") {
+    None | Some(String(_)) => ()
+    Some(_) =>
+      raise InvalidIndexedElementValue(
+        "lldb-dap returned a malformed indexed element memory reference",
+      )
+  }
+  {
+    name,
+    value: result,
+    type_name: Some(normalize_indexed_element_type(type_name)),
+    variables_reference: reference.to_int(),
+    evaluate_name: None,
+  }
 }
 
 ///|
@@ -573,13 +645,21 @@ fn indexed_scalar_elements(
 }
 
 ///|
-async fn DebugExecution::materialize_native_indexed_collection(
+priv struct DapIndexedCollectionLayout {
+  kind : @moondbg.IndexedCollectionKind
+  body : DapVariable
+  element_type : @runtime_value.NativeArrayElementType
+  payload_pointer : NativePayloadPointer
+  total_length : Int
+}
+
+///|
+async fn DebugExecution::load_native_indexed_collection_layout(
   self : DebugExecution,
-  variable : DapVariable,
   kind : @moondbg.IndexedCollectionKind,
   body : DapVariable,
   logical_length : Int?,
-) -> @moondbg.VariableSnapshot {
+) -> DapIndexedCollectionLayout {
   guard body.type_name is Some(pointer_type) &&
     @runtime_value.native_array_element_from_pointer_type(pointer_type)
     is Some(element_type) else {
@@ -587,96 +667,45 @@ async fn DebugExecution::materialize_native_indexed_collection(
       "\{kind.source_name()} has no typed body pointer",
     )
   }
-  let element_type_name = element_type.source_name()
   guard parse_native_payload_pointer(body.value) is Some(payload_pointer) else {
     raise InvalidIndexedCollectionValue(
       "\{kind.source_name()} body has malformed payload pointer '\{body.value}'",
     )
   }
-  if payload_pointer is NullPayloadPointer {
-    match logical_length {
-      Some(length) =>
-        @runtime_value.validate_array_length(length, 0) catch {
-          error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
-        }
-      None => ()
+  let capacity = match payload_pointer {
+    NullPayloadPointer => 0
+    PayloadPointer(memory_reference) => {
+      let header = self.read_memory(
+        memory_reference,
+        @runtime_value.NATIVE_ARRAY_HEADER_OFFSET,
+        @runtime_value.NATIVE_ARRAY_HEADER_SIZE,
+      )
+      @runtime_value.decode_native_array_capacity(header) catch {
+        error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
+      }
     }
-    let collection = @moondbg.IndexedCollectionSnapshot::new(
-      kind,
-      element_type_name,
-      0,
-      [],
-    )
-    return @moondbg.VariableSnapshot::indexed_collection(
-      variable.name,
-      variable.value,
-      variable.type_name,
-      collection,
-    )
-  }
-  guard payload_pointer is PayloadPointer(memory_reference) else {
-    raise InvalidIndexedCollectionValue(
-      "\{kind.source_name()} payload pointer was unexpectedly null",
-    )
-  }
-  let header = self.read_memory(
-    memory_reference,
-    @runtime_value.NATIVE_ARRAY_HEADER_OFFSET,
-    @runtime_value.NATIVE_ARRAY_HEADER_SIZE,
-  )
-  let capacity = @runtime_value.decode_native_array_capacity(header) catch {
-    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
   }
   let total_length = logical_length.unwrap_or(capacity)
   @runtime_value.validate_array_length(total_length, capacity) catch {
     error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
   }
-  let plan = @runtime_value.IndexedPreviewPlan::new(total_length) catch {
-    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
+  { kind, body, element_type, payload_pointer, total_length, }
+}
+
+///|
+async fn DebugExecution::load_fixed_array_layout(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> DapIndexedCollectionLayout {
+  let children = self.load_variables(epoch, variable.variables_reference)
+  guard children.named_child("body") is Some(body) else {
+    raise InvalidIndexedCollectionValue("FixedArray has no body field")
   }
-  let elements : Array[@moondbg.IndexedVariableElement] = []
-  match element_type {
-    @runtime_value.NativeArrayScalar(scalar) => {
-      let width = scalar.byte_width()
-      if plan.head_count() > 0 {
-        let count = plan.head_count() * width
-        let payload = self.read_memory(memory_reference, 0, count)
-        elements.push_iter(
-          indexed_scalar_elements(scalar, 0, payload, plan.head_count()).iter(),
-        )
-      }
-      if plan.tail_index() is Some(tail_index) {
-        let offset = plan.tail_byte_offset(width) catch {
-          error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
-        }
-        guard offset is Some(offset) else {
-          raise InvalidIndexedCollectionValue(
-            "\{kind.source_name()} preview lost its tail offset",
-          )
-        }
-        let payload = self.read_memory(memory_reference, offset, width)
-        elements.push_iter(
-          indexed_scalar_elements(scalar, tail_index, payload, 1).iter(),
-        )
-      }
-    }
-    @runtime_value.NativeArrayOpaque(_) => {
-      for index in 0..<plan.head_count() {
-        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
-      }
-      if plan.tail_index() is Some(index) {
-        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
-      }
-    }
-  }
-  let collection = @moondbg.IndexedCollectionSnapshot::new(
-    kind, element_type_name, total_length, elements,
-  )
-  @moondbg.VariableSnapshot::indexed_collection(
-    variable.name,
-    variable.value,
-    variable.type_name,
-    collection,
+  self.load_native_indexed_collection_layout(
+    @moondbg.FixedArrayCollection,
+    body,
+    None,
   )
 }
 
@@ -692,29 +721,11 @@ fn parse_array_logical_length(variable : DapVariable) -> Int? {
 }
 
 ///|
-async fn DebugExecution::materialize_fixed_array(
+async fn DebugExecution::load_array_layout(
   self : DebugExecution,
   epoch : Int,
   variable : DapVariable,
-) -> @moondbg.VariableSnapshot {
-  let children = self.load_variables(epoch, variable.variables_reference)
-  guard children.named_child("body") is Some(body) else {
-    raise InvalidIndexedCollectionValue("FixedArray has no body field")
-  }
-  self.materialize_native_indexed_collection(
-    variable,
-    @moondbg.FixedArrayCollection,
-    body,
-    None,
-  )
-}
-
-///|
-async fn DebugExecution::materialize_array(
-  self : DebugExecution,
-  epoch : Int,
-  variable : DapVariable,
-) -> @moondbg.VariableSnapshot {
+) -> DapIndexedCollectionLayout {
   let children = self.load_variables(epoch, variable.variables_reference)
   guard children.named_child("buf") is Some(buffer) &&
     buffer.is_available() &&
@@ -732,12 +743,198 @@ async fn DebugExecution::materialize_array(
   guard buffer_children.named_child("body") is Some(body) else {
     raise InvalidIndexedCollectionValue("Array buffer has no body field")
   }
-  self.materialize_native_indexed_collection(
-    variable,
+  self.load_native_indexed_collection_layout(
     @moondbg.ArrayCollection,
     body,
     Some(logical_length),
   )
+}
+
+///|
+async fn DebugExecution::load_indexed_collection_layout(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> DapIndexedCollectionLayout? {
+  if variable.is_moonbit_array_candidate() {
+    return Some(self.load_array_layout(epoch, variable))
+  }
+  if variable.is_moonbit_fixed_array_candidate() {
+    return Some(self.load_fixed_array_layout(epoch, variable))
+  }
+  None
+}
+
+///|
+async fn DebugExecution::resolve_indexed_element(
+  self : DebugExecution,
+  epoch : Int,
+  frame_id : Int,
+  owner : String,
+  index : Int,
+  variable : DapVariable,
+) -> DapVariableResolution {
+  guard variable.is_moonbit_array_candidate() ||
+    variable.is_moonbit_fixed_array_candidate() else {
+    return DapVariableResolutionFailed(
+      @moondbg.VariableLookupResult::index_access_on_non_collection(
+        owner,
+        index,
+        variable.type_name,
+      ),
+    )
+  }
+  let element_name = "\{owner}[\{index}]"
+  let cache_key = "\{frame_id}:\{element_name}"
+  if self.variable_cache.cached_evaluated_variable(epoch, cache_key)
+    is Some(cached) {
+    return DapVariableResolved(cached)
+  }
+  guard self.load_indexed_collection_layout(epoch, variable) is Some(layout) else {
+    return DapVariableResolutionFailed(
+      @moondbg.VariableLookupResult::index_access_on_non_collection(
+        owner,
+        index,
+        variable.type_name,
+      ),
+    )
+  }
+  guard index >= 0 && index < layout.total_length else {
+    return DapVariableResolutionFailed(
+      @moondbg.VariableLookupResult::index_out_of_bounds(
+        owner,
+        index,
+        layout.total_length,
+      ),
+    )
+  }
+  guard layout.body.evaluate_name is Some(evaluate_name) &&
+    evaluate_name.trim() != "" else {
+    raise InvalidIndexedElementValue(
+      "\{layout.kind.source_name()} body has no evaluateName for indexed access",
+    )
+  }
+  let expression = "\{evaluate_name}[\{index}]"
+  let response = self.request("evaluate", {
+    "expression": expression,
+    "frameId": frame_id,
+    "context": "watch",
+  }) catch {
+    error =>
+      raise InvalidIndexedElementValue(
+        "lldb-dap could not evaluate indexed element: \{@debug.to_string(error)}",
+      )
+  }
+  let evaluated = parse_indexed_element_evaluate_response(
+    response.body(),
+    element_name,
+  )
+  guard evaluated.is_available() else {
+    raise InvalidIndexedElementValue(
+      "indexed element '\{element_name}' is unavailable at the current location",
+    )
+  }
+  guard !evaluated.is_moonbit_struct_type() || evaluated.variables_reference > 0 else {
+    raise InvalidIndexedElementValue(
+      "indexed element '\{element_name}' has no expandable value",
+    )
+  }
+  if evaluated.variables_reference > 0 {
+    self.machine.remember_variable_reference(evaluated.variables_reference)
+  }
+  self.variable_cache.store_evaluated_variable(epoch, cache_key, evaluated)
+  DapVariableResolved(evaluated)
+}
+
+///|
+async fn DebugExecution::materialize_indexed_collection(
+  self : DebugExecution,
+  variable : DapVariable,
+  layout : DapIndexedCollectionLayout,
+) -> @moondbg.VariableSnapshot {
+  let element_type_name = layout.element_type.source_name()
+  let total_length = layout.total_length
+  let plan = @runtime_value.IndexedPreviewPlan::new(total_length) catch {
+    error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
+  }
+  let elements : Array[@moondbg.IndexedVariableElement] = []
+  match layout.element_type {
+    @runtime_value.NativeArrayScalar(scalar) =>
+      match layout.payload_pointer {
+        NullPayloadPointer => {
+          guard total_length == 0 else {
+            raise InvalidIndexedCollectionValue(
+              "\{layout.kind.source_name()} has a null non-empty payload",
+            )
+          }
+        }
+        PayloadPointer(memory_reference) => {
+          let width = scalar.byte_width()
+          if plan.head_count() > 0 {
+            let count = plan.head_count() * width
+            let payload = self.read_memory(memory_reference, 0, count)
+            elements.push_iter(
+              indexed_scalar_elements(scalar, 0, payload, plan.head_count()).iter(),
+            )
+          }
+          if plan.tail_index() is Some(tail_index) {
+            let offset = plan.tail_byte_offset(width) catch {
+              error =>
+                raise InvalidIndexedCollectionValue(@debug.to_string(error))
+            }
+            guard offset is Some(offset) else {
+              raise InvalidIndexedCollectionValue(
+                "\{layout.kind.source_name()} preview lost its tail offset",
+              )
+            }
+            let payload = self.read_memory(memory_reference, offset, width)
+            elements.push_iter(
+              indexed_scalar_elements(scalar, tail_index, payload, 1).iter(),
+            )
+          }
+        }
+      }
+    @runtime_value.NativeArrayOpaque(_) => {
+      for index in 0..<plan.head_count() {
+        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
+      }
+      if plan.tail_index() is Some(index) {
+        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
+      }
+    }
+  }
+  let collection = @moondbg.IndexedCollectionSnapshot::new(
+    layout.kind,
+    element_type_name,
+    total_length,
+    elements,
+  )
+  @moondbg.VariableSnapshot::indexed_collection(
+    variable.name,
+    variable.value,
+    variable.type_name,
+    collection,
+  )
+}
+
+///|
+async fn DebugExecution::materialize_fixed_array(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> @moondbg.VariableSnapshot {
+  let layout = self.load_fixed_array_layout(epoch, variable)
+  self.materialize_indexed_collection(variable, layout)
+}
+
+///|
+async fn DebugExecution::materialize_array(
+  self : DebugExecution,
+  epoch : Int,
+  variable : DapVariable,
+) -> @moondbg.VariableSnapshot {
+  let layout = self.load_array_layout(epoch, variable)
+  self.materialize_indexed_collection(variable, layout)
 }
 
 ///|
@@ -992,46 +1189,59 @@ async fn DebugExecution::resolve_variable_path(
   }
   let mut owner = path.root_name()
   for step in path.steps() {
-    let @moondbg.Field(field) = step
-    guard variable.is_moonbit_struct_type() else {
-      return DapVariableResolutionFailed(
-        @moondbg.VariableLookupResult::field_access_on_non_struct(
-          owner,
-          field,
-          variable.type_name,
-        ),
-      )
-    }
-    guard variable.variables_reference > 0 else {
-      return DapVariableResolutionFailed(
-        @moondbg.VariableLookupResult::field_not_found(owner, field),
-      )
-    }
-    let children = self.load_variables(epoch, variable.variables_reference)
-    match detect_dap_enum_layout(children) {
-      DapEnum(_) =>
-        return DapVariableResolutionFailed(
-          @moondbg.VariableLookupResult::field_access_on_non_struct(
-            owner,
-            field,
-            variable.type_name,
-          ),
-        )
-      NotDapEnum => ()
-    }
-    match children.select_field_variable(field) {
-      DapVariableSelected(child) => {
-        variable = child
-        owner = "\{owner}.\{field}"
+    match step {
+      @moondbg.Field(field) => {
+        guard variable.is_moonbit_struct_type() else {
+          return DapVariableResolutionFailed(
+            @moondbg.VariableLookupResult::field_access_on_non_struct(
+              owner,
+              field,
+              variable.type_name,
+            ),
+          )
+        }
+        guard variable.variables_reference > 0 else {
+          return DapVariableResolutionFailed(
+            @moondbg.VariableLookupResult::field_not_found(owner, field),
+          )
+        }
+        let children = self.load_variables(epoch, variable.variables_reference)
+        match detect_dap_enum_layout(children) {
+          DapEnum(_) =>
+            return DapVariableResolutionFailed(
+              @moondbg.VariableLookupResult::field_access_on_non_struct(
+                owner,
+                field,
+                variable.type_name,
+              ),
+            )
+          NotDapEnum => ()
+        }
+        match children.select_field_variable(field) {
+          DapVariableSelected(child) => {
+            variable = child
+            owner = "\{owner}.\{field}"
+          }
+          DapVariableUnavailable =>
+            return DapVariableResolutionFailed(
+              @moondbg.VariableLookupResult::unavailable("\{owner}.\{field}"),
+            )
+          DapVariableMissing =>
+            return DapVariableResolutionFailed(
+              @moondbg.VariableLookupResult::field_not_found(owner, field),
+            )
+        }
       }
-      DapVariableUnavailable =>
-        return DapVariableResolutionFailed(
-          @moondbg.VariableLookupResult::unavailable("\{owner}.\{field}"),
-        )
-      DapVariableMissing =>
-        return DapVariableResolutionFailed(
-          @moondbg.VariableLookupResult::field_not_found(owner, field),
-        )
+      @moondbg.Index(index) =>
+        match
+          self.resolve_indexed_element(epoch, frame_id, owner, index, variable) {
+          DapVariableResolved(element) => {
+            variable = element
+            owner = "\{owner}[\{index}]"
+          }
+          DapVariableResolutionFailed(result) =>
+            return DapVariableResolutionFailed(result)
+        }
     }
   }
   DapVariableResolved({ ..variable, name: path.display_name(), })

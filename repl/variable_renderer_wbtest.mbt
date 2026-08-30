@@ -43,6 +43,28 @@ test "struct variable renderer uses MoonBit names and stable nesting" {
 }
 
 ///|
+test "indexed struct pointer rendering keeps the source-facing Point type" {
+  let point = @moondbg.VariableSnapshot::expanded(
+    "arr[0]",
+    "0x1010",
+    Some("example/geometry/Point *"),
+    [
+      @moondbg.VariableSnapshot::new("x", "1", Some("double")),
+      @moondbg.VariableSnapshot::new("y", "2", Some("double")),
+    ],
+  )
+  inspect(
+    variable_lines(point).join("\n"),
+    content=(
+      #|arr[0]: Point = {
+      #|  x: Double = 1
+      #|  y: Double = 2
+      #|}
+    ),
+  )
+}
+
+///|
 test "struct variable renderer represents empty and truncated structures" {
   let root = @moondbg.VariableSnapshot::expanded(
     "root",

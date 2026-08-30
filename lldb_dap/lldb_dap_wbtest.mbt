@@ -828,6 +828,378 @@ fn array_double_variable_script() -> Array[@dap_testkit.ScriptedInput] {
 }
 
 ///|
+fn indexed_path_variable_script() -> Array[@dap_testkit.ScriptedInput] {
+  let scopes : Json = {
+    "scopes": [
+      {
+        "name": "Locals",
+        "presentationHint": "locals",
+        "variablesReference": 500,
+      },
+    ],
+  }
+  let roots : Json = {
+    "variables": [
+      {
+        "name": "arr",
+        "type": "moonbitlang/core/builtin/Array[example/geometry/Point] &",
+        "value": "0x5000",
+        "variablesReference": 501,
+      },
+      {
+        "name": "lines",
+        "type": "moonbitlang/core/builtin/Array[example/geometry/Line] &",
+        "value": "0x6000",
+        "variablesReference": 502,
+      },
+      {
+        "name": "ints",
+        "type": "FixedArray[Int]",
+        "value": "FixedArray[Int] @ 0x7000",
+        "variablesReference": 503,
+      },
+      {
+        "name": "point",
+        "type": "example/geometry/Point &",
+        "value": "0x8000",
+        "variablesReference": 504,
+      },
+      {
+        "name": "box",
+        "type": "example/geometry/PointBox &",
+        "value": "0x9000",
+        "variablesReference": 505,
+      },
+      {
+        "name": "empty",
+        "type": "moonbitlang/core/builtin/Array[example/geometry/Point] &",
+        "value": "0xa000",
+        "variablesReference": 506,
+      },
+    ],
+  }
+  let arr_children : Json = {
+    "variables": [
+      {
+        "name": "buf",
+        "type": "FixedArray[UnsafeMaybeUninit[Point]]",
+        "value": "FixedArray @ 0x1000",
+        "variablesReference": 511,
+      },
+      { "name": "len", "type": "int", "value": "3", "variablesReference": 0 },
+    ],
+  }
+  let arr_buffer : Json = {
+    "variables": [
+      {
+        "name": "body",
+        "type": "example/geometry/Point **",
+        "value": "0x1000",
+        "evaluateName": "adapter.arr.body",
+        "memoryReference": "0xdead1000",
+        "variablesReference": 0,
+      },
+    ],
+  }
+  let point_fields : Json = {
+    "variables": [
+      { "name": "x", "type": "double", "value": "1", "variablesReference": 0 },
+      { "name": "y", "type": "double", "value": "2", "variablesReference": 0 },
+    ],
+  }
+  [
+    scripted_response(2000, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+      "supportsSteppingGranularity": true,
+    }),
+    scripted_event(2001, "initialized", {}),
+    scripted_response(2002, 3, "configurationDone", {}),
+    scripted_response(2003, 2, "launch", {}),
+    scripted_event(2004, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(2005, 4, "stackTrace", scripted_stack_body(140, 25)),
+    scripted_response(2006, 5, "scopes", scopes),
+    scripted_response(2007, 6, "variables", roots),
+    scripted_response(2008, 7, "variables", arr_children),
+    scripted_response(2009, 8, "variables", arr_buffer),
+    scripted_response(2010, 9, "readMemory", { "data": "AAAAAAMAAAA=" }),
+    scripted_response(2011, 10, "evaluate", {
+      "result": "0x1010",
+      "type": "example/geometry/Point *",
+      "variablesReference": 520,
+      "memoryReference": "0x1010",
+    }),
+    scripted_response(2012, 11, "variables", point_fields),
+    scripted_response(2013, 12, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "FixedArray[UnsafeMaybeUninit[Line]]",
+          "value": "FixedArray @ 0x2000",
+          "variablesReference": 521,
+        },
+        { "name": "len", "type": "int", "value": "1", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(2014, 13, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "example/geometry/Line **",
+          "value": "0x2000",
+          "evaluateName": "adapter.lines.body",
+          "memoryReference": "0xdead2000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(2015, 14, "readMemory", { "data": "AAAAAAEAAAA=" }),
+    scripted_response(2016, 15, "evaluate", {
+      "result": "0x2020",
+      "type": "example/geometry/Line *",
+      "variablesReference": 530,
+      "memoryReference": "0x2020",
+    }),
+    scripted_response(2017, 16, "variables", {
+      "variables": [
+        {
+          "name": "start",
+          "type": "example/geometry/Point &",
+          "value": "0x2030",
+          "variablesReference": 531,
+        },
+      ],
+    }),
+    scripted_response(2018, 17, "variables", point_fields),
+    scripted_response(2019, 18, "variables", {
+      "variables": [
+        {
+          "name": "points",
+          "type": "moonbitlang/core/builtin/Array[example/geometry/Point] &",
+          "value": "0x3000",
+          "variablesReference": 541,
+        },
+      ],
+    }),
+    scripted_response(2020, 19, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "FixedArray[UnsafeMaybeUninit[Point]]",
+          "value": "FixedArray @ 0x3000",
+          "variablesReference": 542,
+        },
+        { "name": "len", "type": "int", "value": "1", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(2021, 20, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "example/geometry/Point **",
+          "value": "0x3000",
+          "evaluateName": "trusted.box.body",
+          "memoryReference": "0xdead3000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(2022, 21, "readMemory", { "data": "AAAAAAEAAAA=" }),
+    scripted_response(2023, 22, "evaluate", {
+      "result": "0x3030",
+      "type": "example/geometry/Point *",
+      "variablesReference": 543,
+      "memoryReference": "0x3030",
+    }),
+    scripted_response(2024, 23, "variables", point_fields),
+    scripted_response(2025, 24, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "int *",
+          "value": "0x4000",
+          "evaluateName": "trusted.ints.body",
+          "memoryReference": "0xdead4000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_response(2026, 25, "readMemory", { "data": "AAAAAAMAAAA=" }),
+    scripted_response(2027, 26, "evaluate", {
+      "result": "30",
+      "type": "int",
+      "variablesReference": 0,
+      "memoryReference": "0x4008",
+    }),
+    scripted_response(2028, 27, "readMemory", { "data": "AAAAAAMAAAA=" }),
+    scripted_response(2029, 28, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "FixedArray[UnsafeMaybeUninit[Point]]",
+          "value": "FixedArray @ 0x0",
+          "variablesReference": 551,
+        },
+        { "name": "len", "type": "int", "value": "0", "variablesReference": 0 },
+      ],
+    }),
+    scripted_response(2030, 29, "variables", {
+      "variables": [
+        {
+          "name": "body",
+          "type": "example/geometry/Point **",
+          "value": "0x0000000000000000",
+          "variablesReference": 0,
+        },
+      ],
+    }),
+    scripted_event(2031, "stopped", { "reason": "step", "threadId": 1 }),
+    scripted_response(2032, 30, "next", {}),
+    scripted_response(2033, 31, "stackTrace", scripted_stack_body(141, 26)),
+    scripted_response(2034, 32, "scopes", scopes),
+    scripted_response(2035, 33, "variables", roots),
+    scripted_response(2036, 34, "variables", arr_children),
+    scripted_response(2037, 35, "variables", arr_buffer),
+    scripted_response(2038, 36, "readMemory", { "data": "AAAAAAMAAAA=" }),
+    scripted_response(2039, 37, "evaluate", {
+      "result": "0x1010",
+      "type": "example/geometry/Point *",
+      "variablesReference": 620,
+      "memoryReference": "0x1010",
+    }),
+    scripted_response(2040, 38, "variables", point_fields),
+  ]
+}
+
+///|
+priv enum IndexedPathFailureMode {
+  MissingEvaluateName
+  FailedEvaluate
+  MalformedEvaluate
+  MalformedEvaluateMemoryReference
+  UnavailableEvaluate
+  UnexpandableEvaluate
+}
+
+///|
+fn indexed_path_failure_script(
+  mode : IndexedPathFailureMode,
+) -> Array[@dap_testkit.ScriptedInput] {
+  let script = [
+    scripted_response(2100, 1, "initialize", {
+      "supportsConfigurationDoneRequest": true,
+      "supportsReadMemoryRequest": true,
+    }),
+    scripted_event(2101, "initialized", {}),
+    scripted_response(2102, 3, "configurationDone", {}),
+    scripted_response(2103, 2, "launch", {}),
+    scripted_event(2104, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+    scripted_response(2105, 4, "stackTrace", scripted_stack_body(150, 25)),
+    scripted_response(2106, 5, "scopes", {
+      "scopes": [
+        {
+          "name": "Locals",
+          "presentationHint": "locals",
+          "variablesReference": 700,
+        },
+      ],
+    }),
+    scripted_response(2107, 6, "variables", {
+      "variables": [
+        {
+          "name": "arr",
+          "type": "moonbitlang/core/builtin/Array[example/Point] &",
+          "value": "0x5000",
+          "variablesReference": 701,
+        },
+      ],
+    }),
+    scripted_response(2108, 7, "variables", {
+      "variables": [
+        {
+          "name": "buf",
+          "type": "FixedArray[UnsafeMaybeUninit[Point]]",
+          "value": "FixedArray @ 0x5000",
+          "variablesReference": 702,
+        },
+        { "name": "len", "type": "int", "value": "1", "variablesReference": 0 },
+      ],
+    }),
+  ]
+  let body : Json = match mode {
+    MissingEvaluateName =>
+      {
+        "variables": [
+          {
+            "name": "body",
+            "type": "example/Point **",
+            "value": "0x5000",
+            "variablesReference": 0,
+          },
+        ],
+      }
+    _ =>
+      {
+        "variables": [
+          {
+            "name": "body",
+            "type": "example/Point **",
+            "value": "0x5000",
+            "evaluateName": "adapter.failure.body",
+            "variablesReference": 0,
+          },
+        ],
+      }
+  }
+  script.push(scripted_response(2109, 8, "variables", body))
+  script.push(
+    scripted_response(2110, 9, "readMemory", { "data": "AAAAAAEAAAA=" }),
+  )
+  match mode {
+    MissingEvaluateName => ()
+    FailedEvaluate =>
+      script.push(
+        scripted_failed_response(
+          2111, 10, "evaluate", "expression is unavailable",
+        ),
+      )
+    MalformedEvaluate =>
+      script.push(
+        scripted_response(2111, 10, "evaluate", {
+          "result": "0x5010",
+          "variablesReference": 710,
+        }),
+      )
+    MalformedEvaluateMemoryReference =>
+      script.push(
+        scripted_response(2111, 10, "evaluate", {
+          "result": "0x5010",
+          "type": "example/Point *",
+          "variablesReference": 710,
+          "memoryReference": 42,
+        }),
+      )
+    UnavailableEvaluate =>
+      script.push(
+        scripted_response(2111, 10, "evaluate", {
+          "result": "<variable not available>",
+          "type": "example/Point *",
+          "variablesReference": 0,
+        }),
+      )
+    UnexpandableEvaluate =>
+      script.push(
+        scripted_response(2111, 10, "evaluate", {
+          "result": "0x5010",
+          "type": "example/Point *",
+          "variablesReference": 0,
+        }),
+      )
+  }
+  script
+}
+
+///|
 fn boxed_enum_variable_script() -> Array[@dap_testkit.ScriptedInput] {
   [
     scripted_response(1900, 1, "initialize", {
@@ -1989,6 +2361,53 @@ test "lldb-dap scopes exclude register-only lookup and variables retain DAP fiel
 }
 
 ///|
+test "indexed evaluate responses normalize struct pointers and reject malformed protocol" {
+  let evaluated = parse_indexed_element_evaluate_response(
+    {
+      "result": "0x1010",
+      "type": "example/geometry/Point *",
+      "variablesReference": 9,
+      "memoryReference": "0x1010",
+    },
+    "arr[0]",
+  )
+  assert_eq(evaluated.name, "arr[0]")
+  assert_eq(evaluated.value, "0x1010")
+  assert_eq(evaluated.type_name, Some("example/geometry/Point &"))
+  assert_eq(evaluated.variables_reference, 9)
+  assert_eq(evaluated.evaluate_name, None)
+  let missing_reference_rejected = try {
+    parse_indexed_element_evaluate_response(
+      { "result": "1", "type": "int" },
+      "arr[0]",
+    )
+    |> ignore
+    false
+  } catch {
+    InvalidIndexedElementValue(message) => message.contains("incomplete")
+    _ => false
+  }
+  assert_true(missing_reference_rejected)
+  let malformed_memory_rejected = try {
+    parse_indexed_element_evaluate_response(
+      {
+        "result": "1",
+        "type": "int",
+        "variablesReference": 0,
+        "memoryReference": 7,
+      },
+      "arr[0]",
+    )
+    |> ignore
+    false
+  } catch {
+    InvalidIndexedElementValue(message) => message.contains("memory reference")
+    _ => false
+  }
+  assert_true(malformed_memory_rejected)
+}
+
+///|
 test "lldb-dap variable lookup selects the available shadowed local" {
   guard parse_variables({
       "variables": [
@@ -2081,14 +2500,21 @@ test "lldb-dap variable caches are isolated by stop epoch" {
   cache.reset(1)
   cache.store_scopes(1, scopes)
   cache.store_variables(1, 1, variables)
+  cache.store_evaluated_variable(1, "10:arr[0]", variables[0])
   let snapshot = variables[0].snapshot()
   cache.store_snapshot(1, "10:1:answer", snapshot)
   assert_true(cache.cached_scopes(1) is Some(_))
   assert_true(cache.cached_variables(1, 1) is Some(_))
+  guard cache.cached_evaluated_variable(1, "10:arr[0]") is Some(cached) else {
+    fail("the evaluated variable should be cached in its stop epoch")
+  }
+  assert_eq(cached.name, "answer")
+  assert_eq(cached.value, "42")
   assert_eq(cache.cached_snapshot(1, "10:1:answer"), Some(snapshot))
   cache.reset(2)
   assert_true(cache.cached_scopes(1) is None)
   assert_true(cache.cached_variables(1, 1) is None)
+  assert_true(cache.cached_evaluated_variable(1, "10:arr[0]") is None)
   assert_true(cache.cached_snapshot(1, "10:1:answer") is None)
   assert_true(cache.cached_scopes(2) is None)
   cache.store_variables(1, 1, variables)
@@ -2567,6 +2993,238 @@ async test "lldb-dap materializes Array logical values within bounded storage re
       },
     )
   })
+}
+
+///|
+async test "lldb-dap resolves precise Array and FixedArray indices with mixed field paths" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      indexed_path_variable_script(),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/indexed-path-program", backend,
+    )
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(_) else {
+      fail("scripted indexed-path execution should stop")
+    }
+    let arr_element_path = @moondbg.VariablePath::new("arr", [@moondbg.Index(0)])
+    guard session.find_variable(arr_element_path)
+      is @moondbg.VariableFound(point) &&
+      point.content() is @moondbg.VariableStructure(point_structure) &&
+      point_structure.children() is [x, y] else {
+      fail("arr[0] should materialize one complete Point")
+    }
+    assert_eq(point.name(), "arr[0]")
+    assert_eq(point.type_name(), Some("example/geometry/Point &"))
+    assert_eq(x.name(), "x")
+    assert_eq(x.value(), "1")
+    assert_eq(y.name(), "y")
+    assert_eq(y.value(), "2")
+    guard session.find_variable(arr_element_path)
+      is @moondbg.VariableFound(cached_point) else {
+      fail("the exact indexed path should use its snapshot cache")
+    }
+    assert_eq(cached_point, point)
+    guard session.find_variable(
+        @moondbg.VariablePath::new("arr", [
+          @moondbg.Index(0),
+          @moondbg.Field("x"),
+        ]),
+      )
+      is @moondbg.VariableFound(arr_x) else {
+      fail("arr[0].x should continue through variablesReference")
+    }
+    assert_eq(arr_x.name(), "arr[0].x")
+    assert_eq(arr_x.value(), "1")
+
+    guard session.find_variable(
+        @moondbg.VariablePath::new("lines", [
+          @moondbg.Index(0),
+          @moondbg.Field("start"),
+          @moondbg.Field("x"),
+        ]),
+      )
+      is @moondbg.VariableFound(line_x) else {
+      fail("lines[0].start.x should resolve an Index/Field chain")
+    }
+    assert_eq(line_x.name(), "lines[0].start.x")
+    assert_eq(line_x.value(), "1")
+
+    guard session.find_variable(
+        @moondbg.VariablePath::new("box", [
+          @moondbg.Field("points"),
+          @moondbg.Index(0),
+          @moondbg.Field("x"),
+        ]),
+      )
+      is @moondbg.VariableFound(box_x) else {
+      fail("box.points[0].x should resolve a Field/Index/Field chain")
+    }
+    assert_eq(box_x.name(), "box.points[0].x")
+    assert_eq(box_x.value(), "1")
+
+    guard session.find_variable(
+        @moondbg.VariablePath::new("ints", [@moondbg.Index(2)]),
+      )
+      is @moondbg.VariableFound(integer) else {
+      fail("FixedArray scalar indexing should share the exact path resolver")
+    }
+    assert_eq(integer.name(), "ints[2]")
+    assert_eq(integer.type_name(), Some("int"))
+    assert_eq(integer.value(), "30")
+    assert_true(integer.content() is @moondbg.VariableLeaf)
+
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::new("arr", [@moondbg.Index(3)]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableIndexOutOfBounds("arr", 3, 3)
+      ),
+    )
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::new("point", [@moondbg.Index(0)]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableIndexAccessOnNonCollection(
+          "point",
+          0,
+          Some("example/geometry/Point &")
+        )
+      ),
+    )
+    assert_true(
+      session.find_variable(
+        @moondbg.VariablePath::new("empty", [@moondbg.Index(0)]),
+      )
+      is @moondbg.VariableLookupFailed(
+        @moondbg.VariableIndexOutOfBounds("empty", 0, 0)
+      ),
+    )
+
+    guard session.next() is @moondbg.Stopped(_) else {
+      fail("next should establish a new indexed-path stop epoch")
+    }
+    guard session.find_variable(arr_element_path)
+      is @moondbg.VariableFound(next_point) else {
+      fail("the indexed element should be evaluated again after resume")
+    }
+    assert_eq(next_point, point)
+    assert_eq(transport.remaining_inputs(), 0)
+
+    let sent = transport.sent_messages()
+    let evaluations = sent.filter_map(message => {
+      match message {
+        {
+          "command": String("evaluate"),
+          "arguments": {
+            "expression": String(expression),
+            "context": String(context),
+            "frameId": Number(frame_id, ..),
+            ..
+          },
+          ..
+        } => Some((expression, context, frame_id.to_int()))
+        _ => None
+      }
+    })
+    assert_eq(evaluations, [
+      ("adapter.arr.body[0]", "watch", 140),
+      ("adapter.lines.body[0]", "watch", 140),
+      ("trusted.box.body[0]", "watch", 140),
+      ("trusted.ints.body[2]", "watch", 140),
+      ("adapter.arr.body[0]", "watch", 141),
+    ])
+    assert_false(
+      evaluations.any(item => {
+        item.0.contains("box.points") || item.0.contains("arr[0].x")
+      }),
+    )
+  })
+}
+
+///|
+async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new(
+      indexed_path_failure_script(mode),
+    )
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/index-failure-program", backend,
+    )
+    defer session.close()
+    session.run() |> ignore
+    guard backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("scripted index failure should retain one stopped execution")
+    }
+    let message = try {
+      execution.find_variable_inner(
+        epoch,
+        150,
+        @moondbg.VariablePath::new("arr", [@moondbg.Index(0)]),
+      )
+      |> ignore
+      fail("indexed path failure script should reject its element")
+    } catch {
+      InvalidIndexedElementValue(message) => message
+      error => fail("unexpected indexed path error: \{@debug.to_string(error)}")
+    }
+    assert_eq(transport.remaining_inputs(), 0)
+    let evaluate_count = transport
+      .sent_messages()
+      .filter_map(sent_command)
+      .filter(command => command == "evaluate")
+      .length()
+    match mode {
+      MissingEvaluateName => assert_eq(evaluate_count, 0)
+      _ => assert_eq(evaluate_count, 1)
+    }
+    message
+  })
+}
+
+///|
+async test "lldb-dap reports stable indexed evaluate and protocol failures" {
+  let missing_name = indexed_path_failure_message(MissingEvaluateName)
+  assert_true(missing_name.contains("no evaluateName"))
+  let failed = indexed_path_failure_message(FailedEvaluate)
+  assert_true(failed.contains("could not evaluate indexed element"))
+  assert_true(failed.contains("expression is unavailable"))
+  let malformed = indexed_path_failure_message(MalformedEvaluate)
+  assert_true(malformed.contains("incomplete indexed element"))
+  let malformed_memory = indexed_path_failure_message(
+    MalformedEvaluateMemoryReference,
+  )
+  assert_true(malformed_memory.contains("malformed indexed element memory"))
+  let unavailable = indexed_path_failure_message(UnavailableEvaluate)
+  assert_true(unavailable.contains("arr[0]"))
+  assert_true(unavailable.contains("unavailable at the current location"))
+  let unexpandable = indexed_path_failure_message(UnexpandableEvaluate)
+  assert_true(unexpandable.contains("arr[0]"))
+  assert_true(unexpandable.contains("no expandable value"))
 }
 
 ///|

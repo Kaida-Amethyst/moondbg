@@ -50,7 +50,7 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moon debug` 子命令存在。
 
 随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`、`moon debug point`、
-`moon debug fixed_array_int`、`moon debug array_double` 和 `moon debug list`，通过 PTY 完成运行前入口断点、stopped
+`moon debug fixed_array_int`、`moon debug array_double`、`moon debug array_points` 和 `moon debug list`，通过 PTY 完成运行前入口断点、stopped
 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
 struct 递归打印、字段路径逐层查询、查询失败分类、同 stop cache 与跨 stop 失效、
 FixedArray/Array 短值、长值、跨 stop 打印、boxed enum 浅层打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实

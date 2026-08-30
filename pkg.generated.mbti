@@ -293,6 +293,8 @@ pub enum VariableLookupFailure {
   VariableRootNotFound(String)
   VariableFieldNotFound(String, String)
   VariableFieldAccessOnNonStruct(String, String, String?)
+  VariableIndexAccessOnNonCollection(String, Int, String?)
+  VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
 } derive(Eq, @debug.Debug)
 pub fn VariableLookupFailure::equal(Self, Self) -> Bool
@@ -308,6 +310,8 @@ pub fn VariableLookupResult::equal(Self, Self) -> Bool
 pub fn VariableLookupResult::field_access_on_non_struct(String, String, String?) -> Self
 pub fn VariableLookupResult::field_not_found(String, String) -> Self
 pub fn VariableLookupResult::found(VariableSnapshot) -> Self
+pub fn VariableLookupResult::index_access_on_non_collection(String, Int, String?) -> Self
+pub fn VariableLookupResult::index_out_of_bounds(String, Int, Int) -> Self
 pub fn VariableLookupResult::not_equal(Self, Self) -> Bool
 pub fn VariableLookupResult::not_found(String) -> Self
 pub fn VariableLookupResult::to_repr(Self) -> @debug.Repr
@@ -318,6 +322,7 @@ pub struct VariablePath {
 } derive(Eq, @debug.Debug)
 pub fn VariablePath::display_name(Self) -> String
 pub fn VariablePath::equal(Self, Self) -> Bool
+pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
 pub fn VariablePath::not_equal(Self, Self) -> Bool
 pub fn VariablePath::root(String) -> Self
 pub fn VariablePath::root_name(Self) -> String
@@ -325,8 +330,9 @@ pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
 pub fn VariablePath::to_repr(Self) -> @debug.Repr
 pub fn VariablePath::with_fields(String, Array[String]) -> Self
 
-pub enum VariablePathStep {
+pub(all) enum VariablePathStep {
   Field(String)
+  Index(Int)
 } derive(Eq, @debug.Debug)
 pub fn VariablePathStep::equal(Self, Self) -> Bool
 pub fn VariablePathStep::not_equal(Self, Self) -> Bool

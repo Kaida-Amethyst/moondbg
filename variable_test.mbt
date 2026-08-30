@@ -294,7 +294,7 @@ test "indexed collection snapshot rejects invalid metadata" {
 }
 
 ///|
-test "variable path owns fields and produces a stable display name" {
+test "variable path owns mixed steps and produces a stable display name" {
   let root = @moondbg.VariablePath::root("answer")
   assert_eq(root.root_name(), "answer")
   assert_eq(root.steps().length(), 0)
@@ -305,6 +305,24 @@ test "variable path owns fields and produces a stable display name" {
   assert_eq(nested.root_name(), "line1")
   assert_true(nested.steps() is [@moondbg.Field("start"), @moondbg.Field("x")])
   assert_eq(nested.display_name(), "line1.start.x")
+  let steps = [
+    @moondbg.Index(0),
+    @moondbg.Field("start"),
+    @moondbg.Index(12),
+    @moondbg.Field("x"),
+  ]
+  let mixed = @moondbg.VariablePath::new("lines", steps)
+  steps.clear()
+  assert_true(
+    mixed.steps()
+    is [
+      @moondbg.Index(0),
+      @moondbg.Field("start"),
+      @moondbg.Index(12),
+      @moondbg.Field("x"),
+    ],
+  )
+  assert_eq(mixed.display_name(), "lines[0].start[12].x")
 }
 
 ///|
@@ -327,6 +345,20 @@ test "variable lookup failures retain structured path context" {
     fail("expected a structured non-struct failure")
   }
   assert_eq(non_struct.requested_path(), "answer.value")
+  guard @moondbg.VariableLookupResult::index_access_on_non_collection(
+      "point",
+      0,
+      Some("Point"),
+    )
+    is @moondbg.VariableLookupFailed(non_collection) else {
+    fail("expected a structured non-collection failure")
+  }
+  assert_eq(non_collection.requested_path(), "point[0]")
+  guard @moondbg.VariableLookupResult::index_out_of_bounds("arr", 3, 3)
+    is @moondbg.VariableLookupFailed(out_of_bounds) else {
+    fail("expected a structured out-of-bounds failure")
+  }
+  assert_eq(out_of_bounds.requested_path(), "arr[3]")
   guard @moondbg.VariableLookupResult::unavailable("line1.start")
     is @moondbg.VariableLookupFailed(unavailable) else {
     fail("expected a structured unavailable failure")
