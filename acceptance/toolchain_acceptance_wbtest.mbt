@@ -33,13 +33,34 @@ async fn require_development_toolchain() -> (String, String) {
   let moonc = require_development_tool(moon_home, "moonc")
   let moon = require_development_tool(moon_home, "moon")
   require_development_tool(moon_home, "moondbg") |> ignore
+  // Full debug builds now require both debug information and disabled
+  // optimization; the removed `-debug-info full` option is not accepted.
   let build_package_help = collect_text(moonc, ["build-package", "-help"])
-  assert_true(build_package_help.contains("-debug-info {none|minimal|full}"))
+  assert_true(build_package_help.contains("-g save debugging information"))
+  assert_true(build_package_help.contains("-O0  turn off optimization"))
   let link_core_help = collect_text(moonc, ["link-core", "-help"])
-  assert_true(link_core_help.contains("-debug-info {none|minimal|full}"))
+  assert_true(link_core_help.contains("-g save debugging information"))
+  assert_true(link_core_help.contains("-O0  turn off optimization"))
   let debug_help = collect_text(moon, ["debug", "--help"])
   assert_true(debug_help.contains("moon debug [OPTIONS] <PACKAGE>"))
   (moon, moon_home)
+}
+
+///|
+async fn unique_source_line(source_path : String, statement : String) -> Int {
+  let source = @fs.read_file(source_path).text()
+  let mut matched_line : Int? = None
+  for line_index, line in source.split("\n") {
+    guard line.trim() == statement else { continue }
+    guard matched_line is None else {
+      fail("source statement is not unique in \{source_path}: \{statement}")
+    }
+    matched_line = Some(line_index + 1)
+  }
+  guard matched_line is Some(line) else {
+    fail("source statement was not found in \{source_path}: \{statement}")
+  }
+  line
 }
 
 ///|
@@ -49,8 +70,17 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   let (moon, _moon_home) = require_development_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
-  assert_true(@fs.exists("\{fixture}/main/main.mbt"))
-  let process = @pty_testkit.PtyProcess::spawn_debug(moon, fixture)
+  let main_source = "\{fixture}/pkg_scope/main.mbt"
+  assert_true(@fs.exists(main_source))
+  let source_breakpoint_line = unique_source_line(
+    main_source, "let result = @probe.increment(sum(arr)) - 1",
+  )
+  let source_breakpoint = "pkg_scope/main.mbt:\{source_breakpoint_line}"
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moon,
+    fixture,
+    package_name="pkg_scope",
+  )
   defer process.close()
   assert_eq(process.status(), 0)
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
@@ -67,19 +97,21 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
 
-  assert_true(process.write(b"b main/main.mbt:13\r"))
+  assert_true(process.write(@utf8.encode("b \{source_breakpoint}\r")))
   assert_true(process.expect(b"Breakpoint 2 verified at", timeout_ms=10000))
-  assert_true(process.expect(b"main/main.mbt:13"))
+  assert_true(process.expect(@utf8.encode(source_breakpoint)))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"b sum\r"))
   assert_true(process.expect(b"Breakpoint 3 verified at function sum"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
   assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
-  assert_true(process.expect(b"main/main.mbt:13"))
+  assert_true(process.expect(@utf8.encode(source_breakpoint)))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
-  assert_true(process.expect(b"moondbg-dwarf-probe/main.sum", timeout_ms=10000))
+  assert_true(
+    process.expect(b"moondbg-dwarf-probe/pkg_scope.sum", timeout_ms=10000),
+  )
   assert_true(process.expect(b"(moondbg) "))
 
   assert_true(process.write(b"b @probe.increment\r"))
