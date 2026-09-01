@@ -14,6 +14,7 @@ priv struct StopEpochContext {
   epoch : Int
   mut thread_id : Int?
   mut frame_id : Int?
+  mut frame_index : Int?
   variable_references : Map[Int, Bool]
 }
 
@@ -95,6 +96,7 @@ fn DapSessionMachine::accept_event(
             epoch: self.stop_epoch,
             thread_id: stopped_thread_id(event),
             frame_id: None,
+            frame_index: None,
             variable_references: {},
           })
           self.state = Stopped
@@ -139,11 +141,13 @@ fn DapSessionMachine::select_thread(
 fn DapSessionMachine::select_frame(
   self : DapSessionMachine,
   frame_id : Int,
+  physical_index? : Int = 0,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped && self.stop_context is Some(context) else {
     raise InvalidSessionTransition(state=self.state, action="select frame")
   }
   context.frame_id = Some(frame_id)
+  context.frame_index = Some(physical_index)
 }
 
 ///|
@@ -197,6 +201,14 @@ fn DapSessionMachine::selected_thread_id(self : DapSessionMachine) -> Int? {
 fn DapSessionMachine::selected_frame_id(self : DapSessionMachine) -> Int? {
   match self.stop_context {
     Some(context) if context.epoch == self.stop_epoch => context.frame_id
+    _ => None
+  }
+}
+
+///|
+fn DapSessionMachine::selected_frame_index(self : DapSessionMachine) -> Int? {
+  match self.stop_context {
+    Some(context) if context.epoch == self.stop_epoch => context.frame_index
     _ => None
   }
 }

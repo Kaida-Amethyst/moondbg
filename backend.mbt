@@ -33,6 +33,11 @@ pub(open) trait DebugBackend {
   async fn next(Self, thread : ThreadSelection) -> RunOutcome
   async fn step(Self, thread : ThreadSelection) -> RunOutcome
   async fn finish(Self, thread : ThreadSelection) -> RunOutcome
+  /// Returns the currently loaded application-level stack window.
+  ///
+  /// The result may be partial. Implementations retain protocol frame ids and
+  /// perform any later paging behind this port.
+  async fn stack_snapshot(Self, thread : ThreadSelection, window : StackWindow) -> StackSnapshot
   async fn find_variable(
     Self,
     thread : ThreadSelection,

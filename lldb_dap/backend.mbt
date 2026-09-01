@@ -140,6 +140,19 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self, thread) {
 }
 
 ///|
+impl @moondbg.DebugBackend for LldbDapBackend with fn stack_snapshot(
+  self,
+  thread,
+  window,
+) {
+  self.session.stack_snapshot(thread, window) catch {
+    LldbDapBackendError::AdapterFailure(message) =>
+      raise @moondbg.DebugBackendError::failure(message)
+    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  }
+}
+
+///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
   self,
   thread,

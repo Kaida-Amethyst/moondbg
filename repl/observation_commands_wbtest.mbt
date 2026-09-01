@@ -105,6 +105,15 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn finish(
 }
 
 ///|
+impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn stack_snapshot(
+  _self,
+  thread,
+  _window,
+) {
+  test_stack_snapshot_from_stop(thread, observation_command_stop())
+}
+
+///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variable(
   self,
   _thread,

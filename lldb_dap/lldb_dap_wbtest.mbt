@@ -153,6 +153,29 @@ fn scripted_stack_body(frame_id : Int, line : Int) -> Json {
 }
 
 ///|
+fn scripted_stack_body_with_runtime(frame_id : Int, line : Int) -> Json {
+  {
+    "stackFrames": [
+      {
+        "id": frame_id - 1,
+        "name": "runtime_entry",
+        "source": { "path": "/tmp/runtime.c" },
+        "line": 20,
+        "column": 1,
+      },
+      {
+        "id": frame_id,
+        "name": "main.inspect_value",
+        "source": { "path": "/tmp/main.mbt" },
+        "line": line,
+        "column": 3,
+      },
+    ],
+    "totalFrames": 2,
+  }
+}
+
+///|
 fn lifecycle_script() -> Array[@dap_testkit.ScriptedInput] {
   [
     scripted_response(100, 1, "initialize", {
@@ -174,7 +197,12 @@ fn lifecycle_script() -> Array[@dap_testkit.ScriptedInput] {
       "output": "adapter metrics",
     }),
     scripted_event(107, "stopped", { "reason": "breakpoint", "threadId": 1 }),
-    scripted_response(108, 5, "stackTrace", scripted_stack_body(10, 4)),
+    scripted_response(
+      108,
+      5,
+      "stackTrace",
+      scripted_stack_body_with_runtime(10, 4),
+    ),
     scripted_response(109, 6, "scopes", {
       "scopes": [
         {
@@ -1649,6 +1677,17 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
       fail("stopped session should retain its execution")
     }
     assert_eq(execution.machine.stop_epoch, 1)
+    guard session.stack_snapshot() is Some(stack) else {
+      fail("the stable stop should retain the parsed stack window")
+    }
+    assert_eq(stack.loaded_start(), 0)
+    assert_eq(stack.loaded_count(), 2)
+    assert_eq(stack.total_frames_hint(), Some(2))
+    assert_true(stack.is_complete())
+    assert_eq(stack.frames().map(frame => frame.physical_index()), [0, 1])
+    assert_eq(session.selected_frame().map(frame => frame.index()), Some(1))
+    assert_eq(execution.machine.selected_frame_id(), Some(10))
+    assert_eq(execution.machine.selected_frame_index(), Some(1))
     guard session.take_output() is [output] else {
       fail("only user-visible debuggee output should be retained")
     }
@@ -2278,27 +2317,29 @@ test "LLDB breakpoint command results preserve id and location count" {
 
 ///|
 test "stack frame selection prefers the first MoonBit source frame" {
-  guard select_stack_frame({
-      "stackFrames": [
-        {
-          "id": 10,
-          "name": "runtime_entry",
-          "source": { "path": "/tmp/runtime.c" },
-          "line": 20,
-          "column": 1,
-        },
-        {
-          "id": 11,
-          "name": "main.inspect_value",
-          "source": { "path": "/tmp/main.mbt" },
-          "line": 4,
-          "column": 3,
-        },
-      ],
-    })
-    is Some(frame) else {
+  let (frames, loaded_count) = parse_stack_frames({
+    "stackFrames": [
+      {
+        "id": 10,
+        "name": "runtime_entry",
+        "source": { "path": "/tmp/runtime.c" },
+        "line": 20,
+        "column": 1,
+      },
+      {
+        "id": 11,
+        "name": "main.inspect_value",
+        "source": { "path": "/tmp/main.mbt" },
+        "line": 4,
+        "column": 3,
+      },
+    ],
+  })
+  assert_eq(loaded_count, 2)
+  guard select_parsed_stack_frame(frames) is Some(frame) else {
     fail("expected a stack frame")
   }
+  assert_eq(frame.physical_index, 1)
   assert_eq(frame.id, 11)
   assert_eq(frame.name, "main.inspect_value")
   assert_eq(frame.source_path, Some("/tmp/main.mbt"))

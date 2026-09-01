@@ -11,6 +11,7 @@ fn first_thread_id(body : Json) -> Int? {
 
 ///|
 priv struct ParsedStackFrame {
+  physical_index : Int
   id : Int
   name : String
   source_path : String?
@@ -43,11 +44,12 @@ fn stack_frame_column(frame : Json) -> Int? {
 }
 
 ///|
-fn parse_stack_frame(frame : Json) -> ParsedStackFrame? {
+fn parse_stack_frame(frame : Json, physical_index : Int) -> ParsedStackFrame? {
   guard frame is { "id": Number(id, ..), "name": String(name), .. } else {
     return None
   }
   Some({
+    physical_index,
     id: id.to_int(),
     name,
     source_path: stack_frame_source_path(frame),
@@ -57,19 +59,63 @@ fn parse_stack_frame(frame : Json) -> ParsedStackFrame? {
 }
 
 ///|
-fn select_stack_frame(body : Json) -> ParsedStackFrame? {
-  guard body is { "stackFrames": Array(frames), .. } else { return None }
-  let mut first : ParsedStackFrame? = None
-  for frame in frames {
-    guard parse_stack_frame(frame) is Some(parsed) else { continue }
-    if first is None {
-      first = Some(parsed)
+fn parse_stack_frames(body : Json) -> (Array[ParsedStackFrame], Int) {
+  guard body is { "stackFrames": Array(frames), .. } else { return ([], 0) }
+  let parsed : Array[ParsedStackFrame] = []
+  for physical_index, frame in frames {
+    guard parse_stack_frame(frame, physical_index) is Some(item) else {
+      continue
     }
+    parsed.push(item)
+  }
+  (parsed, frames.length())
+}
+
+///|
+fn select_parsed_stack_frame(
+  frames : Array[ParsedStackFrame],
+) -> ParsedStackFrame? {
+  for parsed in frames {
     if parsed.source_path is Some(source_path) && source_path.has_suffix(".mbt") {
       return Some(parsed)
     }
   }
-  first
+  guard frames.length() > 0 else { return None }
+  Some(frames[0])
+}
+
+///|
+fn stack_frame_kind(frame : ParsedStackFrame) -> @moondbg.FrameKind {
+  match frame.source_path {
+    Some(source_path) if source_path.has_suffix(".mbt") =>
+      @moondbg.MoonBitUserFrame
+    Some(_) => @moondbg.NativeFrame
+    None => @moondbg.UnknownFrame
+  }
+}
+
+///|
+fn stack_total_frames_hint(body : Json) -> Int? {
+  match body {
+    { "totalFrames": Number(total, ..), .. } => Some(total.to_int())
+    _ => None
+  }
+}
+
+///|
+fn ParsedStackFrame::snapshot(
+  self : ParsedStackFrame,
+) -> @moondbg.StackFrameSnapshot raise @moondbg.StackSnapshotError {
+  @moondbg.StackFrameSnapshot::new(
+    self.physical_index,
+    self.name,
+    self.name,
+    None,
+    self.source_path,
+    self.line,
+    self.column,
+    stack_frame_kind(self),
+  )
 }
 
 ///|
@@ -97,10 +143,21 @@ async fn DebugExecution::build_stop_snapshot(
     "startFrame": 0,
     "levels": 20,
   })
-  guard select_stack_frame(response.body()) is Some(frame) else {
+  let (frames, loaded_count) = parse_stack_frames(response.body())
+  guard select_parsed_stack_frame(frames) is Some(frame) else {
     raise InvalidMessage(response.body())
   }
-  self.machine.select_frame(frame.id)
+  self.machine.select_frame(frame.id, physical_index=frame.physical_index)
+  self.stack_snapshot = Some(
+    @moondbg.StackSnapshot::new(
+      @moondbg.ThreadSelection::initial(),
+      frames.map(item => item.snapshot()),
+      0,
+      loaded_count,
+      stack_total_frames_hint(response.body()),
+      loaded_count < 20,
+    ),
+  )
   @moondbg.StopSnapshot::new(
     self.stop_reason,
     frame.name,

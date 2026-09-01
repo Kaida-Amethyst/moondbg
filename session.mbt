@@ -55,6 +55,37 @@ pub fn DebugSession::selected_frame(self : DebugSession) -> FrameSelection? {
 }
 
 ///|
+/// Returns the currently loaded stack window for the stable stop.
+pub fn DebugSession::stack_snapshot(self : DebugSession) -> StackSnapshot? {
+  self.application.stack_snapshot()
+}
+
+///|
+/// Selects an already loaded frame by physical stack index.
+pub fn DebugSession::select_frame(
+  self : DebugSession,
+  physical_index : Int,
+) -> StackFrameSnapshot raise DebugSessionError {
+  self.application.select_frame(physical_index)
+}
+
+///|
+/// Selects the next visible caller without renumbering hidden frames.
+pub fn DebugSession::select_visible_caller_frame(
+  self : DebugSession,
+) -> StackFrameSnapshot raise DebugSessionError {
+  self.application.select_visible_caller()
+}
+
+///|
+/// Selects the next visible callee without renumbering hidden frames.
+pub fn DebugSession::select_visible_callee_frame(
+  self : DebugSession,
+) -> StackFrameSnapshot raise DebugSessionError {
+  self.application.select_visible_callee()
+}
+
+///|
 pub async fn DebugSession::add_source_breakpoint(
   self : DebugSession,
   source_path : String,
@@ -166,11 +197,28 @@ pub fn DebugSession::take_output(self : DebugSession) -> Array[DebugOutput] {
 }
 
 ///|
-fn DebugSession::accept_outcome(
+async fn DebugSession::accept_outcome(
   self : DebugSession,
   outcome : RunOutcome,
 ) -> RunOutcome {
-  self.application.accept_outcome(outcome)
+  match outcome {
+    Stopped(snapshot) => {
+      let thread = ThreadSelection::initial()
+      let stack = self.backend.stack_snapshot(thread, StackWindow::initial()) catch {
+        DebugBackendError::BackendFailure(message) =>
+          self.backend_failed(message, next_state=Ready)
+        error => self.backend_failed(@debug.to_string(error), next_state=Failed)
+      }
+      guard stack.thread() == thread else {
+        self.backend_failed(
+          "backend returned a stack for a different logical thread",
+          next_state=Ready,
+        )
+      }
+      self.application.accept_stopped(snapshot, stack)
+    }
+    Exited(_) => self.application.accept_exit()
+  }
   outcome
 }
 

@@ -20,6 +20,7 @@ async fn DebugExecution::prepare_with_dispatcher(
     capabilities: null,
     stop_reason: "stopped",
     exit_code: None,
+    stack_snapshot: None,
     variable_cache: StopVariableCache::new(),
     breakpoint_state: ExecutionBreakpointState::new(),
     pending_output: [],

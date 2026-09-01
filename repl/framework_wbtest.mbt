@@ -62,6 +62,15 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn finish(
 }
 
 ///|
+impl @moondbg.DebugBackend for FrameworkTestBackend with fn stack_snapshot(
+  _self,
+  thread,
+  _window,
+) {
+  @moondbg.StackSnapshot::new(thread, [], 0, 0, Some(0), true)
+}
+
+///|
 impl @moondbg.DebugBackend for FrameworkTestBackend with fn find_variable(
   _self,
   _thread,

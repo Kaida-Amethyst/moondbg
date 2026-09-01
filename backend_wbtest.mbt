@@ -6,6 +6,8 @@ priv struct RecordingBackend {
   mut steps : Int
   mut finishes : Int
   mut variable_lookups : Int
+  mut stack_requests : Int
+  stack_windows : Array[StackWindow]
   mut executable : String?
   breakpoints : Array[SourceBreakpoint]
   function_breakpoints : Array[FunctionBreakpoint]
@@ -13,6 +15,8 @@ priv struct RecordingBackend {
   function_breakpoint_launches : Array[Array[Int]]
   thread_selections : Array[Int]
   frame_selections : Array[Int]
+  mut stack : StackSnapshot?
+  mut fail_stack : Bool
   mut fail_next : Bool
   mut observe_running_entry : (() -> Bool)?
   mut running_entries : Int
@@ -33,6 +37,8 @@ fn RecordingBackend::new() -> RecordingBackend {
     steps: 0,
     finishes: 0,
     variable_lookups: 0,
+    stack_requests: 0,
+    stack_windows: [],
     executable: None,
     breakpoints: [],
     function_breakpoints: [],
@@ -40,6 +46,8 @@ fn RecordingBackend::new() -> RecordingBackend {
     function_breakpoint_launches: [],
     thread_selections: [],
     frame_selections: [],
+    stack: None,
+    fail_stack: false,
     fail_next: false,
     observe_running_entry: None,
     running_entries: 0,
@@ -68,6 +76,32 @@ fn recording_stop() -> StopSnapshot {
     Some("/tmp/main.mbt"),
     Some(4),
     Some(1),
+  )
+}
+
+///|
+fn recording_stack(
+  thread : ThreadSelection,
+) -> StackSnapshot raise StackSnapshotError {
+  let stop = recording_stop()
+  StackSnapshot::new(
+    thread,
+    [
+      StackFrameSnapshot::new(
+        0,
+        stop.function_name(),
+        stop.function_name(),
+        None,
+        stop.source_path(),
+        stop.line(),
+        stop.column(),
+        MoonBitUserFrame,
+      ),
+    ],
+    0,
+    1,
+    Some(1),
+    true,
   )
 }
 
@@ -182,6 +216,25 @@ impl DebugBackend for RecordingBackend with fn finish(self, thread) {
   self.finishes += 1
   self.thread_selections.push(thread.index())
   RunOutcome::stopped(recording_stop())
+}
+
+///|
+impl DebugBackend for RecordingBackend with fn stack_snapshot(
+  self,
+  thread,
+  window,
+) {
+  self.stack_requests += 1
+  self.stack_windows.push(window)
+  if self.fail_stack {
+    raise DebugBackendError::BackendFailure(
+      "recording backend failed to inspect the stack",
+    )
+  }
+  match self.stack {
+    Some(stack) => stack
+    None => recording_stack(thread)
+  }
 }
 
 ///|

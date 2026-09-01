@@ -20,6 +20,11 @@ pub extend DebugSessionState with Eq::{equal, not_equal}
 ///|
 pub suberror DebugSessionError {
   OperationNotAllowed(state~ : DebugSessionState, action~ : String)
+  FrameNotLoaded(Int)
+  FrameNotFound(Int)
+  NoFrameSelected
+  NoVisibleCaller(Int)
+  NoVisibleCallee(Int)
   AdapterFailure(String)
 } derive(Debug)
 
@@ -86,7 +91,8 @@ priv struct StableStopState {
   epoch : StopEpoch
   snapshot : StopSnapshot
   thread : ThreadSelection
-  frame : FrameSelection
+  stack : StackSnapshot
+  mut frame : FrameSelection?
 }
 
 ///|
@@ -137,7 +143,17 @@ fn DebugApplicationState::selected_thread(
 fn DebugApplicationState::selected_frame(
   self : DebugApplicationState,
 ) -> FrameSelection? {
-  self.stable_stop.map(stop => stop.frame)
+  match self.stable_stop {
+    Some(stop) => stop.frame
+    None => None
+  }
+}
+
+///|
+fn DebugApplicationState::stack_snapshot(
+  self : DebugApplicationState,
+) -> StackSnapshot? {
+  self.stable_stop.map(stop => stop.stack)
 }
 
 ///|
@@ -155,26 +171,82 @@ fn DebugApplicationState::begin_resume(self : DebugApplicationState) -> Unit {
 }
 
 ///|
-fn DebugApplicationState::accept_outcome(
+fn DebugApplicationState::accept_stopped(
   self : DebugApplicationState,
-  outcome : RunOutcome,
+  snapshot : StopSnapshot,
+  stack : StackSnapshot,
 ) -> Unit {
-  match outcome {
-    Stopped(snapshot) => {
-      self.stop_number += 1
-      let execution = ExecutionEpoch::new(self.execution_number)
-      self.stable_stop = Some({
-        epoch: StopEpoch::new(execution, self.stop_number),
-        snapshot,
-        thread: ThreadSelection::initial(),
-        frame: FrameSelection::initial(),
-      })
-      self.phase = Stopped
+  self.stop_number += 1
+  let execution = ExecutionEpoch::new(self.execution_number)
+  self.stable_stop = Some({
+    epoch: StopEpoch::new(execution, self.stop_number),
+    snapshot,
+    thread: stack.thread(),
+    stack,
+    frame: stack.default_selection(),
+  })
+  self.phase = Stopped
+}
+
+///|
+fn DebugApplicationState::accept_exit(self : DebugApplicationState) -> Unit {
+  self.stable_stop = None
+  self.phase = Ready
+}
+
+///|
+fn DebugApplicationState::select_frame(
+  self : DebugApplicationState,
+  physical_index : Int,
+) -> StackFrameSnapshot raise DebugSessionError {
+  guard self.phase is Stopped && self.stable_stop is Some(stop) else {
+    raise OperationNotAllowed(state=self.phase, action="select a frame")
+  }
+  guard stop.stack.is_loaded(physical_index) else {
+    raise FrameNotLoaded(physical_index)
+  }
+  guard stop.stack.frame(physical_index) is Some(frame) else {
+    raise FrameNotFound(physical_index)
+  }
+  stop.frame = Some(FrameSelection::at(physical_index))
+  frame
+}
+
+///|
+fn DebugApplicationState::select_visible_caller(
+  self : DebugApplicationState,
+) -> StackFrameSnapshot raise DebugSessionError {
+  guard self.phase is Stopped &&
+    self.stable_stop is Some(stop) &&
+    stop.frame is Some(selection) else {
+    if self.phase is Stopped {
+      raise NoFrameSelected
     }
-    Exited(_) => {
-      self.stable_stop = None
-      self.phase = Ready
+    raise OperationNotAllowed(state=self.phase, action="select a caller frame")
+  }
+  match stop.stack.visible_caller(selection) {
+    FrameAvailable(frame) => self.select_frame(frame.index())
+    MoreFramesRequired(start_frame~) => raise FrameNotLoaded(start_frame)
+    VisibleFrameBoundary => raise NoVisibleCaller(selection.index())
+  }
+}
+
+///|
+fn DebugApplicationState::select_visible_callee(
+  self : DebugApplicationState,
+) -> StackFrameSnapshot raise DebugSessionError {
+  guard self.phase is Stopped &&
+    self.stable_stop is Some(stop) &&
+    stop.frame is Some(selection) else {
+    if self.phase is Stopped {
+      raise NoFrameSelected
     }
+    raise OperationNotAllowed(state=self.phase, action="select a callee frame")
+  }
+  match stop.stack.visible_callee(selection) {
+    FrameAvailable(frame) => self.select_frame(frame.index())
+    MoreFramesRequired(start_frame~) => raise FrameNotLoaded(start_frame)
+    VisibleFrameBoundary => raise NoVisibleCallee(selection.index())
   }
 }
 

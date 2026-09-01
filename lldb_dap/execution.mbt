@@ -99,6 +99,7 @@ priv struct DebugExecution {
   mut capabilities : Json
   mut stop_reason : String
   mut exit_code : Int?
+  mut stack_snapshot : @moondbg.StackSnapshot?
   variable_cache : StopVariableCache
   breakpoint_state : ExecutionBreakpointState
   pending_output : Array[@moondbg.DebugOutput]
@@ -139,7 +140,8 @@ fn DebugExecution::selected_frame_id(
   action : String,
 ) -> Int raise LldbDapBackendError {
   self.selected_thread_id(thread, action) |> ignore
-  guard frame.index() == 0 && self.machine.selected_frame_id() is Some(frame_id) else {
+  guard self.machine.selected_frame_index() == Some(frame.index()) &&
+    self.machine.selected_frame_id() is Some(frame_id) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.machine.state,
       action~,
@@ -163,11 +165,14 @@ fn DebugExecution::accept_event(
         { "reason": String(reason), .. } => reason
         _ => "stopped"
       }
-    "exited" =>
+    "exited" => {
       self.exit_code = match event.body() {
         { "exitCode": Number(code, ..), .. } => Some(code.to_int())
         _ => None
       }
+      self.stack_snapshot = None
+    }
+    "terminated" => self.stack_snapshot = None
     _ => ()
   }
   self.machine.accept_event(event)
@@ -277,9 +282,25 @@ async fn DebugExecution::resume_transaction(
 ) -> @moondbg.RunOutcome {
   errdefer self.machine.fail("\{request.command()} transaction failed")
   self.machine.mark_resumed()
+  self.stack_snapshot = None
   self.variable_cache.reset(0)
   self.request(request.command(), request.arguments()) |> ignore
   self.complete_execution()
+}
+
+///|
+fn DebugExecution::current_stack_snapshot(
+  self : DebugExecution,
+  thread : @moondbg.ThreadSelection,
+) -> @moondbg.StackSnapshot raise LldbDapBackendError {
+  self.selected_thread_id(thread, "inspect the stack") |> ignore
+  guard self.stack_snapshot is Some(snapshot) && snapshot.thread() == thread else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state=self.machine.state,
+      action="inspect the stack",
+    )
+  }
+  snapshot
 }
 
 ///|
