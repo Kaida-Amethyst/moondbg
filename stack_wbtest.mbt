@@ -239,7 +239,7 @@ async test "P2 session owns default explicit and visible frame selection" {
       session.select_frame(5) |> ignore
       false
     } catch {
-      FrameNotLoaded(5) => true
+      FrameNotFound(5) => true
       _ => false
     },
   )
@@ -319,33 +319,154 @@ async test "P2 empty and failed stack acquisition never create a stable selectio
 }
 
 ///|
-async test "P2 partial stack without a user frame stays unselected" {
+async test "P3 partial stack keeps paging until a user frame is available" {
   let backend = RecordingBackend::new()
-  backend.stack = Some(
-    StackSnapshot::new(
-      ThreadSelection::initial(),
-      [
-        test_stack_frame(0, "native", NativeFrame),
-        test_stack_frame(1, "runtime", MoonBitRuntimeFrame),
-      ],
-      0,
-      2,
-      Some(40),
-      false,
-    ),
+  let partial = StackSnapshot::new(
+    ThreadSelection::initial(),
+    [
+      test_stack_frame(0, "native", NativeFrame),
+      test_stack_frame(1, "runtime", MoonBitRuntimeFrame),
+    ],
+    0,
+    2,
+    Some(40),
+    false,
   )
+  let with_user = StackSnapshot::new(
+    ThreadSelection::initial(),
+    [
+      test_stack_frame(0, "native", NativeFrame),
+      test_stack_frame(1, "runtime", MoonBitRuntimeFrame),
+      test_stack_frame(2, "leaf", MoonBitUserFrame),
+    ],
+    0,
+    3,
+    Some(3),
+    true,
+  )
+  backend.stack_responses.push(partial)
+  backend.stack_responses.push(with_user)
   let session = DebugSession::new("/tmp/program", backend)
   session.run() |> ignore
   assert_true(session.state() is Stopped)
-  assert_eq(session.selected_frame(), None)
+  assert_eq(session.selected_frame().map(frame => frame.index()), Some(2))
   assert_eq(
     session.stack_snapshot().map(stack => stack.is_complete()),
-    Some(false),
+    Some(true),
   )
+  assert_eq(backend.stack_windows, [
+    StackWindow::initial(),
+    StackWindow::new(2, 20),
+  ])
   let native = session.select_frame(0)
   assert_eq(native.physical_index(), 0)
   assert_eq(session.selected_frame().map(frame => frame.index()), Some(0))
   session.close()
+}
+
+///|
+async test "P3 explicit selection and completion merge cumulative extensions" {
+  let backend = RecordingBackend::new()
+  let first = StackSnapshot::new(
+    ThreadSelection::initial(),
+    [test_stack_frame(0, "leaf", MoonBitUserFrame)],
+    0,
+    1,
+    Some(100),
+    false,
+  )
+  let extended = StackSnapshot::new(
+    ThreadSelection::initial(),
+    [
+      test_stack_frame(0, "leaf", MoonBitUserFrame),
+      test_stack_frame(1, "native", NativeFrame),
+      test_stack_frame(2, "caller", MoonBitUserFrame),
+    ],
+    0,
+    3,
+    Some(3),
+    false,
+  )
+  let complete = StackSnapshot::new(
+    ThreadSelection::initial(),
+    [
+      test_stack_frame(0, "leaf", MoonBitUserFrame),
+      test_stack_frame(1, "native", NativeFrame),
+      test_stack_frame(2, "caller", MoonBitUserFrame),
+    ],
+    0,
+    3,
+    Some(3),
+    true,
+  )
+  backend.stack_responses.push(first)
+  backend.stack_responses.push(extended)
+  backend.stack_responses.push(complete)
+  let session = DebugSession::new("/tmp/program", backend)
+  session.run() |> ignore
+  assert_eq(session.selected_frame().map(frame => frame.index()), Some(0))
+  let caller = session.select_frame(2)
+  assert_eq(caller.physical_index(), 2)
+  guard session.stack_snapshot() is Some(partial) else {
+    fail("explicit selection should retain the extended stack")
+  }
+  assert_eq(partial.loaded_count(), 3)
+  assert_eq(partial.total_frames_hint(), Some(3))
+  assert_false(partial.is_complete())
+  let full = session.complete_stack_snapshot()
+  assert_eq(full.loaded_count(), 3)
+  assert_true(full.is_complete())
+  assert_eq(session.selected_frame().map(frame => frame.index()), Some(2))
+  assert_eq(backend.stack_windows, [
+    StackWindow::initial(),
+    StackWindow::new(1, 20),
+    StackWindow::new(3, 20),
+  ])
+  session.close()
+}
+
+///|
+async test "P3 invalid cumulative extension clears the stable stop" {
+  let backend = RecordingBackend::new()
+  backend.stack_responses.push(
+    StackSnapshot::new(
+      ThreadSelection::initial(),
+      [test_stack_frame(0, "leaf", MoonBitUserFrame)],
+      0,
+      1,
+      Some(2),
+      false,
+    ),
+  )
+  backend.stack_responses.push(
+    StackSnapshot::new(
+      ThreadSelection::initial(),
+      [
+        test_stack_frame(0, "changed_leaf", MoonBitUserFrame),
+        test_stack_frame(1, "caller", MoonBitUserFrame),
+      ],
+      0,
+      2,
+      Some(2),
+      true,
+    ),
+  )
+  let session = DebugSession::new("/tmp/program", backend)
+  session.run() |> ignore
+  assert_true(
+    try {
+      session.select_frame(1) |> ignore
+      false
+    } catch {
+      AdapterFailure(message) =>
+        message.contains("StackExtensionChangedFrame(0)")
+      _ => false
+    },
+  )
+  assert_true(session.state() is Ready)
+  assert_eq(session.stack_snapshot(), None)
+  assert_eq(session.selected_thread(), None)
+  assert_eq(session.selected_frame(), None)
 }
 
 ///|
@@ -358,8 +479,7 @@ async test "P2 rejects a stack snapshot for another logical thread" {
       session.run() |> ignore
       false
     } catch {
-      AdapterFailure("backend returned a stack for a different logical thread") =>
-        true
+      AdapterFailure("backend returned an invalid initial stack window") => true
       _ => false
     },
   )
@@ -369,7 +489,7 @@ async test "P2 rejects a stack snapshot for another logical thread" {
 }
 
 ///|
-test "P2 frame selection is rejected outside a stable stop" {
+async test "P2 frame selection is rejected outside a stable stop" {
   for phase in [Ready, Running, Exited, Failed] {
     let backend = RecordingBackend::new()
     let session = DebugSession::new("/tmp/program", backend)

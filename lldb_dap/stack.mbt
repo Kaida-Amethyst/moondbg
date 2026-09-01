@@ -59,16 +59,21 @@ fn parse_stack_frame(frame : Json, physical_index : Int) -> ParsedStackFrame? {
 }
 
 ///|
-fn parse_stack_frames(body : Json) -> (Array[ParsedStackFrame], Int) {
-  guard body is { "stackFrames": Array(frames), .. } else { return ([], 0) }
+fn parse_stack_frames(
+  body : Json,
+  start_frame : Int,
+) -> Array[ParsedStackFrame] raise DapSessionError {
+  guard body is { "stackFrames": Array(frames), .. } else {
+    raise InvalidMessage(body)
+  }
   let parsed : Array[ParsedStackFrame] = []
-  for physical_index, frame in frames {
-    guard parse_stack_frame(frame, physical_index) is Some(item) else {
-      continue
+  for offset, frame in frames {
+    guard parse_stack_frame(frame, start_frame + offset) is Some(item) else {
+      raise InvalidMessage(frame)
     }
     parsed.push(item)
   }
-  (parsed, frames.length())
+  parsed
 }
 
 ///|
@@ -134,30 +139,133 @@ async fn DebugExecution::resolve_stopped_thread(self : DebugExecution) -> Int {
 }
 
 ///|
+async fn DebugExecution::load_stack_window(
+  self : DebugExecution,
+  thread : @moondbg.ThreadSelection,
+  window : @moondbg.StackWindow,
+) -> @moondbg.StackSnapshot {
+  let thread_id = self.selected_thread_id(thread, "inspect the stack")
+  guard self.machine.current_stop_epoch() is Some(expected_epoch) else {
+    raise InvalidSessionTransition(
+      state=self.machine.state,
+      action="load stack frames",
+    )
+  }
+  let loaded_end = match self.stack_snapshot {
+    Some(stack) => stack.loaded_end()
+    None => 0
+  }
+  if window.start() < loaded_end {
+    guard self.stack_snapshot is Some(stack) else {
+      raise InvalidSessionTransition(
+        state=self.machine.state,
+        action="reuse cached stack frames",
+      )
+    }
+    if stack.is_complete() {
+      return stack
+    }
+    let requested_end = window.start() + window.count()
+    guard requested_end <= loaded_end else {
+      raise OverlappingStackRequest(loaded_end~, requested_end~)
+    }
+    return stack
+  }
+  guard window.start() == loaded_end else {
+    raise NonContiguousStackRequest(expected=loaded_end, actual=window.start())
+  }
+  if self.stack_snapshot is Some(stack) && stack.is_complete() {
+    return stack
+  }
+
+  let response = self.request("stackTrace", {
+    "threadId": thread_id,
+    "startFrame": window.start(),
+    "levels": window.count(),
+  })
+  guard self.machine.current_stop_epoch() == Some(expected_epoch) else {
+    raise StaleStackPage(
+      expected_epoch~,
+      actual_epoch=self.machine.current_stop_epoch(),
+    )
+  }
+  let page = parse_stack_frames(response.body(), window.start())
+  guard page.length() <= window.count() else {
+    raise StackPageTooLarge(requested=window.count(), actual=page.length())
+  }
+  let page_ids : Map[Int, Bool] = Map([])
+  for frame in page {
+    guard self.machine.frame_id(frame.physical_index) is None else {
+      raise DuplicatePhysicalFrameIndex(frame.physical_index)
+    }
+    guard self.machine.frame_index(frame.id) is None &&
+      page_ids.get(frame.id) is None else {
+      raise DuplicateStackFrameId(frame.id)
+    }
+    page_ids.set(frame.id, true)
+  }
+
+  let frames : Array[@moondbg.StackFrameSnapshot] = []
+  let previous_hint = match self.stack_snapshot {
+    Some(stack) => {
+      for frame in stack.frames() {
+        frames.push(frame)
+      }
+      stack.total_frames_hint()
+    }
+    None => None
+  }
+  for frame in page {
+    frames.push(frame.snapshot())
+  }
+  let total_frames_hint = match stack_total_frames_hint(response.body()) {
+    Some(total) => Some(total)
+    None => previous_hint
+  }
+  let snapshot = @moondbg.StackSnapshot::new(
+    thread,
+    frames,
+    0,
+    frames.length(),
+    total_frames_hint,
+    page.length() < window.count(),
+  )
+  for frame in page {
+    self.machine.remember_frame(frame.physical_index, frame.id)
+  }
+  self.stack_snapshot = Some(snapshot)
+  snapshot
+}
+
+///|
 async fn DebugExecution::build_stop_snapshot(
   self : DebugExecution,
 ) -> @moondbg.StopSnapshot {
-  let thread_id = self.resolve_stopped_thread()
-  let response = self.request("stackTrace", {
-    "threadId": thread_id,
-    "startFrame": 0,
-    "levels": 20,
-  })
-  let (frames, loaded_count) = parse_stack_frames(response.body())
-  guard select_parsed_stack_frame(frames) is Some(frame) else {
-    raise InvalidMessage(response.body())
-  }
-  self.machine.select_frame(frame.id, physical_index=frame.physical_index)
-  self.stack_snapshot = Some(
-    @moondbg.StackSnapshot::new(
-      @moondbg.ThreadSelection::initial(),
-      frames.map(item => item.snapshot()),
-      0,
-      loaded_count,
-      stack_total_frames_hint(response.body()),
-      loaded_count < 20,
-    ),
+  self.resolve_stopped_thread() |> ignore
+  let stack = self.load_stack_window(
+    @moondbg.ThreadSelection::initial(),
+    @moondbg.StackWindow::initial(),
   )
+  let frames : Array[ParsedStackFrame] = []
+  for snapshot in stack.frames() {
+    guard self.machine.frame_id(snapshot.physical_index()) is Some(frame_id) else {
+      raise InvalidSessionTransition(
+        state=self.machine.state,
+        action="select the stopped frame",
+      )
+    }
+    frames.push({
+      physical_index: snapshot.physical_index(),
+      id: frame_id,
+      name: snapshot.raw_name(),
+      source_path: snapshot.source_path(),
+      line: snapshot.line(),
+      column: snapshot.column(),
+    })
+  }
+  guard select_parsed_stack_frame(frames) is Some(frame) else {
+    raise InvalidMessage({ "stackFrames": [] })
+  }
   @moondbg.StopSnapshot::new(
     self.stop_reason,
     frame.name,

@@ -91,7 +91,7 @@ priv struct StableStopState {
   epoch : StopEpoch
   snapshot : StopSnapshot
   thread : ThreadSelection
-  stack : StackSnapshot
+  mut stack : StackSnapshot
   mut frame : FrameSelection?
 }
 
@@ -157,6 +157,30 @@ fn DebugApplicationState::stack_snapshot(
 }
 
 ///|
+fn DebugApplicationState::selected_frame_snapshot(
+  self : DebugApplicationState,
+) -> StackFrameSnapshot? {
+  guard self.stable_stop is Some(stop) && stop.frame is Some(selection) else {
+    return None
+  }
+  stop.stack.frame(selection.index())
+}
+
+///|
+fn DebugApplicationState::update_stack(
+  self : DebugApplicationState,
+  stack : StackSnapshot,
+) -> Unit raise DebugSessionError {
+  guard self.phase is Stopped && self.stable_stop is Some(stop) else {
+    raise OperationNotAllowed(state=self.phase, action="load stack frames")
+  }
+  stop.stack = stack
+  if stop.frame is None {
+    stop.frame = stack.default_selection()
+  }
+}
+
+///|
 fn DebugApplicationState::begin_execution(self : DebugApplicationState) -> Unit {
   self.execution_number += 1
   self.stop_number = 0
@@ -210,25 +234,6 @@ fn DebugApplicationState::select_frame(
   }
   stop.frame = Some(FrameSelection::at(physical_index))
   frame
-}
-
-///|
-fn DebugApplicationState::select_visible_caller(
-  self : DebugApplicationState,
-) -> StackFrameSnapshot raise DebugSessionError {
-  guard self.phase is Stopped &&
-    self.stable_stop is Some(stop) &&
-    stop.frame is Some(selection) else {
-    if self.phase is Stopped {
-      raise NoFrameSelected
-    }
-    raise OperationNotAllowed(state=self.phase, action="select a caller frame")
-  }
-  match stop.stack.visible_caller(selection) {
-    FrameAvailable(frame) => self.select_frame(frame.index())
-    MoreFramesRequired(start_frame~) => raise FrameNotLoaded(start_frame)
-    VisibleFrameBoundary => raise NoVisibleCaller(selection.index())
-  }
 }
 
 ///|

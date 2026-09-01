@@ -320,6 +320,7 @@ fn VariableMaterializationBudget::leave_reference(
 ///|
 priv struct StopVariableCache {
   mut epoch : Int
+  mut frame_index : Int?
   mut scopes : Array[DapScope]?
   variables : Map[Int, Array[DapVariable]]
   evaluated_variables : Map[String, DapVariable]
@@ -327,9 +328,16 @@ priv struct StopVariableCache {
 }
 
 ///|
+priv struct VariableCacheIdentity {
+  epoch : Int
+  frame_index : Int
+}
+
+///|
 fn StopVariableCache::new() -> StopVariableCache {
   {
     epoch: 0,
+    frame_index: None,
     scopes: None,
     variables: Map([]),
     evaluated_variables: Map([]),
@@ -340,6 +348,7 @@ fn StopVariableCache::new() -> StopVariableCache {
 ///|
 fn StopVariableCache::reset(self : StopVariableCache, epoch : Int) -> Unit {
   self.epoch = epoch
+  self.frame_index = None
   self.scopes = None
   self.variables.clear()
   self.evaluated_variables.clear()
@@ -347,84 +356,126 @@ fn StopVariableCache::reset(self : StopVariableCache, epoch : Int) -> Unit {
 }
 
 ///|
-fn StopVariableCache::cached_snapshot(
+/// Selects the cache identity for one physical frame. LLDB may reuse the same
+/// variablesReference for different frames, so every frame change discards
+/// raw scope/reference/evaluate entries. Fully materialized domain snapshots
+/// remain keyed by physical frame for the lifetime of this stop.
+fn StopVariableCache::select_frame(
   self : StopVariableCache,
   epoch : Int,
+  frame_index : Int,
+) -> Unit {
+  if self.epoch != epoch {
+    self.reset(epoch)
+  }
+  guard self.frame_index != Some(frame_index) else { return }
+  self.frame_index = Some(frame_index)
+  self.scopes = None
+  self.variables.clear()
+  self.evaluated_variables.clear()
+}
+
+///|
+fn StopVariableCache::is_current(
+  self : StopVariableCache,
+  identity : VariableCacheIdentity,
+) -> Bool {
+  self.epoch == identity.epoch && self.frame_index == Some(identity.frame_index)
+}
+
+///|
+fn DebugExecution::ensure_variable_identity(
+  self : DebugExecution,
+  identity : VariableCacheIdentity,
+) -> Unit raise DapSessionError {
+  guard self.machine.current_stop_epoch() == Some(identity.epoch) &&
+    self.variable_cache.is_current(identity) else {
+    raise StaleVariableResult(
+      expected_epoch=identity.epoch,
+      expected_frame=identity.frame_index,
+    )
+  }
+}
+
+///|
+fn StopVariableCache::cached_snapshot(
+  self : StopVariableCache,
+  identity : VariableCacheIdentity,
   key : String,
 ) -> @moondbg.VariableSnapshot? {
-  guard self.epoch == epoch else { return None }
+  guard self.is_current(identity) else { return None }
   self.snapshots.get(key)
 }
 
 ///|
 fn StopVariableCache::store_snapshot(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   key : String,
   snapshot : @moondbg.VariableSnapshot,
 ) -> Unit {
-  guard self.epoch == epoch else { return }
+  guard self.is_current(identity) else { return }
   self.snapshots.set(key, snapshot)
 }
 
 ///|
 fn StopVariableCache::cached_scopes(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
 ) -> Array[DapScope]? {
-  guard self.epoch == epoch else { return None }
+  guard self.is_current(identity) else { return None }
   self.scopes
 }
 
 ///|
 fn StopVariableCache::store_scopes(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   scopes : Array[DapScope],
 ) -> Unit {
-  guard self.epoch == epoch else { return }
+  guard self.is_current(identity) else { return }
   self.scopes = Some(scopes)
 }
 
 ///|
 fn StopVariableCache::cached_variables(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   reference : Int,
 ) -> Array[DapVariable]? {
-  guard self.epoch == epoch else { return None }
+  guard self.is_current(identity) else { return None }
   self.variables.get(reference)
 }
 
 ///|
 fn StopVariableCache::store_variables(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   reference : Int,
   variables : Array[DapVariable],
 ) -> Unit {
-  guard self.epoch == epoch else { return }
+  guard self.is_current(identity) else { return }
   self.variables.set(reference, variables)
 }
 
 ///|
 fn StopVariableCache::cached_evaluated_variable(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   key : String,
 ) -> DapVariable? {
-  guard self.epoch == epoch else { return None }
+  guard self.is_current(identity) else { return None }
   self.evaluated_variables.get(key)
 }
 
 ///|
 fn StopVariableCache::store_evaluated_variable(
   self : StopVariableCache,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   key : String,
   variable : DapVariable,
 ) -> Unit {
-  guard self.epoch == epoch else { return }
+  guard self.is_current(identity) else { return }
   self.evaluated_variables.set(key, variable)
 }
 
@@ -543,35 +594,37 @@ fn parse_indexed_element_evaluate_response(
 ///|
 async fn DebugExecution::load_scopes(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   frame_id : Int,
 ) -> Array[DapScope] {
-  match self.variable_cache.cached_scopes(epoch) {
+  match self.variable_cache.cached_scopes(identity) {
     Some(scopes) => return scopes
     None => ()
   }
   let response = self.request("scopes", { "frameId": frame_id })
+  self.ensure_variable_identity(identity)
   guard parse_scopes(response.body()) is Some(scopes) else {
     raise InvalidMessage(response.body())
   }
   for scope in scopes {
     self.machine.remember_variable_reference(scope.variables_reference)
   }
-  self.variable_cache.store_scopes(epoch, scopes)
+  self.variable_cache.store_scopes(identity, scopes)
   scopes
 }
 
 ///|
 async fn DebugExecution::load_variables(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   reference : Int,
 ) -> Array[DapVariable] {
-  match self.variable_cache.cached_variables(epoch, reference) {
+  match self.variable_cache.cached_variables(identity, reference) {
     Some(variables) => return variables
     None => ()
   }
   let response = self.request("variables", { "variablesReference": reference })
+  self.ensure_variable_identity(identity)
   guard parse_variables(response.body()) is Some(variables) else {
     raise InvalidMessage(response.body())
   }
@@ -580,7 +633,7 @@ async fn DebugExecution::load_variables(
       self.machine.remember_variable_reference(variable.variables_reference)
     }
   }
-  self.variable_cache.store_variables(epoch, reference, variables)
+  self.variable_cache.store_variables(identity, reference, variables)
   variables
 }
 
@@ -695,10 +748,10 @@ async fn DebugExecution::load_native_indexed_collection_layout(
 ///|
 async fn DebugExecution::load_fixed_array_layout(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout {
-  let children = self.load_variables(epoch, variable.variables_reference)
+  let children = self.load_variables(identity, variable.variables_reference)
   guard children.named_child("body") is Some(body) else {
     raise InvalidIndexedCollectionValue("FixedArray has no body field")
   }
@@ -723,10 +776,10 @@ fn parse_array_logical_length(variable : DapVariable) -> Int? {
 ///|
 async fn DebugExecution::load_array_layout(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout {
-  let children = self.load_variables(epoch, variable.variables_reference)
+  let children = self.load_variables(identity, variable.variables_reference)
   guard children.named_child("buf") is Some(buffer) &&
     buffer.is_available() &&
     buffer.variables_reference > 0 else {
@@ -739,7 +792,10 @@ async fn DebugExecution::load_array_layout(
       "Array has no valid non-negative logical length",
     )
   }
-  let buffer_children = self.load_variables(epoch, buffer.variables_reference)
+  let buffer_children = self.load_variables(
+    identity,
+    buffer.variables_reference,
+  )
   guard buffer_children.named_child("body") is Some(body) else {
     raise InvalidIndexedCollectionValue("Array buffer has no body field")
   }
@@ -753,14 +809,14 @@ async fn DebugExecution::load_array_layout(
 ///|
 async fn DebugExecution::load_indexed_collection_layout(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout? {
   if variable.is_moonbit_array_candidate() {
-    return Some(self.load_array_layout(epoch, variable))
+    return Some(self.load_array_layout(identity, variable))
   }
   if variable.is_moonbit_fixed_array_candidate() {
-    return Some(self.load_fixed_array_layout(epoch, variable))
+    return Some(self.load_fixed_array_layout(identity, variable))
   }
   None
 }
@@ -768,7 +824,7 @@ async fn DebugExecution::load_indexed_collection_layout(
 ///|
 async fn DebugExecution::resolve_indexed_element(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   frame_id : Int,
   owner : String,
   index : Int,
@@ -786,11 +842,11 @@ async fn DebugExecution::resolve_indexed_element(
   }
   let element_name = "\{owner}[\{index}]"
   let cache_key = "\{frame_id}:\{element_name}"
-  if self.variable_cache.cached_evaluated_variable(epoch, cache_key)
+  if self.variable_cache.cached_evaluated_variable(identity, cache_key)
     is Some(cached) {
     return DapVariableResolved(cached)
   }
-  guard self.load_indexed_collection_layout(epoch, variable) is Some(layout) else {
+  guard self.load_indexed_collection_layout(identity, variable) is Some(layout) else {
     return DapVariableResolutionFailed(
       @moondbg.VariableLookupResult::index_access_on_non_collection(
         owner,
@@ -825,6 +881,7 @@ async fn DebugExecution::resolve_indexed_element(
         "lldb-dap could not evaluate indexed element: \{@debug.to_string(error)}",
       )
   }
+  self.ensure_variable_identity(identity)
   let evaluated = parse_indexed_element_evaluate_response(
     response.body(),
     element_name,
@@ -842,7 +899,7 @@ async fn DebugExecution::resolve_indexed_element(
   if evaluated.variables_reference > 0 {
     self.machine.remember_variable_reference(evaluated.variables_reference)
   }
-  self.variable_cache.store_evaluated_variable(epoch, cache_key, evaluated)
+  self.variable_cache.store_evaluated_variable(identity, cache_key, evaluated)
   DapVariableResolved(evaluated)
 }
 
@@ -920,20 +977,20 @@ async fn DebugExecution::materialize_indexed_collection(
 ///|
 async fn DebugExecution::materialize_fixed_array(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @moondbg.VariableSnapshot {
-  let layout = self.load_fixed_array_layout(epoch, variable)
+  let layout = self.load_fixed_array_layout(identity, variable)
   self.materialize_indexed_collection(variable, layout)
 }
 
 ///|
 async fn DebugExecution::materialize_array(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @moondbg.VariableSnapshot {
-  let layout = self.load_array_layout(epoch, variable)
+  let layout = self.load_array_layout(identity, variable)
   self.materialize_indexed_collection(variable, layout)
 }
 
@@ -986,7 +1043,7 @@ fn direct_enum_payload(
 ///|
 async fn DebugExecution::materialize_enum(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
   variants : Array[DapEnumVariant],
 ) -> @moondbg.VariableSnapshot {
@@ -1022,7 +1079,7 @@ async fn DebugExecution::materialize_enum(
     )
   }
   let direct_payload = if active.payload_reference > 0 {
-    self.load_variables(epoch, active.payload_reference)
+    self.load_variables(identity, active.payload_reference)
   } else {
     []
   }
@@ -1062,7 +1119,7 @@ async fn DebugExecution::materialize_enum(
 ///|
 async fn DebugExecution::materialize_variable(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
   depth : Int,
   budget : VariableMaterializationBudget,
@@ -1076,10 +1133,10 @@ async fn DebugExecution::materialize_variable(
     )
   }
   if variable.is_moonbit_array_candidate() {
-    return self.materialize_array(epoch, variable)
+    return self.materialize_array(identity, variable)
   }
   if variable.is_moonbit_fixed_array_candidate() {
-    return self.materialize_fixed_array(epoch, variable)
+    return self.materialize_fixed_array(identity, variable)
   }
   if variable.is_moonbit_struct_candidate() &&
     (
@@ -1095,9 +1152,10 @@ async fn DebugExecution::materialize_variable(
     )
   }
   guard variable.variables_reference > 0 else { return variable.snapshot() }
-  let dap_children = self.load_variables(epoch, variable.variables_reference)
+  let dap_children = self.load_variables(identity, variable.variables_reference)
   match detect_dap_enum_layout(dap_children) {
-    DapEnum(variants) => return self.materialize_enum(epoch, variable, variants)
+    DapEnum(variants) =>
+      return self.materialize_enum(identity, variable, variants)
     NotDapEnum => ()
   }
   guard variable.is_moonbit_struct_candidate() else {
@@ -1112,7 +1170,7 @@ async fn DebugExecution::materialize_variable(
       truncated = true
       break
     }
-    children.push(self.materialize_variable(epoch, child, depth + 1, budget))
+    children.push(self.materialize_variable(identity, child, depth + 1, budget))
   }
   if truncated {
     @moondbg.VariableSnapshot::truncated(
@@ -1134,13 +1192,13 @@ async fn DebugExecution::materialize_variable(
 ///|
 async fn DebugExecution::materialize_variable_with_limits(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   variable : DapVariable,
   max_depth : Int,
   max_nodes : Int,
 ) -> @moondbg.VariableSnapshot {
   let budget = VariableMaterializationBudget::new(max_depth, max_nodes)
-  self.materialize_variable(epoch, variable, 0, budget)
+  self.materialize_variable(identity, variable, 0, budget)
 }
 
 ///|
@@ -1152,16 +1210,16 @@ priv enum DapVariableResolution {
 ///|
 async fn DebugExecution::resolve_root_variable(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   frame_id : Int,
   name : String,
 ) -> DapVariableResolution {
-  let scopes = self.load_scopes(epoch, frame_id)
+  let scopes = self.load_scopes(identity, frame_id)
   for scope in scopes {
     guard scope.is_relevant() else { continue }
     match
       self
-      .load_variables(epoch, scope.variables_reference)
+      .load_variables(identity, scope.variables_reference)
       .select_root_variable(name) {
       DapVariableSelected(variable) => return DapVariableResolved(variable)
       DapVariableUnavailable =>
@@ -1177,12 +1235,12 @@ async fn DebugExecution::resolve_root_variable(
 ///|
 async fn DebugExecution::resolve_variable_path(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   frame_id : Int,
   path : @moondbg.VariablePath,
 ) -> DapVariableResolution {
   let mut variable = match
-    self.resolve_root_variable(epoch, frame_id, path.root_name()) {
+    self.resolve_root_variable(identity, frame_id, path.root_name()) {
     DapVariableResolved(variable) => variable
     DapVariableResolutionFailed(result) =>
       return DapVariableResolutionFailed(result)
@@ -1205,7 +1263,10 @@ async fn DebugExecution::resolve_variable_path(
             @moondbg.VariableLookupResult::field_not_found(owner, field),
           )
         }
-        let children = self.load_variables(epoch, variable.variables_reference)
+        let children = self.load_variables(
+          identity,
+          variable.variables_reference,
+        )
         match detect_dap_enum_layout(children) {
           DapEnum(_) =>
             return DapVariableResolutionFailed(
@@ -1234,7 +1295,9 @@ async fn DebugExecution::resolve_variable_path(
       }
       @moondbg.Index(index) =>
         match
-          self.resolve_indexed_element(epoch, frame_id, owner, index, variable) {
+          self.resolve_indexed_element(
+            identity, frame_id, owner, index, variable,
+          ) {
           DapVariableResolved(element) => {
             variable = element
             owner = "\{owner}[\{index}]"
@@ -1250,25 +1313,25 @@ async fn DebugExecution::resolve_variable_path(
 ///|
 async fn DebugExecution::find_variable_inner(
   self : DebugExecution,
-  epoch : Int,
+  identity : VariableCacheIdentity,
   frame_id : Int,
   path : @moondbg.VariablePath,
 ) -> @moondbg.VariableLookupResult {
-  let cache_key = "\{frame_id}:\{path.display_name()}"
-  if self.variable_cache.cached_snapshot(epoch, cache_key) is Some(snapshot) {
+  let cache_key = "\{identity.frame_index}:\{path.display_name()}"
+  if self.variable_cache.cached_snapshot(identity, cache_key) is Some(snapshot) {
     return @moondbg.VariableLookupResult::found(snapshot)
   }
-  let variable = match self.resolve_variable_path(epoch, frame_id, path) {
+  let variable = match self.resolve_variable_path(identity, frame_id, path) {
     DapVariableResolved(variable) => variable
     DapVariableResolutionFailed(result) => return result
   }
   let snapshot = self.materialize_variable_with_limits(
-    epoch,
+    identity,
     variable,
     MAX_VARIABLE_EXPANSION_DEPTH,
     MAX_VARIABLE_EXPANSION_NODES,
   )
-  self.variable_cache.store_snapshot(epoch, cache_key, snapshot)
+  self.variable_cache.store_snapshot(identity, cache_key, snapshot)
   @moondbg.VariableLookupResult::found(snapshot)
 }
 
@@ -1286,10 +1349,19 @@ async fn DebugExecution::find_variable(
       action="inspect a variable",
     )
   }
+  self.variable_cache.select_frame(epoch, frame.index())
+  let identity = VariableCacheIdentity::{ epoch, frame_index: frame.index(), }
   let frame_id = self.selected_frame_id(thread, frame, "inspect a variable")
-  self.find_variable_inner(epoch, frame_id, path) catch {
+  let result = self.find_variable_inner(identity, frame_id, path) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
   }
+  guard self.machine.current_stop_epoch() == Some(epoch) &&
+    self.variable_cache.is_current(identity) else {
+    raise LldbDapBackendError::AdapterFailure(
+      "variable result belongs to a stale stop or frame",
+    )
+  }
+  result
 }
 
 ///|

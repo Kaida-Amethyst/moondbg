@@ -67,6 +67,14 @@ fn SourceView::from_stop(
 }
 
 ///|
+fn SourceView::from_frame(
+  frame : @moondbg.StackFrameSnapshot,
+  line_count~ : Int,
+) -> SourceView {
+  { source_path: frame.source_path(), line: frame.line(), line_count, }
+}
+
+///|
 /// Errors specific to the user-facing source breakpoint command. Keeping the
 /// cases semantic lets non-human renderers distinguish invalid paths from
 /// debugger-state failures without parsing terminal text.

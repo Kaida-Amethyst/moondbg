@@ -176,6 +176,43 @@ fn scripted_stack_body_with_runtime(frame_id : Int, line : Int) -> Json {
 }
 
 ///|
+fn scripted_user_frame(id : Int, physical_index : Int) -> Json {
+  {
+    "id": id,
+    "name": "user.frame.\{physical_index}",
+    "source": { "path": "/tmp/frame_\{physical_index}.mbt" },
+    "line": physical_index + 1,
+    "column": 1,
+  }
+}
+
+///|
+fn scripted_native_frame(id : Int, physical_index : Int) -> Json {
+  {
+    "id": id,
+    "name": "native.frame.\{physical_index}",
+    "source": { "path": "/tmp/frame_\{physical_index}.c" },
+    "line": physical_index + 1,
+    "column": 1,
+  }
+}
+
+///|
+fn scripted_unknown_frame(id : Int, physical_index : Int) -> Json {
+  {
+    "id": id,
+    "name": "unknown.frame.\{physical_index}",
+    "line": physical_index + 1,
+    "column": 1,
+  }
+}
+
+///|
+fn scripted_stack_page(frames : Array[Json], total_frames : Int) -> Json {
+  { "stackFrames": frames, "totalFrames": total_frames }
+}
+
+///|
 fn lifecycle_script() -> Array[@dap_testkit.ScriptedInput] {
   [
     scripted_response(100, 1, "initialize", {
@@ -1607,6 +1644,604 @@ fn sent_command(message : Json) -> String? {
 }
 
 ///|
+async test "P3 scripted stack pagination keeps a cumulative physical prefix" {
+  @async.with_task_group(async fn(_group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4000, 1, "initialize", {}),
+      scripted_response(
+        4001,
+        2,
+        "stackTrace",
+        scripted_stack_page(
+          [
+            scripted_native_frame(100, 0),
+            scripted_unknown_frame(101, 1),
+            scripted_user_frame(102, 2),
+          ],
+          99,
+        ),
+      ),
+      scripted_response(
+        4002,
+        3,
+        "stackTrace",
+        scripted_stack_page(
+          [
+            scripted_user_frame(103, 3),
+            scripted_user_frame(104, 4),
+            scripted_user_frame(105, 5),
+          ],
+          6,
+        ),
+      ),
+      scripted_response(
+        4003,
+        4,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(106, 6)], 7),
+      ),
+    ])
+    let execution = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(transport.as_transport()),
+    )
+    defer execution.close()
+    execution.machine.begin_execution()
+    execution.accept_event(
+      test_event("stopped", { "reason": "breakpoint", "threadId": 7 }),
+    )
+    let thread = @moondbg.ThreadSelection::initial()
+    let first = execution.load_stack_window(
+      thread,
+      @moondbg.StackWindow::new(0, 3),
+    )
+    assert_eq(first.loaded_count(), 3)
+    assert_eq(first.total_frames_hint(), Some(99))
+    assert_false(first.is_complete())
+    assert_true(
+      first.frame(0).map(frame => frame.kind()) is Some(@moondbg.NativeFrame),
+    )
+    assert_true(
+      first.frame(1).map(frame => frame.kind()) is Some(@moondbg.UnknownFrame),
+    )
+    assert_true(
+      first.frame(2).map(frame => frame.kind())
+      is Some(@moondbg.MoonBitUserFrame),
+    )
+    let second = execution.load_stack_window(
+      thread,
+      @moondbg.StackWindow::new(3, 3),
+    )
+    assert_eq(second.loaded_count(), 6)
+    assert_eq(second.total_frames_hint(), Some(6))
+    assert_false(second.is_complete())
+    let complete_stack = execution.load_stack_window(
+      thread,
+      @moondbg.StackWindow::new(6, 3),
+    )
+    assert_eq(complete_stack.loaded_count(), 7)
+    assert_eq(complete_stack.total_frames_hint(), Some(7))
+    assert_true(complete_stack.is_complete())
+    assert_eq(complete_stack.frames().map(frame => frame.physical_index()), [
+      0, 1, 2, 3, 4, 5, 6,
+    ])
+    assert_eq(execution.machine.frame_id(0), Some(100))
+    assert_eq(execution.machine.frame_id(6), Some(106))
+    assert_eq(execution.machine.frame_index(104), Some(4))
+    assert_eq(transport.remaining_inputs(), 0)
+    let stack_requests = transport
+      .sent_messages()
+      .filter(message => sent_command(message) == Some("stackTrace"))
+    assert_true(
+      stack_requests
+      is [
+        {
+          "arguments": {
+            "startFrame": Number(0, ..),
+            "levels": Number(3, ..),
+            ..
+          },
+          ..
+        },
+        {
+          "arguments": {
+            "startFrame": Number(3, ..),
+            "levels": Number(3, ..),
+            ..
+          },
+          ..
+        },
+        {
+          "arguments": {
+            "startFrame": Number(6, ..),
+            "levels": Number(3, ..),
+            ..
+          },
+          ..
+        },
+      ],
+    )
+  })
+}
+
+///|
+async test "P3 an exact page multiple requires a confirming empty page" {
+  @async.with_task_group(async fn(_group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4100, 1, "initialize", {}),
+      scripted_response(
+        4101,
+        2,
+        "stackTrace",
+        scripted_stack_page(
+          [
+            scripted_user_frame(200, 0),
+            scripted_user_frame(201, 1),
+            scripted_user_frame(202, 2),
+          ],
+          6,
+        ),
+      ),
+      scripted_response(
+        4102,
+        3,
+        "stackTrace",
+        scripted_stack_page(
+          [
+            scripted_user_frame(203, 3),
+            scripted_user_frame(204, 4),
+            scripted_user_frame(205, 5),
+          ],
+          6,
+        ),
+      ),
+      scripted_response(4103, 4, "stackTrace", scripted_stack_page([], 6)),
+    ])
+    let execution = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(transport.as_transport()),
+    )
+    defer execution.close()
+    execution.machine.begin_execution()
+    execution.accept_event(
+      test_event("stopped", { "reason": "entry", "threadId": 1 }),
+    )
+    let thread = @moondbg.ThreadSelection::initial()
+    execution.load_stack_window(thread, @moondbg.StackWindow::new(0, 3))
+    |> ignore
+    let full_page = execution.load_stack_window(
+      thread,
+      @moondbg.StackWindow::new(3, 3),
+    )
+    assert_eq(full_page.loaded_count(), 6)
+    assert_false(full_page.is_complete())
+    let confirmed = execution.load_stack_window(
+      thread,
+      @moondbg.StackWindow::new(6, 3),
+    )
+    assert_eq(confirmed.loaded_count(), 6)
+    assert_true(confirmed.is_complete())
+    assert_eq(transport.remaining_inputs(), 0)
+  })
+}
+
+///|
+async test "P3 initial selection pages past native frames without renumbering" {
+  @async.with_task_group(async fn(group) {
+    let first_page : Array[Json] = []
+    for physical_index in 0..<20 {
+      first_page.push(
+        scripted_native_frame(300 + physical_index, physical_index),
+      )
+    }
+    let script = [
+      scripted_response(4200, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+      }),
+      scripted_event(4201, "initialized", {}),
+      scripted_response(4202, 3, "configurationDone", {}),
+      scripted_response(4203, 2, "launch", {}),
+      scripted_event(4204, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(
+        4205,
+        4,
+        "stackTrace",
+        scripted_stack_page(first_page, 21),
+      ),
+      scripted_response(
+        4206,
+        5,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(320, 20)], 21),
+      ),
+      scripted_response(4207, 6, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4208, 7, "variables", {
+        "variables": [
+          {
+            "name": "native_answer",
+            "type": "Int",
+            "value": "300",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+    ]
+    let transport = @dap_testkit.ScriptedTransport::new(script)
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/paged-program", backend)
+    defer session.close()
+    guard session.run() is @moondbg.Stopped(initial_stop) else {
+      fail("the paged execution should stop")
+    }
+    assert_eq(initial_stop.function_name(), "user.frame.20")
+    assert_eq(initial_stop.source_path(), Some("/tmp/frame_20.mbt"))
+    assert_eq(initial_stop.line(), Some(21))
+    guard session.last_stop_snapshot() is Some(retained_stop) else {
+      fail("the initial stop snapshot should be retained")
+    }
+    assert_eq(retained_stop.function_name(), initial_stop.function_name())
+    assert_eq(retained_stop.source_path(), initial_stop.source_path())
+    assert_eq(retained_stop.line(), initial_stop.line())
+    assert_eq(session.selected_frame().map(frame => frame.index()), Some(20))
+    guard session.selected_frame_snapshot() is Some(selected_user) else {
+      fail("the selected user frame should have a domain snapshot")
+    }
+    assert_eq(selected_user.physical_index(), 20)
+    assert_eq(selected_user.source_path(), Some("/tmp/frame_20.mbt"))
+    assert_eq(selected_user.line(), Some(21))
+    guard session.stack_snapshot() is Some(stack) else {
+      fail("the complete cumulative stack should be retained")
+    }
+    assert_eq(stack.loaded_count(), 21)
+    assert_true(stack.is_complete())
+    assert_eq(stack.visible_frames().map(frame => frame.physical_index()), [20])
+    guard backend.session.execution is Some(execution) else {
+      fail("the stopped execution should retain private frame mappings")
+    }
+    assert_eq(execution.machine.frame_id(20), Some(320))
+    session.select_frame(0) |> ignore
+    guard session.last_stop_snapshot() is Some(after_selection) else {
+      fail("explicit selection should retain the normalized initial stop")
+    }
+    assert_eq(after_selection.function_name(), "user.frame.20")
+    guard session.selected_frame_snapshot() is Some(selected_native) else {
+      fail("the selected native frame should have a domain snapshot")
+    }
+    assert_eq(selected_native.physical_index(), 0)
+    assert_eq(selected_native.source_path(), Some("/tmp/frame_0.c"))
+    guard session.find_variable(@moondbg.VariablePath::root("native_answer"))
+      is @moondbg.VariableFound(native_answer) else {
+      fail("variable lookup should use the explicitly selected native frame")
+    }
+    assert_eq(native_answer.value(), "300")
+    assert_eq(transport.remaining_inputs(), 0)
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "stackTrace", "scopes",
+      "variables",
+    ])
+    let stack_requests = sent.filter(message => {
+      sent_command(message) == Some("stackTrace")
+    })
+    assert_true(
+      stack_requests
+      is [
+        {
+          "arguments": {
+            "startFrame": Number(0, ..),
+            "levels": Number(20, ..),
+            ..
+          },
+          ..
+        },
+        {
+          "arguments": {
+            "startFrame": Number(20, ..),
+            "levels": Number(20, ..),
+            ..
+          },
+          ..
+        },
+      ],
+    )
+  })
+}
+
+///|
+async test "P3 stack pagination rejects oversized duplicate and invalid windows" {
+  @async.with_task_group(async fn(_group) {
+    let oversized_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4300, 1, "initialize", {}),
+      scripted_response(
+        4301,
+        2,
+        "stackTrace",
+        scripted_stack_page(
+          [
+            scripted_user_frame(400, 0),
+            scripted_user_frame(401, 1),
+            scripted_user_frame(402, 2),
+          ],
+          3,
+        ),
+      ),
+    ])
+    let oversized = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(oversized_transport.as_transport()),
+    )
+    defer oversized.close()
+    oversized.machine.begin_execution()
+    oversized.accept_event(
+      test_event("stopped", { "reason": "entry", "threadId": 1 }),
+    )
+    assert_true(
+      try {
+        oversized.load_stack_window(
+          @moondbg.ThreadSelection::initial(),
+          @moondbg.StackWindow::new(0, 2),
+        )
+        |> ignore
+        false
+      } catch {
+        StackPageTooLarge(requested=2, actual=3) => true
+        _ => false
+      },
+    )
+    assert_eq(oversized.stack_snapshot, None)
+    assert_eq(oversized.machine.frame_id(0), None)
+
+    let duplicate_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4310, 1, "initialize", {}),
+      scripted_response(
+        4311,
+        2,
+        "stackTrace",
+        scripted_stack_page(
+          [scripted_user_frame(410, 0), scripted_user_frame(410, 1)],
+          2,
+        ),
+      ),
+    ])
+    let duplicate = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(duplicate_transport.as_transport()),
+    )
+    defer duplicate.close()
+    duplicate.machine.begin_execution()
+    duplicate.accept_event(
+      test_event("stopped", { "reason": "entry", "threadId": 1 }),
+    )
+    assert_true(
+      try {
+        duplicate.load_stack_window(
+          @moondbg.ThreadSelection::initial(),
+          @moondbg.StackWindow::new(0, 2),
+        )
+        |> ignore
+        false
+      } catch {
+        DuplicateStackFrameId(410) => true
+        _ => false
+      },
+    )
+    assert_eq(duplicate.stack_snapshot, None)
+
+    let window_transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4320, 1, "initialize", {}),
+      scripted_response(
+        4321,
+        2,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(420, 0)], 3),
+      ),
+    ])
+    let windowed = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(window_transport.as_transport()),
+    )
+    defer windowed.close()
+    windowed.machine.begin_execution()
+    windowed.accept_event(
+      test_event("stopped", { "reason": "entry", "threadId": 1 }),
+    )
+    windowed.load_stack_window(
+      @moondbg.ThreadSelection::initial(),
+      @moondbg.StackWindow::new(0, 1),
+    )
+    |> ignore
+    assert_true(
+      try {
+        windowed.load_stack_window(
+          @moondbg.ThreadSelection::initial(),
+          @moondbg.StackWindow::new(2, 1),
+        )
+        |> ignore
+        false
+      } catch {
+        NonContiguousStackRequest(expected=1, actual=2) => true
+        _ => false
+      },
+    )
+    assert_true(
+      try {
+        windowed.load_stack_window(
+          @moondbg.ThreadSelection::initial(),
+          @moondbg.StackWindow::new(0, 2),
+        )
+        |> ignore
+        false
+      } catch {
+        OverlappingStackRequest(loaded_end=1, requested_end=2) => true
+        _ => false
+      },
+    )
+    assert_eq(window_transport.remaining_inputs(), 0)
+  })
+}
+
+///|
+async test "P3 duplicate frame ids across pages are rejected before cache mutation" {
+  @async.with_task_group(async fn(_group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4400, 1, "initialize", {}),
+      scripted_response(
+        4401,
+        2,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(500, 0)], 2),
+      ),
+      scripted_response(
+        4402,
+        3,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(500, 1)], 2),
+      ),
+    ])
+    let execution = DebugExecution::prepare_with_dispatcher(
+      @dap.DapDispatcher::from_transport(transport.as_transport()),
+    )
+    defer execution.close()
+    execution.machine.begin_execution()
+    execution.accept_event(
+      test_event("stopped", { "reason": "entry", "threadId": 1 }),
+    )
+    execution.load_stack_window(
+      @moondbg.ThreadSelection::initial(),
+      @moondbg.StackWindow::new(0, 1),
+    )
+    |> ignore
+    assert_true(
+      try {
+        execution.load_stack_window(
+          @moondbg.ThreadSelection::initial(),
+          @moondbg.StackWindow::new(1, 1),
+        )
+        |> ignore
+        false
+      } catch {
+        DuplicateStackFrameId(500) => true
+        _ => false
+      },
+    )
+    assert_eq(
+      execution.stack_snapshot.map(stack => stack.loaded_count()),
+      Some(1),
+    )
+    assert_eq(execution.machine.frame_id(1), None)
+  })
+}
+
+///|
+async test "P3 frame-scoped raw caches coexist with reusable domain snapshots" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4500, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+      }),
+      scripted_event(4501, "initialized", {}),
+      scripted_response(4502, 3, "configurationDone", {}),
+      scripted_response(4503, 2, "launch", {}),
+      scripted_event(4504, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(
+        4505,
+        4,
+        "stackTrace",
+        scripted_stack_page(
+          [scripted_user_frame(600, 0), scripted_user_frame(601, 1)],
+          2,
+        ),
+      ),
+      scripted_response(4506, 5, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4507, 6, "variables", {
+        "variables": [
+          {
+            "name": "answer",
+            "type": "Int",
+            "value": "10",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_response(4508, 7, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4509, 8, "variables", {
+        "variables": [
+          {
+            "name": "answer",
+            "type": "Int",
+            "value": "20",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+    ])
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/frame-cache-program", backend,
+    )
+    defer session.close()
+    session.run() |> ignore
+    let answer = @moondbg.VariablePath::root("answer")
+    guard session.find_variable(answer) is @moondbg.VariableFound(top) else {
+      fail("the top frame should expose answer")
+    }
+    assert_eq(top.value(), "10")
+    session.select_frame(1) |> ignore
+    guard session.find_variable(answer) is @moondbg.VariableFound(caller) else {
+      fail("the caller frame should expose its own answer")
+    }
+    assert_eq(caller.value(), "20")
+    session.select_frame(0) |> ignore
+    guard session.find_variable(answer) is @moondbg.VariableFound(cached_top) else {
+      fail("the materialized top-frame answer should remain reusable")
+    }
+    assert_eq(cached_top.value(), "10")
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "scopes", "variables",
+    ])
+  })
+}
+
+///|
 test "lldb-dap resume kinds share request construction and user actions" {
   let capabilities : Json = { "supportsSteppingGranularity": true }
   let cases = [
@@ -1686,8 +2321,8 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     assert_true(stack.is_complete())
     assert_eq(stack.frames().map(frame => frame.physical_index()), [0, 1])
     assert_eq(session.selected_frame().map(frame => frame.index()), Some(1))
-    assert_eq(execution.machine.selected_frame_id(), Some(10))
-    assert_eq(execution.machine.selected_frame_index(), Some(1))
+    assert_eq(execution.machine.frame_id(1), Some(10))
+    assert_eq(execution.machine.frame_index(10), Some(1))
     guard session.take_output() is [output] else {
       fail("only user-visible debuggee output should be retained")
     }
@@ -1698,13 +2333,23 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
       fail("scripted execution should expose answer")
     }
     assert_eq(variable.value(), "42")
-    assert_true(execution.variable_cache.cached_scopes(1) is Some(_))
+    let first_frame_identity = VariableCacheIdentity::{
+      epoch: 1,
+      frame_index: 1,
+    }
+    assert_true(
+      execution.variable_cache.cached_scopes(first_frame_identity) is Some(_),
+    )
     guard session.next() is @moondbg.Stopped(after_next) else {
       fail("next should stop again")
     }
     assert_eq(after_next.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 2)
-    assert_true(execution.variable_cache.cached_scopes(1) is None)
+    assert_eq(execution.machine.frame_index(10), None)
+    assert_eq(execution.machine.frame_id(0), Some(11))
+    assert_true(
+      execution.variable_cache.cached_scopes(first_frame_identity) is None,
+    )
     guard session.step() is @moondbg.Stopped(after_step) else {
       fail("step should stop again")
     }
@@ -2112,11 +2757,12 @@ test "adapter failure enters Failed and clears the current stop context" {
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
-  machine.select_frame(42)
+  machine.remember_frame(0, 42)
   machine.fail("adapter closed")
   assert_true(machine.state is Failed)
   assert_eq(machine.failure_message, Some("adapter closed"))
-  assert_false(machine.has_current_frame(42))
+  assert_eq(machine.frame_id(0), None)
+  assert_eq(machine.frame_index(42), None)
   machine.accept_event(test_event("terminated", {}))
   assert_true(machine.state is Failed)
 }
@@ -2127,13 +2773,15 @@ test "resuming invalidates frame and variable references from the stop epoch" {
   machine.begin_execution()
   machine.mark_running()
   machine.accept_event(test_event("stopped", { "threadId": 7 }))
-  machine.select_frame(42)
+  machine.remember_frame(0, 42)
   machine.remember_variable_reference(99)
-  assert_true(machine.has_current_frame(42))
+  assert_eq(machine.frame_id(0), Some(42))
+  assert_eq(machine.frame_index(42), Some(0))
   assert_true(machine.has_current_variable_reference(99))
   machine.mark_resumed()
   assert_true(machine.state is Running)
-  assert_false(machine.has_current_frame(42))
+  assert_eq(machine.frame_id(0), None)
+  assert_eq(machine.frame_index(42), None)
   assert_false(machine.has_current_variable_reference(99))
 }
 
@@ -2317,25 +2965,28 @@ test "LLDB breakpoint command results preserve id and location count" {
 
 ///|
 test "stack frame selection prefers the first MoonBit source frame" {
-  let (frames, loaded_count) = parse_stack_frames({
-    "stackFrames": [
-      {
-        "id": 10,
-        "name": "runtime_entry",
-        "source": { "path": "/tmp/runtime.c" },
-        "line": 20,
-        "column": 1,
-      },
-      {
-        "id": 11,
-        "name": "main.inspect_value",
-        "source": { "path": "/tmp/main.mbt" },
-        "line": 4,
-        "column": 3,
-      },
-    ],
-  })
-  assert_eq(loaded_count, 2)
+  let frames = parse_stack_frames(
+    {
+      "stackFrames": [
+        {
+          "id": 10,
+          "name": "runtime_entry",
+          "source": { "path": "/tmp/runtime.c" },
+          "line": 20,
+          "column": 1,
+        },
+        {
+          "id": 11,
+          "name": "main.inspect_value",
+          "source": { "path": "/tmp/main.mbt" },
+          "line": 4,
+          "column": 3,
+        },
+      ],
+    },
+    0,
+  )
+  assert_eq(frames.length(), 2)
   guard select_parsed_stack_frame(frames) is Some(frame) else {
     fail("expected a stack frame")
   }
@@ -2539,29 +3190,42 @@ test "lldb-dap variable caches are isolated by stop epoch" {
     },
   ]
   cache.reset(1)
-  cache.store_scopes(1, scopes)
-  cache.store_variables(1, 1, variables)
-  cache.store_evaluated_variable(1, "10:arr[0]", variables[0])
+  cache.select_frame(1, 10)
+  let first_identity = VariableCacheIdentity::{ epoch: 1, frame_index: 10, }
+  cache.store_scopes(first_identity, scopes)
+  cache.store_variables(first_identity, 1, variables)
+  cache.store_evaluated_variable(first_identity, "10:arr[0]", variables[0])
   let snapshot = variables[0].snapshot()
-  cache.store_snapshot(1, "10:1:answer", snapshot)
-  assert_true(cache.cached_scopes(1) is Some(_))
-  assert_true(cache.cached_variables(1, 1) is Some(_))
-  guard cache.cached_evaluated_variable(1, "10:arr[0]") is Some(cached) else {
+  cache.store_snapshot(first_identity, "10:answer", snapshot)
+  assert_true(cache.cached_scopes(first_identity) is Some(_))
+  assert_true(cache.cached_variables(first_identity, 1) is Some(_))
+  guard cache.cached_evaluated_variable(first_identity, "10:arr[0]")
+    is Some(cached) else {
     fail("the evaluated variable should be cached in its stop epoch")
   }
   assert_eq(cached.name, "answer")
   assert_eq(cached.value, "42")
-  assert_eq(cache.cached_snapshot(1, "10:1:answer"), Some(snapshot))
+  assert_eq(cache.cached_snapshot(first_identity, "10:answer"), Some(snapshot))
+  cache.select_frame(1, 11)
+  let caller_identity = VariableCacheIdentity::{ epoch: 1, frame_index: 11, }
+  cache.store_scopes(first_identity, scopes)
+  assert_true(cache.cached_scopes(caller_identity) is None)
+  cache.select_frame(1, 10)
+  assert_eq(cache.cached_snapshot(first_identity, "10:answer"), Some(snapshot))
+  assert_true(cache.cached_scopes(first_identity) is None)
   cache.reset(2)
-  assert_true(cache.cached_scopes(1) is None)
-  assert_true(cache.cached_variables(1, 1) is None)
-  assert_true(cache.cached_evaluated_variable(1, "10:arr[0]") is None)
-  assert_true(cache.cached_snapshot(1, "10:1:answer") is None)
-  assert_true(cache.cached_scopes(2) is None)
-  cache.store_variables(1, 1, variables)
-  cache.store_snapshot(1, "10:1:answer", snapshot)
-  assert_true(cache.cached_variables(2, 1) is None)
-  assert_true(cache.cached_snapshot(2, "10:1:answer") is None)
+  let second_identity = VariableCacheIdentity::{ epoch: 2, frame_index: 10, }
+  assert_true(cache.cached_scopes(first_identity) is None)
+  assert_true(cache.cached_variables(first_identity, 1) is None)
+  assert_true(
+    cache.cached_evaluated_variable(first_identity, "10:arr[0]") is None,
+  )
+  assert_true(cache.cached_snapshot(first_identity, "10:answer") is None)
+  assert_true(cache.cached_scopes(second_identity) is None)
+  cache.store_variables(first_identity, 1, variables)
+  cache.store_snapshot(first_identity, "10:answer", snapshot)
+  assert_true(cache.cached_variables(second_identity, 1) is None)
+  assert_true(cache.cached_snapshot(second_identity, "10:answer") is None)
 }
 
 ///|
@@ -2949,7 +3613,7 @@ async test "lldb-dap materializes Array logical values within bounded storage re
     }
     let invalid_rejected = try {
       execution.find_variable_inner(
-        epoch,
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
         121,
         @moondbg.VariablePath::root("invalid"),
       )
@@ -3221,9 +3885,10 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
       execution.machine.current_stop_epoch() is Some(epoch) else {
       fail("scripted index failure should retain one stopped execution")
     }
+    execution.variable_cache.select_frame(epoch, 0)
     let message = try {
       execution.find_variable_inner(
-        epoch,
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
         150,
         @moondbg.VariablePath::new("arr", [@moondbg.Index(0)]),
       )
@@ -3401,6 +4066,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
       execution.machine.current_stop_epoch() is Some(epoch) else {
       fail("malformed enum fixture should retain one stopped execution")
     }
+    execution.variable_cache.select_frame(epoch, 0)
     let cases = [
       ("unknown_tag", "unknown tag 1"),
       ("duplicate_tag", "repeats tag 0"),
@@ -3413,7 +4079,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
       let (name, expected) = case
       let rejected = try {
         execution.find_variable_inner(
-          epoch,
+          VariableCacheIdentity::{ epoch, frame_index: 0, },
           140,
           @moondbg.VariablePath::root(name),
         )
@@ -3471,6 +4137,7 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       execution.machine.current_stop_epoch() is Some(epoch) else {
       fail("scripted execution should retain one stop epoch")
     }
+    execution.variable_cache.select_frame(epoch, 0)
     let line = DapVariable::{
       name: "line1",
       value: "0x1000",
@@ -3478,7 +4145,12 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       variables_reference: 101,
       evaluate_name: None,
     }
-    let snapshot = execution.materialize_variable_with_limits(epoch, line, 8, 2)
+    let snapshot = execution.materialize_variable_with_limits(
+      VariableCacheIdentity::{ epoch, frame_index: 0, },
+      line,
+      8,
+      2,
+    )
     guard snapshot.content() is @moondbg.VariableStructure(line_structure) &&
       line_structure.is_truncated() &&
       line_structure.children() is [start] &&
@@ -3491,7 +4163,10 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
     }
     assert_eq(start.name(), "start")
     let depth_limited = execution.materialize_variable_with_limits(
-      epoch, line, 0, 10,
+      VariableCacheIdentity::{ epoch, frame_index: 0, },
+      line,
+      0,
+      10,
     )
     assert_true(
       depth_limited.content() is @moondbg.VariableStructure(structure) &&
@@ -3526,6 +4201,7 @@ async test "lldb-dap variable materialization truncates recursive references" {
       execution.machine.current_stop_epoch() is Some(epoch) else {
       fail("scripted execution should retain one stop epoch")
     }
+    execution.variable_cache.select_frame(epoch, 0)
     let node = DapVariable::{
       name: "node",
       value: "0x1000",
@@ -3534,7 +4210,10 @@ async test "lldb-dap variable materialization truncates recursive references" {
       evaluate_name: None,
     }
     let snapshot = execution.materialize_variable_with_limits(
-      epoch, node, 8, 10,
+      VariableCacheIdentity::{ epoch, frame_index: 0, },
+      node,
+      8,
+      10,
     )
     guard snapshot.content() is @moondbg.VariableStructure(node_structure) &&
       !node_structure.is_truncated() &&

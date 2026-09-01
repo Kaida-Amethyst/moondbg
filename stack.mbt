@@ -9,6 +9,11 @@ pub(all) suberror StackSnapshotError {
   LoadedFrameCountMismatch(expected~ : Int, actual~ : Int)
   UnexpectedPhysicalFrameIndex(expected~ : Int, actual~ : Int)
   CompleteStackStartsAfterZero(Int)
+  StackExtensionThreadMismatch(expected~ : Int, actual~ : Int)
+  StackExtensionMustStartAtZero(Int)
+  StackExtensionWentBackwards(previous~ : Int, next~ : Int)
+  StackExtensionChangedFrame(Int)
+  StackExtensionMadeNoProgress(Int)
 } derive(Debug, Eq)
 
 ///|
@@ -333,6 +338,39 @@ pub fn StackSnapshot::total_frames_hint(self : StackSnapshot) -> Int? {
 ///|
 pub fn StackSnapshot::is_complete(self : StackSnapshot) -> Bool {
   self.complete
+}
+
+///|
+/// Validates a cumulative prefix returned after requesting a later window.
+/// Existing physical frames are immutable, and an incomplete extension must
+/// add at least one frame.
+pub fn StackSnapshot::validate_extension(
+  self : StackSnapshot,
+  next : StackSnapshot,
+) -> Unit raise StackSnapshotError {
+  guard next.thread() == self.thread() else {
+    raise StackExtensionThreadMismatch(
+      expected=self.thread().index(),
+      actual=next.thread().index(),
+    )
+  }
+  guard next.loaded_start() == 0 else {
+    raise StackExtensionMustStartAtZero(next.loaded_start())
+  }
+  guard next.loaded_count() >= self.loaded_count() else {
+    raise StackExtensionWentBackwards(
+      previous=self.loaded_count(),
+      next=next.loaded_count(),
+    )
+  }
+  for physical_index in 0..<self.loaded_count() {
+    guard self.frame(physical_index) == next.frame(physical_index) else {
+      raise StackExtensionChangedFrame(physical_index)
+    }
+  }
+  guard next.loaded_count() > self.loaded_count() || next.is_complete() else {
+    raise StackExtensionMadeNoProgress(self.loaded_count())
+  }
 }
 
 ///|

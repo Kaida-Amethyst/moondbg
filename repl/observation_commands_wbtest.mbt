@@ -15,6 +15,8 @@ priv struct ObservationCommandTestBackend {
   mut launches : Int
   mut lookups : Int
   mut last_name : String?
+  frame_selections : Array[Int]
+  mut stack : @moondbg.StackSnapshot?
   variable_mode : ObservationVariableMode
   output : Array[@moondbg.DebugOutput]
 }
@@ -23,7 +25,15 @@ priv struct ObservationCommandTestBackend {
 fn ObservationCommandTestBackend::new(
   variable_mode : ObservationVariableMode,
 ) -> ObservationCommandTestBackend {
-  { launches: 0, lookups: 0, last_name: None, variable_mode, output: [], }
+  {
+    launches: 0,
+    lookups: 0,
+    last_name: None,
+    frame_selections: [],
+    stack: None,
+    variable_mode,
+    output: [],
+  }
 }
 
 ///|
@@ -106,21 +116,25 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn finish(
 
 ///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn stack_snapshot(
-  _self,
+  self,
   thread,
   _window,
 ) {
-  test_stack_snapshot_from_stop(thread, observation_command_stop())
+  match self.stack {
+    Some(stack) => stack
+    None => test_stack_snapshot_from_stop(thread, observation_command_stop())
+  }
 }
 
 ///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variable(
   self,
   _thread,
-  _frame,
+  frame,
   path,
 ) {
   self.lookups += 1
+  self.frame_selections.push(frame.index())
   let name = path.display_name()
   self.last_name = Some(name)
   match self.variable_mode {
@@ -505,7 +519,7 @@ test "P7 list spec retains default and positive count validation" {
 }
 
 ///|
-async test "P7 list returns independent stop and source-view events" {
+async test "P7 list returns the selected frame source view" {
   let (backend, context) = stopped_observation_context(ObservationVariableFound)
   for
     entry in [
@@ -514,17 +528,77 @@ async test "P7 list returns independent stop and source-view events" {
       ("list --count 12", 12),
     ] {
     let result = execute_framework_command(context, entry.0)
-    guard result.events
-      is [StopPresentation(snapshot), SourceViewPresentation(source_view)] else {
-      fail("list should return separate stop and source-view events")
+    guard result.events is [SourceViewPresentation(source_view)] else {
+      fail("list should return the selected frame source-view event")
     }
-    assert_eq(snapshot.reason(), "breakpoint")
     assert_eq(source_view.source_path, Some("/tmp/observation.mbt"))
     assert_eq(source_view.line, Some(9))
     assert_eq(source_view.line_count, entry.1)
   }
   assert_eq(backend.launches, 1)
   assert_eq(backend.lookups, 0)
+}
+
+///|
+async test "P3 list and print follow selection without rewriting the initial stop" {
+  let (backend, context) = observation_command_test_context(
+    ObservationVariableFound,
+  )
+  backend.stack = Some(
+    @moondbg.StackSnapshot::new(
+      @moondbg.ThreadSelection::initial(),
+      [
+        @moondbg.StackFrameSnapshot::new(
+          0,
+          "test.main",
+          "test.main",
+          None,
+          Some("/tmp/observation.mbt"),
+          Some(9),
+          Some(1),
+          @moondbg.MoonBitUserFrame,
+        ),
+        @moondbg.StackFrameSnapshot::new(
+          1,
+          "test.caller",
+          "test.caller",
+          None,
+          Some("/tmp/caller.mbt"),
+          Some(21),
+          Some(3),
+          @moondbg.MoonBitUserFrame,
+        ),
+      ],
+      0,
+      2,
+      Some(2),
+      true,
+    ),
+  )
+  guard context.session.run() is @moondbg.Stopped(initial_stop) else {
+    fail("the observation backend should stop")
+  }
+  guard context.session.last_stop_snapshot() is Some(before_selection) else {
+    fail("the initial stop snapshot should be retained")
+  }
+  assert_eq(before_selection.function_name(), initial_stop.function_name())
+  assert_eq(before_selection.source_path(), initial_stop.source_path())
+  assert_eq(before_selection.line(), initial_stop.line())
+  context.session.select_frame(1) |> ignore
+  guard context.session.last_stop_snapshot() is Some(after_selection) else {
+    fail("frame selection must not discard the initial stop snapshot")
+  }
+  assert_eq(after_selection.function_name(), initial_stop.function_name())
+  assert_eq(after_selection.source_path(), initial_stop.source_path())
+  assert_eq(after_selection.line(), initial_stop.line())
+  let listed = execute_framework_command(context, "list")
+  guard listed.events is [SourceViewPresentation(source_view)] else {
+    fail("list should use the selected caller frame")
+  }
+  assert_eq(source_view.source_path, Some("/tmp/caller.mbt"))
+  assert_eq(source_view.line, Some(21))
+  execute_framework_command(context, "p answer") |> ignore
+  assert_eq(backend.frame_selections, [1])
 }
 
 ///|

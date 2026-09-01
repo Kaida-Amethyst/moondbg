@@ -16,6 +16,8 @@ priv struct RecordingBackend {
   thread_selections : Array[Int]
   frame_selections : Array[Int]
   mut stack : StackSnapshot?
+  stack_responses : Array[StackSnapshot]
+  mut next_stack_response : Int
   mut fail_stack : Bool
   mut fail_next : Bool
   mut observe_running_entry : (() -> Bool)?
@@ -47,6 +49,8 @@ fn RecordingBackend::new() -> RecordingBackend {
     thread_selections: [],
     frame_selections: [],
     stack: None,
+    stack_responses: [],
+    next_stack_response: 0,
     fail_stack: false,
     fail_next: false,
     observe_running_entry: None,
@@ -230,6 +234,11 @@ impl DebugBackend for RecordingBackend with fn stack_snapshot(
     raise DebugBackendError::BackendFailure(
       "recording backend failed to inspect the stack",
     )
+  }
+  if self.next_stack_response < self.stack_responses.length() {
+    let response = self.stack_responses[self.next_stack_response]
+    self.next_stack_response += 1
+    return response
   }
   match self.stack {
     Some(stack) => stack

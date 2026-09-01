@@ -4,6 +4,13 @@ priv suberror DapSessionError {
   InvalidIndexedCollectionValue(String)
   InvalidIndexedElementValue(String)
   InvalidEnumValue(String)
+  StackPageTooLarge(requested~ : Int, actual~ : Int)
+  DuplicateStackFrameId(Int)
+  DuplicatePhysicalFrameIndex(Int)
+  NonContiguousStackRequest(expected~ : Int, actual~ : Int)
+  OverlappingStackRequest(loaded_end~ : Int, requested_end~ : Int)
+  StaleStackPage(expected_epoch~ : Int, actual_epoch~ : Int?)
+  StaleVariableResult(expected_epoch~ : Int, expected_frame~ : Int)
   RequestFailed(command~ : String, message~ : String)
   UnsupportedAdapterRequest(String)
   MismatchedResponseCommand(expected~ : String, actual~ : String)
@@ -140,8 +147,7 @@ fn DebugExecution::selected_frame_id(
   action : String,
 ) -> Int raise LldbDapBackendError {
   self.selected_thread_id(thread, action) |> ignore
-  guard self.machine.selected_frame_index() == Some(frame.index()) &&
-    self.machine.selected_frame_id() is Some(frame_id) else {
+  guard self.machine.frame_id(frame.index()) is Some(frame_id) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.machine.state,
       action~,
@@ -159,12 +165,14 @@ fn DebugExecution::accept_event(
     self.pending_output.push(output)
   }
   match event.name() {
-    "stopped" =>
+    "stopped" => {
       self.stop_reason = match event.body() {
         { "description": String(description), .. } => description
         { "reason": String(reason), .. } => reason
         _ => "stopped"
       }
+      self.stack_snapshot = None
+    }
     "exited" => {
       self.exit_code = match event.body() {
         { "exitCode": Number(code, ..), .. } => Some(code.to_int())
@@ -286,21 +294,6 @@ async fn DebugExecution::resume_transaction(
   self.variable_cache.reset(0)
   self.request(request.command(), request.arguments()) |> ignore
   self.complete_execution()
-}
-
-///|
-fn DebugExecution::current_stack_snapshot(
-  self : DebugExecution,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.StackSnapshot raise LldbDapBackendError {
-  self.selected_thread_id(thread, "inspect the stack") |> ignore
-  guard self.stack_snapshot is Some(snapshot) && snapshot.thread() == thread else {
-    raise LldbDapBackendError::OperationNotAllowed(
-      state=self.machine.state,
-      action="inspect the stack",
-    )
-  }
-  snapshot
 }
 
 ///|

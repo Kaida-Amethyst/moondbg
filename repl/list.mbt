@@ -49,13 +49,12 @@ fn list_command_spec() -> CommandSpec {
 
 ///|
 impl ReplCommand for CommandList with fn execute(self, context) {
-  guard context.session.last_stop_snapshot() is Some(snapshot) else {
+  guard context.session.selected_frame_snapshot() is Some(frame) else {
     return CommandResult::continuing(events=[NoStoppedSourcePresentation])
   }
   CommandResult::continuing(events=[
-    StopPresentation(snapshot),
     SourceViewPresentation(
-      SourceView::from_stop(snapshot, line_count=self.line_count),
+      SourceView::from_frame(frame, line_count=self.line_count),
     ),
   ])
 }

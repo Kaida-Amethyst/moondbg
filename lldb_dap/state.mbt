@@ -13,8 +13,8 @@ priv enum DapSessionState {
 priv struct StopEpochContext {
   epoch : Int
   mut thread_id : Int?
-  mut frame_id : Int?
-  mut frame_index : Int?
+  frame_ids : Map[Int, Int]
+  frame_indices : Map[Int, Int]
   variable_references : Map[Int, Bool]
 }
 
@@ -95,8 +95,8 @@ fn DapSessionMachine::accept_event(
           self.stop_context = Some({
             epoch: self.stop_epoch,
             thread_id: stopped_thread_id(event),
-            frame_id: None,
-            frame_index: None,
+            frame_ids: {},
+            frame_indices: {},
             variable_references: {},
           })
           self.state = Stopped
@@ -137,17 +137,46 @@ fn DapSessionMachine::select_thread(
 }
 
 ///|
-#warnings("-unused_value")
-fn DapSessionMachine::select_frame(
+fn DapSessionMachine::remember_frame(
   self : DapSessionMachine,
+  physical_index : Int,
   frame_id : Int,
-  physical_index? : Int = 0,
 ) -> Unit raise DapSessionError {
   guard self.state is Stopped && self.stop_context is Some(context) else {
-    raise InvalidSessionTransition(state=self.state, action="select frame")
+    raise InvalidSessionTransition(state=self.state, action="remember frame")
   }
-  context.frame_id = Some(frame_id)
-  context.frame_index = Some(physical_index)
+  guard context.frame_ids.get(physical_index) is None else {
+    raise DuplicatePhysicalFrameIndex(physical_index)
+  }
+  guard context.frame_indices.get(frame_id) is None else {
+    raise DuplicateStackFrameId(frame_id)
+  }
+  context.frame_ids.set(physical_index, frame_id)
+  context.frame_indices.set(frame_id, physical_index)
+}
+
+///|
+fn DapSessionMachine::frame_id(
+  self : DapSessionMachine,
+  physical_index : Int,
+) -> Int? {
+  match self.stop_context {
+    Some(context) if context.epoch == self.stop_epoch =>
+      context.frame_ids.get(physical_index)
+    _ => None
+  }
+}
+
+///|
+fn DapSessionMachine::frame_index(
+  self : DapSessionMachine,
+  frame_id : Int,
+) -> Int? {
+  match self.stop_context {
+    Some(context) if context.epoch == self.stop_epoch =>
+      context.frame_indices.get(frame_id)
+    _ => None
+  }
 }
 
 ///|
@@ -167,17 +196,6 @@ fn DapSessionMachine::remember_variable_reference(
 
 ///|
 #warnings("-unused_value")
-fn DapSessionMachine::has_current_frame(
-  self : DapSessionMachine,
-  frame_id : Int,
-) -> Bool {
-  self.stop_context is Some(context) &&
-  context.epoch == self.stop_epoch &&
-  context.frame_id == Some(frame_id)
-}
-
-///|
-#warnings("-unused_value")
 fn DapSessionMachine::has_current_variable_reference(
   self : DapSessionMachine,
   reference : Int,
@@ -192,23 +210,6 @@ fn DapSessionMachine::has_current_variable_reference(
 fn DapSessionMachine::selected_thread_id(self : DapSessionMachine) -> Int? {
   match self.stop_context {
     Some(context) if context.epoch == self.stop_epoch => context.thread_id
-    _ => None
-  }
-}
-
-///|
-#warnings("-unused_value")
-fn DapSessionMachine::selected_frame_id(self : DapSessionMachine) -> Int? {
-  match self.stop_context {
-    Some(context) if context.epoch == self.stop_epoch => context.frame_id
-    _ => None
-  }
-}
-
-///|
-fn DapSessionMachine::selected_frame_index(self : DapSessionMachine) -> Int? {
-  match self.stop_context {
-    Some(context) if context.epoch == self.stop_epoch => context.frame_index
     _ => None
   }
 }

@@ -33,24 +33,26 @@ fn LldbDapSession::state(self : LldbDapSession) -> DapSessionState {
 }
 
 ///|
-fn LldbDapSession::stack_snapshot(
+async fn LldbDapSession::stack_snapshot(
   self : LldbDapSession,
   thread : @moondbg.ThreadSelection,
   window : @moondbg.StackWindow,
 ) -> @moondbg.StackSnapshot raise LldbDapBackendError {
-  guard window == @moondbg.StackWindow::initial() else {
-    raise LldbDapBackendError::OperationNotAllowed(
-      state=self.state(),
-      action="load another stack window",
-    )
-  }
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.detached_state,
       action="inspect the stack",
     )
   }
-  execution.current_stack_snapshot(thread)
+  execution.load_stack_window(thread, window) catch {
+    error => {
+      let message = @debug.to_string(error)
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise LldbDapBackendError::AdapterFailure(message)
+    }
+  }
 }
 
 ///|
