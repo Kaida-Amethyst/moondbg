@@ -13,10 +13,12 @@
 - `array_double` 包中长度 10/100 的 `Array[Double]` 逻辑长度与有界打印。
 - `array_points` 包中 `Array[Point]` 的精确下标及后续字段路径打印。
 - `list` 包中 boxed enum 的 active constructor 与浅层 payload 打印。
+- `stack_frames` 包中跨包、普通函数、递归和泛型调用组成的调用栈，以及各 frame 的参数、
+  局部变量、shadowing 和作用域边界。
 
 ## 使用完整调试信息构建
 
-必须使用开发工具链。`moon debug` 会在相关 moonc 阶段传入 `-debug-info full`，随后把构建
+必须使用开发工具链。`moon debug` 会在相关 moonc 阶段传入 `-g -O0`，随后把构建
 产物和当前包/alias 上下文传给 moondbg：
 
 ```sh
@@ -54,8 +56,7 @@ moon debug main
 testdata/dwarf_probe/_build/native/debug/build/main/main.exe
 ```
 
-可以通过以下命令检查实际编译命令；`build-package` 和 `link-core` 都应包含
-`-debug-info full -O0`：
+可以通过以下命令检查实际编译命令；`build-package` 和 `link-core` 都应包含 `-g -O0`：
 
 ```sh
 moon debug --dry-run main
@@ -150,6 +151,50 @@ moon debug array_points
 (moondbg) p arr[0].x
 (moondbg) p arr[3]
 ```
+
+## 调用栈与栈帧 fixture
+
+`stack_frames` 是 T-06 调用栈、栈帧导航和局部变量功能的专用可执行包。它通过辅助 library
+package `stack_support` 构造以下调用链：
+
+```text
+main
+└─ @stack_support.enter_stack
+   └─ ordinary_frame
+      └─ recursive_frame(depth = 3)
+         └─ recursive_frame(depth = 2)
+            └─ recursive_frame(depth = 1)
+               └─ recursive_frame(depth = 0)
+                  └─ generic_leaf[Int]
+```
+
+程序可以独立运行，并确定性输出 `stack fixture result: 676`：
+
+```sh
+cd testdata/dwarf_probe
+moon run stack_frames
+```
+
+调试时执行：
+
+```sh
+moon debug stack_frames
+```
+
+建议的叶子停点是 `stack_support/stack_support.mbt` 中带有
+`MOONDBG_STACK_LEAF_BREAKPOINT` 标记的表达式。标记与可停语句位于同一源码行，可先用以下
+命令取得当前位置，再按 moondbg 已支持的源码行断点语法设置断点：
+
+```sh
+rg -n 'MOONDBG_STACK_LEAF_BREAKPOINT' stack_support/stack_support.mbt
+```
+
+在该位置停住后，现有 `list` 和 `p` 可用于基础观察；`bt`、frame 导航和 `locals` 是 T-06
+后续阶段将实现的能力，本 fixture 不预先声称这些命令已经可用。各层刻意使用不同的参数和
+local 名称及数值：main 和跨包 frame 持有 Array，递归 frame 持有不同 depth，泛型叶子持有
+泛型 envelope 和 leaf Array。`ordinary_frame` 的内外词法块包含同名 `shadowed_value`；
+`nested_result`、`cross_result`、`stack_result` 等调用结果只在调用返回后才可用，用于验证
+源码位置对应的变量可用范围。`main` 之下自然保留 MoonBit runtime/native 入口边界。
 
 ## 2026-08-30 验收结果
 
