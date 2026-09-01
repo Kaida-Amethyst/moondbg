@@ -68,6 +68,7 @@ fn DapVariable::source_type_name(self : DapVariable) -> String? {
 priv enum DapVariableSelection {
   DapVariableSelected(DapVariable)
   DapVariableUnavailable
+  DapVariableAmbiguous
   DapVariableMissing
 }
 
@@ -76,18 +77,17 @@ fn Array::select_root_variable(
   self : Array[DapVariable],
   name : String,
 ) -> DapVariableSelection {
-  let mut matched = false
+  let matches : Array[DapVariable] = []
   for variable in self {
     guard variable.matches_lookup_name(name) else { continue }
-    matched = true
-    if variable.is_available() {
-      return DapVariableSelected({ ..variable, name, })
-    }
+    matches.push(variable)
   }
-  if matched {
-    DapVariableUnavailable
-  } else {
-    DapVariableMissing
+  match matches {
+    [] => DapVariableMissing
+    [variable] if variable.is_available() =>
+      DapVariableSelected({ ..variable, name, })
+    [_] => DapVariableUnavailable
+    [_, _, ..] => DapVariableAmbiguous
   }
 }
 
@@ -644,6 +644,29 @@ fn parse_indexed_element_evaluate_response(
 }
 
 ///|
+fn parse_root_evaluate_response(
+  body : Json,
+  name : String,
+) -> DapVariable raise DapSessionError {
+  guard body is Object(object) &&
+    object.get("result") is Some(String(result)) &&
+    object.get("variablesReference") is Some(Number(reference, ..)) &&
+    reference.to_int() >= 0 else {
+    raise InvalidMessage(body)
+  }
+  {
+    name,
+    value: result,
+    type_name: match object.get("type") {
+      Some(String(type_name)) => Some(type_name)
+      _ => None
+    },
+    variables_reference: reference.to_int(),
+    evaluate_name: Some(name),
+  }
+}
+
+///|
 async fn DebugExecution::load_scopes(
   self : DebugExecution,
   identity : VariableCacheIdentity,
@@ -1183,7 +1206,7 @@ async fn DebugExecution::active_enum_variant_raw(
 }
 
 ///|
-fn ambiguous_local_summary(
+fn unavailable_shadowed_local_summary(
   name : String,
   variables : Array[DapVariable],
 ) -> @moondbg.LocalVariableSnapshot {
@@ -1204,8 +1227,44 @@ fn ambiguous_local_summary(
     } else {
       None
     },
-    @moondbg.LocalVariableAmbiguous,
+    @moondbg.LocalVariableUnavailable,
   )
+}
+
+///|
+async fn DebugExecution::evaluate_shadowed_root(
+  self : DebugExecution,
+  identity : VariableCacheIdentity,
+  frame_id : Int,
+  name : String,
+) -> DapVariableResolution {
+  let cache_key = "\{frame_id}:root:\{name}"
+  if self.variable_cache.cached_evaluated_variable(identity, cache_key)
+    is Some(cached) {
+    return DapVariableResolved(cached)
+  }
+  let response = self.request_allow_failure("evaluate", {
+    "expression": name,
+    "frameId": frame_id,
+    "context": "watch",
+  })
+  self.ensure_variable_identity(identity)
+  guard response.success() else {
+    return DapVariableResolutionFailed(
+      @moondbg.VariableLookupResult::unavailable(name),
+    )
+  }
+  let evaluated = parse_root_evaluate_response(response.body(), name)
+  guard evaluated.is_available() else {
+    return DapVariableResolutionFailed(
+      @moondbg.VariableLookupResult::unavailable(name),
+    )
+  }
+  if evaluated.variables_reference > 0 {
+    self.machine.remember_variable_reference(evaluated.variables_reference)
+  }
+  self.variable_cache.store_evaluated_variable(identity, cache_key, evaluated)
+  DapVariableResolved(evaluated)
 }
 
 ///|
@@ -1344,7 +1403,13 @@ async fn DebugExecution::load_local_variables_inner(
     match group {
       [variable] =>
         summaries.push(self.compact_local_variable(identity, variable))
-      [_, _, ..] => summaries.push(ambiguous_local_summary(name, group))
+      [_, _, ..] =>
+        match self.evaluate_shadowed_root(identity, frame_id, name) {
+          DapVariableResolved(variable) =>
+            summaries.push(self.compact_local_variable(identity, variable))
+          DapVariableResolutionFailed(_) =>
+            summaries.push(unavailable_shadowed_local_summary(name, group))
+        }
       [] => ()
     }
   }
@@ -1466,6 +1531,8 @@ async fn DebugExecution::resolve_root_variable(
         return DapVariableResolutionFailed(
           @moondbg.VariableLookupResult::unavailable(name),
         )
+      DapVariableAmbiguous =>
+        return self.evaluate_shadowed_root(identity, frame_id, name)
       DapVariableMissing => ()
     }
   }
@@ -1526,6 +1593,10 @@ async fn DebugExecution::resolve_variable_path(
           DapVariableUnavailable =>
             return DapVariableResolutionFailed(
               @moondbg.VariableLookupResult::unavailable("\{owner}.\{field}"),
+            )
+          DapVariableAmbiguous =>
+            return DapVariableResolutionFailed(
+              @moondbg.VariableLookupResult::field_not_found(owner, field),
             )
           DapVariableMissing =>
             return DapVariableResolutionFailed(

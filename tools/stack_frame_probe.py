@@ -239,14 +239,20 @@ def expected_chain_checks(
         == list(range(len(frames))),
         "frameIdsUnique": len(frame_ids) == len(set(frame_ids)),
         "genericLeafAtPhysicalZero": bool(names)
-        and "generic_leaf" in names[0]
-        and "|[Int]|" in names[0]
+        and names[0].startswith("_M0F")
+        and names[0].endswith("13generic__leafGiE")
         and same_path(source_path(frames[0]), support_source)
         and frames[0].get("line") == marker,
-        "fourRecursiveFrames": sum("recursive_frame" in name for name in names)
+        "fourRecursiveFrames": sum(
+            name.endswith("16recursive__frame") for name in names
+        )
         == 4,
-        "ordinaryFramePresent": any("ordinary_frame" in name for name in names),
-        "crossPackageFramePresent": any("enter_stack" in name for name in names),
+        "ordinaryFramePresent": any(
+            name.endswith("15ordinary__frame") for name in names
+        ),
+        "crossPackageFramePresent": any(
+            name.endswith("12enter__stack") for name in names
+        ),
         "moonbitMainSourcePresent": any(
             name == "moonbit_main" and same_path(source_path(frame), main_source)
             for name, frame in zip(names, frames)
@@ -309,7 +315,7 @@ def finding_summary(
     recursive_depths: list[dict[str, Any]] = []
     for record in moonbit_records:
         frame = record["frame"]
-        if "recursive_frame" not in frame_name(frame):
+        if not frame_name(frame).endswith("16recursive__frame"):
             continue
         depth = next(
             (

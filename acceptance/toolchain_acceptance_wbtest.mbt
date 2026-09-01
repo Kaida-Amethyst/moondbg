@@ -94,7 +94,7 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   assert_true(
     process.expect(b"Breakpoint 1 verified at function main", timeout_ms=20000),
   )
-  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
+  assert_true(process.expect(b"in main", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
 
   assert_true(process.write(@utf8.encode("b \{source_breakpoint}\r")))
@@ -105,7 +105,7 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   assert_true(process.expect(b"Breakpoint 3 verified at function sum"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
-  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
+  assert_true(process.expect(b"in main", timeout_ms=10000))
   assert_true(process.expect(@utf8.encode(source_breakpoint)))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
@@ -130,10 +130,10 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   )
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
-  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity|[Int]|"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity[Int]"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"continue\r"))
-  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity|[String]|"))
+  assert_true(process.expect(b"moondbg-dwarf-probe/lib.identity[String]"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"b missing\r"))
   assert_true(process.expect(b"Breakpoint 6 rejected at function missing"))
@@ -153,7 +153,7 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
     ),
   )
   assert_true(process.expect(b"Breakpoint 6 rejected at function missing"))
-  assert_true(process.expect(b"in moonbit_main", timeout_ms=10000))
+  assert_true(process.expect(b"in main", timeout_ms=10000))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"quit\r"))
   assert_true(process.expect(b"Debugger exited."))
@@ -449,6 +449,149 @@ async test "development toolchain precisely inspects Array struct elements" {
   assert_true(
     process.expect(b"Index 3 is out of bounds for 'arr' with length 3."),
   )
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"quit\r"))
+  assert_true(process.expect(b"Debugger exited."))
+  assert_true(process.wait(timeout_ms=10000))
+}
+
+///|
+async test "development toolchain navigates stack frames and caller locals" {
+  guard toolchain_acceptance_enabled() else { return }
+  let (moon, _moon_home) = require_development_toolchain()
+  let repository = @fs.realpath(".")
+  let fixture = "\{repository}/testdata/dwarf_probe"
+  let support_source = "\{fixture}/stack_support/stack_support.mbt"
+  let main_source = "\{fixture}/stack_frames/main.mbt"
+  let leaf_line = unique_source_line(
+    support_source, "generic_envelope.envelope_code + leaf_payload.payload_code + leaf_adjustment // MOONDBG_STACK_LEAF_BREAKPOINT",
+  )
+  let inner_shadow_line = unique_source_line(
+    support_source, "recursive_frame(3, shadowed_value, ordinary_payload)",
+  )
+  let after_call_line = unique_source_line(
+    main_source, "let main_after_call = stack_result + main_seed",
+  )
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moon,
+    fixture,
+    package_name="stack_frames",
+  )
+  defer process.close()
+  assert_eq(process.status(), 0)
+  guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
+    process.wait(timeout_ms=100) |> ignore
+    fail(
+      "moon debug stack_frames did not open a prompt (PTY status \{process.status()})",
+    )
+  }
+  assert_true(
+    process.write(
+      @utf8.encode("b stack_support/stack_support.mbt:\{leaf_line}\r"),
+    ),
+  )
+  assert_true(process.expect(b"Breakpoint 1 pending at"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(
+    process.write(@utf8.encode("b stack_frames/main.mbt:\{after_call_line}\r")),
+  )
+  assert_true(process.expect(b"Breakpoint 2 pending at"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(
+    process.write(
+      @utf8.encode("b stack_support/stack_support.mbt:\{inner_shadow_line}\r"),
+    ),
+  )
+  assert_true(process.expect(b"Breakpoint 3 pending at"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"run\r"))
+  assert_true(process.expect(b"stack_support.ordinary_frame", timeout_ms=20000))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p shadowed_value\r"))
+  assert_true(process.expect(b"shadowed_value: int = 340"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(
+    process.expect(
+      b"moondbg-dwarf-probe/stack_support.generic_leaf[Int]",
+      timeout_ms=20000,
+    ),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"bt\r"))
+  assert_true(process.expect(b"* #0 [moonbit]"))
+  assert_true(
+    process.expect(b"moondbg-dwarf-probe/stack_support.generic_leaf[Int]"),
+  )
+  assert_true(process.expect(b"#3 [moonbit]"))
+  assert_true(process.expect(b"stack_support.recursive_frame"))
+  assert_true(process.expect(b"#5 [moonbit]"))
+  assert_true(process.expect(b"stack_support.ordinary_frame"))
+  assert_true(process.expect(b"#6 [moonbit]"))
+  assert_true(process.expect(b"stack_support.enter_stack"))
+  assert_true(process.expect(b"#7 [moonbit] main"))
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"bt --all\r"))
+  assert_true(process.expect(b"#8 [native] main"))
+  assert_true(process.expect(b"#9 [native] start"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"frame 3\r"))
+  assert_true(process.expect(b"Selected frame #3:"))
+  assert_true(process.expect(b"stack_support.recursive_frame"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"locals\r"))
+  assert_true(process.expect(b"recursion_depth: Int = 2"))
+  assert_true(process.expect(b"depth_marker: Int = 390"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p recursion_depth\r"))
+  assert_true(process.expect(b"recursion_depth: int = 2"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"list\r"))
+  assert_true(process.expect(b"recursive_frame"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"up\r"))
+  assert_true(process.expect(b"Selected frame #4:"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"down\r"))
+  assert_true(process.expect(b"Selected frame #3:"))
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"frame 5\r"))
+  assert_true(process.expect(b"Selected frame #5:"))
+  assert_true(process.expect(b"stack_support.ordinary_frame"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"locals\r"))
+  assert_true(process.expect(b"shadowed_value: Int = <unavailable>"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p shadowed_value\r"))
+  assert_true(
+    process.expect(
+      b"Variable 'shadowed_value' is unavailable at the current location.",
+    ),
+  )
+  assert_true(process.expect(b"(moondbg) "))
+
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"in main", timeout_ms=20000))
+  assert_true(process.expect(b"stack_frames/main.mbt"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"bt\r"))
+  assert_true(process.expect(b"* #0 [moonbit] main"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"locals\r"))
+  assert_true(process.expect(b"main_seed: Int = 7"))
+  assert_true(process.expect(b"stack_result: Int = 669"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"p stack_result\r"))
+  assert_true(process.expect(b"stack_result: int = 669"))
+  assert_true(process.expect(b"(moondbg) "))
+  assert_true(process.write(b"continue\r"))
+  assert_true(process.expect(b"begin terminal output", timeout_ms=10000))
+  assert_true(process.expect(b"stack fixture result: 676"))
+  assert_true(process.expect(b"end terminal output"))
+  assert_true(process.expect(b"Process exited normally (code 0)."))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"quit\r"))
   assert_true(process.expect(b"Debugger exited."))

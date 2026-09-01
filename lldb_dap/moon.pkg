@@ -1,6 +1,7 @@
 import {
   "Kaida-Amethyst/moondbg",
   "Kaida-Amethyst/moondbg/dap",
+  "Kaida-Amethyst/moondbg/name_mangle",
   "Kaida-Amethyst/moondbg/runtime_value",
   "moonbitlang/async",
   "moonbitlang/core/debug",

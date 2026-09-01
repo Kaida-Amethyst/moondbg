@@ -2309,7 +2309,12 @@ async test "P5 locals isolate reused references by frame and cache materialized 
         ],
       }),
       scripted_response(4607, 6, "variables", first_frame_variables),
-      scripted_response(4608, 7, "scopes", {
+      scripted_response(4608, 7, "evaluate", {
+        "result": "340",
+        "type": "int",
+        "variablesReference": 0,
+      }),
+      scripted_response(4609, 8, "scopes", {
         "scopes": [
           {
             "name": "Locals",
@@ -2318,7 +2323,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
           },
         ],
       }),
-      scripted_response(4609, 8, "variables", {
+      scripted_response(4610, 9, "variables", {
         "variables": [
           {
             "name": "answer",
@@ -2328,15 +2333,15 @@ async test "P5 locals isolate reused references by frame and cache materialized 
           },
         ],
       }),
-      scripted_event(4610, "stopped", { "reason": "step", "threadId": 1 }),
-      scripted_response(4611, 9, "next", {}),
+      scripted_event(4611, "stopped", { "reason": "step", "threadId": 1 }),
+      scripted_response(4612, 10, "next", {}),
       scripted_response(
-        4612,
-        10,
+        4613,
+        11,
         "stackTrace",
         scripted_stack_page([scripted_user_frame(702, 0)], 1),
       ),
-      scripted_response(4613, 11, "scopes", {
+      scripted_response(4614, 12, "scopes", {
         "scopes": [
           {
             "name": "Locals",
@@ -2345,7 +2350,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
           },
         ],
       }),
-      scripted_response(4614, 12, "variables", {
+      scripted_response(4615, 13, "variables", {
         "variables": [
           {
             "name": "answer",
@@ -2382,12 +2387,20 @@ async test "P5 locals isolate reused references by frame and cache materialized 
     )
     assert_true(future.availability() is @moondbg.LocalVariableUnavailable)
     assert_eq(shadowed.name(), "shadowed_value")
-    assert_true(shadowed.availability() is @moondbg.LocalVariableAmbiguous)
+    assert_eq(
+      shadowed.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("340")),
+    )
     guard session.find_variable(@moondbg.VariablePath::root("answer"))
       is @moondbg.VariableFound(first_print) else {
       fail("print should reuse raw locals for the selected frame")
     }
     assert_eq(first_print.value(), "10")
+    guard session.find_variable(@moondbg.VariablePath::root("shadowed_value"))
+      is @moondbg.VariableFound(shadowed_print) else {
+      fail("print should reuse the exact evaluated shadow binding")
+    }
+    assert_eq(shadowed_print.value(), "340")
 
     session.select_frame(1) |> ignore
     let caller_locals = session.local_variables()
@@ -2432,7 +2445,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
       "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
-      "scopes", "variables", "next", "stackTrace", "scopes", "variables",
+      "evaluate", "scopes", "variables", "next", "stackTrace", "scopes", "variables",
     ])
   })
 }
@@ -3499,6 +3512,39 @@ test "stack frame selection prefers the first MoonBit source frame" {
 }
 
 ///|
+test "MoonBit stack identity keeps raw linkage and decodes a source display name" {
+  let parsed = parse_stack_frames(
+    {
+      "stackFrames": [
+        {
+          "id": 12,
+          "name": "_M0FP14demo13generic__leafGiE",
+          "source": { "path": "/tmp/main.mbt" },
+          "line": 8,
+          "column": 3,
+        },
+        {
+          "id": 13,
+          "name": "moonbit_main",
+          "source": { "path": "/tmp/main.mbt" },
+          "line": 12,
+          "column": 1,
+        },
+      ],
+    },
+    0,
+  )
+  let generic = parsed[0].snapshot()
+  assert_eq(generic.raw_name(), "_M0FP14demo13generic__leafGiE")
+  assert_eq(generic.display_name(), "@demo.generic_leaf[Int]")
+  assert_eq(generic.linkage_name(), Some("_M0FP14demo13generic__leafGiE"))
+  let main = parsed[1].snapshot()
+  assert_eq(main.raw_name(), "moonbit_main")
+  assert_eq(main.display_name(), "main")
+  assert_eq(main.linkage_name(), Some("moonbit_main"))
+}
+
+///|
 test "thread fallback selects the first DAP thread" {
   assert_eq(
     first_thread_id({
@@ -3621,7 +3667,7 @@ test "indexed evaluate responses normalize struct pointers and reject malformed 
 }
 
 ///|
-test "lldb-dap variable lookup selects the available shadowed local" {
+test "lldb-dap variable lookup defers duplicate shadow bindings to evaluation" {
   guard parse_variables({
       "variables": [
         {
@@ -3640,13 +3686,10 @@ test "lldb-dap variable lookup selects the available shadowed local" {
         },
       ],
     })
-    is Some(first_stop) &&
-    first_stop.select_root_variable("arr") is DapVariableSelected(first_arr) else {
-    fail("the first arr should be available before its call")
+    is Some(first_stop) else {
+    fail("the first shadow pair should be parsed")
   }
-  assert_eq(first_arr.name, "arr")
-  assert_eq(first_arr.value, "moonbit.array_i32 @ 0x2000")
-  assert_eq(first_arr.variables_reference, 4)
+  assert_true(first_stop.select_root_variable("arr") is DapVariableAmbiguous)
   guard parse_variables({
       "variables": [
         {
@@ -3665,13 +3708,10 @@ test "lldb-dap variable lookup selects the available shadowed local" {
         },
       ],
     })
-    is Some(second_stop) &&
-    second_stop.select_root_variable("arr") is DapVariableSelected(second_arr) else {
-    fail("the shadowing arr should be available at its call")
+    is Some(second_stop) else {
+    fail("the second shadow pair should be parsed")
   }
-  assert_eq(second_arr.name, "arr")
-  assert_eq(second_arr.value, "moonbit.array_i32 @ 0x3000")
-  assert_eq(second_arr.variables_reference, 7)
+  assert_true(second_stop.select_root_variable("arr") is DapVariableAmbiguous)
   guard parse_variables({
       "variables": [
         {
@@ -4009,7 +4049,9 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     ])
     assert_true(
       sent[1] is { "arguments": Object(launch_arguments), .. } &&
-      launch_arguments.get("initCommands") is None,
+      launch_arguments.get("initCommands") is None &&
+      launch_arguments.get("preRunCommands")
+      is Some(Array([String("!settings set target.input-path /dev/null")])),
     )
     assert_true(
       sent[7]

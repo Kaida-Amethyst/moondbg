@@ -100,6 +100,23 @@ fn stack_frame_kind(frame : ParsedStackFrame) -> @moondbg.FrameKind {
 }
 
 ///|
+fn moonbit_frame_identity(frame : ParsedStackFrame) -> (String, String?) {
+  guard stack_frame_kind(frame) is @moondbg.MoonBitUserFrame else {
+    return (frame.name, None)
+  }
+  if frame.name == "moonbit_main" {
+    return ("main", Some(frame.name))
+  }
+  let decoded = Some(@name_mangle.demangle_top_level_function(frame.name)) catch {
+    _ => None
+  }
+  match decoded {
+    Some(symbol) => (symbol.source_name(), Some(frame.name))
+    None => (frame.name, None)
+  }
+}
+
+///|
 fn stack_total_frames_hint(body : Json) -> Int? {
   match body {
     { "totalFrames": Number(total, ..), .. } => Some(total.to_int())
@@ -111,11 +128,12 @@ fn stack_total_frames_hint(body : Json) -> Int? {
 fn ParsedStackFrame::snapshot(
   self : ParsedStackFrame,
 ) -> @moondbg.StackFrameSnapshot raise @moondbg.StackSnapshotError {
+  let (display_name, linkage_name) = moonbit_frame_identity(self)
   @moondbg.StackFrameSnapshot::new(
     self.physical_index,
     self.name,
-    self.name,
-    None,
+    display_name,
+    linkage_name,
     self.source_path,
     self.line,
     self.column,
@@ -268,7 +286,7 @@ async fn DebugExecution::build_stop_snapshot(
   }
   @moondbg.StopSnapshot::new(
     self.stop_reason,
-    frame.name,
+    frame.snapshot().display_name(),
     frame.source_path,
     frame.line,
     frame.column,

@@ -128,6 +128,7 @@ async fn DebugExecution::run_transaction(
   let launch_seq = self.dispatcher.send_request("launch", {
     "program": executable,
     "stopOnEntry": false,
+    "preRunCommands": ["!settings set target.input-path /dev/null"],
   })
   let mut launch_response = self.wait_for_initialized(launch_seq)
   if self.machine.state is Exited {

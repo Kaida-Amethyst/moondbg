@@ -50,11 +50,18 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 - `moon debug` 子命令存在。
 
 随后它在 `testdata/dwarf_probe` 中实际运行 `moon debug main`、`moon debug point`、
-`moon debug fixed_array_int`、`moon debug array_double`、`moon debug array_points` 和 `moon debug list`，通过 PTY 完成运行前入口断点、stopped
+`moon debug fixed_array_int`、`moon debug array_double`、`moon debug array_points`、
+`moon debug list` 和 `moon debug stack_frames`，通过 PTY 完成运行前入口断点、stopped
 源码/普通函数/跨包函数/泛型 family 断点、rejected 反馈、命中、跨 execution 重放、
 struct 递归打印、字段路径逐层查询、查询失败分类、同 stop cache 与跨 stop 失效、
 FixedArray/Array 短值、长值、跨 stop 打印、boxed enum 浅层打印和 `quit`。该层负责工具链集成、MoonBit DWARF、真实
 lldb-dap 映射和 `moon` 到 `moondbg` 的装配，不替代默认的确定性进程内测试。
+
+`stack_frames` 还覆盖物理 backtrace、frame/up/down、caller locals/p/list、内外同名 local
+在两个源码位置的选择、continue 后 stop-epoch 重置和 debuggee output event。产品 launch
+通过 `!settings set target.input-path /dev/null` 只关闭短期不支持的交互 stdin；acceptance
+明确断言 stdout 仍以 begin/end terminal output 区块返回，避免 PTY 后台进程组因读取终端而
+收到 `SIGTTIN`。
 
 ## 可选 Python 诊断回归
 
@@ -96,6 +103,11 @@ availability、请求与消息顺序、结构检查和已知工具链 findings�
 在 continue 后探测旧 frame/variables reference 的 adapter 行为。该工具是显式诊断，不由
 默认 `moon test` 调用；地址、threadId、frameId 和错误寄存器值会随运行变化，不应把完整
 JSON 当作文本快照。
+
+当前 Apple LLDB 会在同一个 subprogram 同时具有 `DW_AT_name` 和 `DW_AT_linkage_name` 时，
+把 `stackTrace.name` 映射成 linkage symbol。探针因此有意检查未经 moondbg 改写的 `_M0F...`
+raw name；用户可读名称由 lldb-dap backend 的结构化兼容映射产生，不应把探针的 raw name
+误当成 renderer 契约。
 
 `tools/dynamic_breakpoint_probe.py` 固化 Q-02 所依赖的 stopped 状态动态断点协议语义。先在
 `testdata/dwarf_probe` 中执行 `moon build --target native --debug`，再从仓库根目录运行：

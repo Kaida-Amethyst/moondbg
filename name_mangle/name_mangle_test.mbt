@@ -92,6 +92,20 @@ test "demangle compiler generic golden symbols" {
 }
 
 ///|
+test "decoded symbols expose compiler-compatible source identities" {
+  assert_eq(
+    @name_mangle.demangle_top_level_function(
+      "_M0FP316Kaida_2dAmethyst23moondbg_2ddwarf_2dprobe14stack__support15ordinary__frame",
+    ).source_name(),
+    "@Kaida-Amethyst/moondbg-dwarf-probe/stack_support.ordinary_frame",
+  )
+  assert_eq(
+    @name_mangle.demangle_top_level_function("_M0FP14demo3mapGiEHs").source_name(),
+    "@demo.map[Int]!String",
+  )
+}
+
+///|
 test "demangle rejects malformed or unsupported symbols" {
   let invalid = [
     "not_mangled", "_M1FP14demo3foo", "_M0MP14demo3Foo3foo", "_M0FP14demo3fooG",

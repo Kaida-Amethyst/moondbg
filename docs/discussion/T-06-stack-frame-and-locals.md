@@ -534,3 +534,74 @@ frame 卡片。
 
 **Review 节点：** 最终 review 用户体验、DWARF 事实来源、跨仓库改动、结构化 frontend
 复用能力和完整测试证据；通过后再标记 T-06 已完成。
+
+#### P6 实施结果（2026-09-01）
+
+P6 已完成编译器修复、moondbg 适配和真实终端闭环，T-06 的六个阶段均已达到完成条件。
+
+`ideas5` 的 native debug info 做了三项最小修复：
+
+1. `Basic_fn_address.debug_source_name` 从结构化函数身份生成 MoonBit 源码拼写。普通、跨包、
+   泛型实例和 package main 的 subprogram 现在以该值作为 `DW_AT_name`，同时以实际 native
+   symbol 作为 `DW_AT_linkage_name`。最终 dSYM 已核对得到例如
+   `@.../stack_support.ordinary_frame`/`_M0F...ordinary__frame`、
+   `@.../stack_support.generic_leaf[Int]`/`_M0F...generic__leafGiE` 和
+   `@.../stack_frames.main`/`moonbit_main` 的成对属性；
+2. native MachineIR 复用现有 LLVM lexical-scope 分析规则，为 source let/loop/join/error
+   binding 保存 scope id。共享的 range builder 裁剪不含任何可调试 local 的内部 scope，
+   把最终指令流规范化成离散、互不重叠的 PC 区间，并保证父 scope 覆盖子 scope；来源位置
+   无法区分的 sibling scope 在编译器布局层折叠，不交给 debugger 猜测。AArch64 Mach-O/ELF
+   与 x86-64 ELF 均生成 DWARF 4 `.debug_ranges`，lexical DIE 通过 `DW_AT_ranges` 引用，并按
+   实际是否有 child 使用正确 abbrev。object 与最终 dSYM 的 `llvm-dwarfdump --verify` 均为
+   `No errors`；
+3. AArch64 `.eh_frame` 根据 finalize 后的真实 callee-save layout 为 x19–x22 及实际使用的
+   其他 GPR/FPR 生成 CFI，兼容 FP/SP frame base 和扩展 DWARF register opcode。真实递归
+   caller 中 `recursion_depth` 从 P1 的随机错误值恢复为 1、2、3，证明调用者寄存器定位已经
+   修复。最靠近叶子的 `#1` 在当前返回地址处仍 unavailable，这是 location list 生命周期的
+   真实结果，不被扩写成猜测值。
+
+Apple LLDB/lldb-dap 仍有一个结构化映射限制：当 subprogram 同时具有 source name 与
+linkage name 时，DAP `StackFrame.name` 只返回 linkage name，且没有第二个 source-name
+字段。P6 没有在 renderer 拆字符串，也没有增加邻接路径猜测；`lldb_dap` backend 在
+MoonBit `.mbt` frame 边界复用独立 `name_mangle` package，把受支持的 v0 顶层 symbol
+转换成 source display name，并在 `StackFrameSnapshot` 中同时保留 raw name、linkage name
+和 display/source name。无法识别的 symbol 保持原样；`moonbit_main` 使用稳定的 `main`
+兼容显示。编译器 dSYM 中的完整 package-qualified main identity仍保留，可在 LLDB DAP
+未来暴露该字段后直接替换兼容映射。
+
+shadowed locals 的 DAP `variables` 仍会把多个 lexical binding 平铺在同一个 Locals scope。
+backend 对重复 `evaluateName` 使用带明确 frameId 的 DAP `evaluate` 选择 LLDB 当前 binding，
+而不是挑第一个“看起来 available”的寄存器后缀；successful/unsuccessful response 分别映射
+成当前值或结构化 unavailable，transport/protocol failure 仍保持 adapter failure。
+`ordinary_frame` 中外层 `shadowed_value` DIE 的 range 为 `0x...59d0–0x...59fc`，内层 DIE
+是它的直接 lexical child，range 为 `0x...59d8–0x...59fc`。真实 LLDB 在第 59 行调用前选择
+内层值 340；停在更深叶子时 caller 返回地址已超出内层值的 location lifetime，`locals` 和
+`p shadowed_value` 一致显示 unavailable，不再错误回退到外层值 40。
+
+capability-gated PTY 原有的 job-control 阻塞也在产品侧解决。本机 Apple LLDB-DAP 21 尚不
+支持较新版本的 launch `stdio` 参数；`lldb_dap` 因此在 launch 的 `preRunCommands` 中发送
+`!settings set target.input-path /dev/null`。这只把短期不支持的交互 stdin 指向 `/dev/null`，
+保留 stdout/stderr 的 DAP `output` event；前缀 `!` 使 setting 不可用时直接成为 launch
+failure，而不是静默退化成 stopped timeout。真实 PTY acceptance 已同时证明后台 debuggee
+不再因 `SIGTTIN` 挂起，并收到带 begin/end 边界的 `stack fixture result: 676` terminal
+output。
+
+`moon` 无需修改：实际命令与帮助再次确认 `moon debug` 已对完整调试构建传入 `-g -O0`，
+三个 `~/.moon_dev/bin` 链接保持有效。
+
+已通过的验证包括：
+
+- `ideas5`: `dune test lib/xml/machine/test`；`dune build @fmt` 只报告仓库既有的
+  `inlined_snapshot/moonlsp/dune` 空行差异；`dune build bin/moon0_main.exe`；
+- DWARF：LLVM 18 `llvm-dwarfdump --verify` 对 `stack_frames.o` 与最终 dSYM 均报告
+  `No errors`，`.eh_frame` 可见 x19–x22 的 caller 恢复规则；
+- moondbg: `moon check`、默认 `moon test`（228/228）、native debug build；
+- capability-gated MoonBit PTY acceptance：7/7；其中 `stack_frames` 同时覆盖 inner shadow
+  340、leaf-return unavailable、调用栈/选帧/locals、continue 后 stop-epoch 重置及 DAP
+  terminal output；
+- `tools/stack_frame_probe.py`: 全部结构检查通过，真实小分页、10 个物理 frame、跨包、四层
+  递归、泛型、main/native 边界及 scopes 均可重复；
+- 真实 `moon debug stack_frames`: `bt`、`bt --all`、`frame 3`、`up`、`down`、`locals`、
+  caller `p`、caller `list` 全部通过；continue 到 main 的第二停点后只剩新的 `#0 main`，
+  `stack_result=669`，证明选择和变量 cache 已按 stop epoch 重置；程序继续退出时 terminal
+  output 仍由 LLDB-DAP 捕获并按块展示。

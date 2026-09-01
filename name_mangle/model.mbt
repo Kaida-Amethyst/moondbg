@@ -60,3 +60,28 @@ pub fn TopLevelFunctionSymbol::is_specialized(
 ) -> Bool {
   self.type_arguments.length() > 0 || self.error_type_argument is Some(_)
 }
+
+///|
+/// Returns the source-level identity encoded by this physical symbol.
+///
+/// This mirrors the compiler's debug source-name spelling while keeping the
+/// physical linkage symbol available separately at the adapter boundary.
+pub fn TopLevelFunctionSymbol::source_name(
+  self : TopLevelFunctionSymbol,
+) -> String {
+  let base = if self.package_name == "" {
+    self.function_name
+  } else {
+    "@\{self.package_name}.\{self.function_name}"
+  }
+  let type_arguments = if self.type_arguments.length() == 0 {
+    ""
+  } else {
+    "[\{self.type_arguments.join(", ")}]"
+  }
+  let error_type_argument = match self.error_type_argument {
+    Some(error_type) => "!\{error_type}"
+    None => ""
+  }
+  "\{base}\{type_arguments}\{error_type_argument}"
+}

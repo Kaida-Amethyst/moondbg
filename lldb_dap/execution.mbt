@@ -243,6 +243,21 @@ async fn DebugExecution::request(
 }
 
 ///|
+/// Sends a request whose unsuccessful DAP response has domain meaning to the
+/// caller. Transport loss and a mismatched response remain protocol errors.
+async fn DebugExecution::request_allow_failure(
+  self : DebugExecution,
+  command : String,
+  arguments : Json,
+) -> @dap.DapResponse {
+  let seq = self.dispatcher.send_request(command, arguments)
+  guard self.wait_for_response(seq, command) is Some(response) else {
+    raise RequestFailed(command~, message="adapter exited before responding")
+  }
+  validate_response_command(response, command)
+}
+
+///|
 async fn DebugExecution::wait_until_stable(self : DebugExecution) -> Unit {
   while self.machine.state is Running {
     let routed = self.dispatcher.next() catch {
