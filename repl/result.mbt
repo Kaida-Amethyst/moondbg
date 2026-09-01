@@ -46,6 +46,7 @@ priv enum PresentationEvent {
   SourceViewPresentation(SourceView)
   VariablePresentation(@moondbg.VariableSnapshot)
   VariableLookupFailurePresentation(@moondbg.VariableLookupFailure)
+  LocalsPresentation(@moondbg.LocalVariablesSnapshot)
   NoStoppedSourcePresentation
   ProcessExitPresentation(Int?)
   OperationNotAllowedPresentation(@moondbg.DebugSessionState, String)

@@ -450,6 +450,26 @@ pub async fn DebugSession::find_variable(
 }
 
 ///|
+/// Returns bounded local-variable summaries for the selected physical frame.
+pub async fn DebugSession::local_variables(
+  self : DebugSession,
+) -> LocalVariablesSnapshot {
+  guard self.application.phase is Stopped &&
+    self.application.selected_thread() is Some(thread) &&
+    self.application.selected_frame() is Some(frame) else {
+    raise DebugSessionError::OperationNotAllowed(
+      state=self.application.phase,
+      action="inspect local variables",
+    )
+  }
+  self.backend.local_variables(thread, frame) catch {
+    DebugBackendError::BackendFailure(message) =>
+      self.backend_failed(message, next_state=Ready)
+    error => self.backend_failed(@debug.to_string(error), next_state=Failed)
+  }
+}
+
+///|
 pub async fn DebugSession::disconnect(self : DebugSession) -> Unit {
   self.backend.disconnect() catch {
     _ => ()

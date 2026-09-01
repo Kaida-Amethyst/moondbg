@@ -166,6 +166,15 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn find_variable
 }
 
 ///|
+impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn local_variables(
+  _self,
+  thread,
+  frame,
+) {
+  @moondbg.LocalVariablesSnapshot::available(thread, frame, [])
+}
+
+///|
 impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn breakpoint_snapshots(
   self,
 ) {

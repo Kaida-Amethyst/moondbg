@@ -168,6 +168,15 @@ impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn find_variab
 }
 
 ///|
+impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn local_variables(
+  _self,
+  thread,
+  frame,
+) {
+  @moondbg.LocalVariablesSnapshot::available(thread, frame, [])
+}
+
+///|
 impl @moondbg.DebugBackend for ObservationCommandTestBackend with fn breakpoint_snapshots(
   _self,
 ) {

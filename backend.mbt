@@ -44,6 +44,11 @@ pub(open) trait DebugBackend {
     frame : FrameSelection,
     path : VariablePath,
   ) -> VariableLookupResult
+  async fn local_variables(
+    Self,
+    thread : ThreadSelection,
+    frame : FrameSelection,
+  ) -> LocalVariablesSnapshot
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
   fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]
   fn take_output(Self) -> Array[DebugOutput]

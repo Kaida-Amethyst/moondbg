@@ -2242,6 +2242,506 @@ async test "P3 frame-scoped raw caches coexist with reusable domain snapshots" {
 }
 
 ///|
+async test "P5 locals isolate reused references by frame and cache materialized summaries" {
+  @async.with_task_group(async fn(group) {
+    let first_frame_variables : Json = {
+      "variables": [
+        {
+          "name": "answer",
+          "type": "int",
+          "value": "10",
+          "variablesReference": 0,
+          "evaluateName": "answer",
+        },
+        {
+          "name": "future",
+          "type": "int",
+          "value": "<variable not available>",
+          "variablesReference": 0,
+          "evaluateName": "future",
+        },
+        {
+          "name": "shadowed_value @ x19",
+          "type": "int",
+          "value": "3",
+          "variablesReference": 0,
+          "evaluateName": "shadowed_value",
+        },
+        {
+          "name": "shadowed_value @ ",
+          "type": "int",
+          "value": "<error: variable not available>",
+          "variablesReference": 0,
+          "evaluateName": "shadowed_value",
+        },
+      ],
+    }
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4600, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+      }),
+      scripted_event(4601, "initialized", {}),
+      scripted_response(4602, 3, "configurationDone", {}),
+      scripted_response(4603, 2, "launch", {}),
+      scripted_event(4604, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(
+        4605,
+        4,
+        "stackTrace",
+        scripted_stack_page(
+          [scripted_user_frame(700, 0), scripted_user_frame(701, 1)],
+          2,
+        ),
+      ),
+      scripted_response(4606, 5, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+          { "name": "Globals", "variablesReference": 2 },
+          {
+            "name": "Registers",
+            "presentationHint": "registers",
+            "variablesReference": 3,
+          },
+        ],
+      }),
+      scripted_response(4607, 6, "variables", first_frame_variables),
+      scripted_response(4608, 7, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4609, 8, "variables", {
+        "variables": [
+          {
+            "name": "answer",
+            "type": "int",
+            "value": "20",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_event(4610, "stopped", { "reason": "step", "threadId": 1 }),
+      scripted_response(4611, 9, "next", {}),
+      scripted_response(
+        4612,
+        10,
+        "stackTrace",
+        scripted_stack_page([scripted_user_frame(702, 0)], 1),
+      ),
+      scripted_response(4613, 11, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4614, 12, "variables", {
+        "variables": [
+          {
+            "name": "answer",
+            "type": "int",
+            "value": "30",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+    ])
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/locals-cache", backend)
+    defer session.close()
+    session.run() |> ignore
+    let first_locals = session.local_variables()
+    assert_eq(first_locals.thread().index(), 0)
+    assert_eq(first_locals.frame().index(), 0)
+    guard first_locals.variables() is [answer, future, shadowed] else {
+      fail("first frame should expose deterministic compact local summaries")
+    }
+    assert_eq(answer.name(), "answer")
+    assert_eq(
+      answer.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("10")),
+    )
+    assert_true(future.availability() is @moondbg.LocalVariableUnavailable)
+    assert_eq(shadowed.name(), "shadowed_value")
+    assert_true(shadowed.availability() is @moondbg.LocalVariableAmbiguous)
+    guard session.find_variable(@moondbg.VariablePath::root("answer"))
+      is @moondbg.VariableFound(first_print) else {
+      fail("print should reuse raw locals for the selected frame")
+    }
+    assert_eq(first_print.value(), "10")
+
+    session.select_frame(1) |> ignore
+    let caller_locals = session.local_variables()
+    assert_eq(caller_locals.thread().index(), 0)
+    assert_eq(caller_locals.frame().index(), 1)
+    guard caller_locals.variables() is [caller] else {
+      fail("caller should use its own reused variablesReference")
+    }
+    assert_eq(
+      caller.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("20")),
+    )
+    guard session.find_variable(@moondbg.VariablePath::root("answer"))
+      is @moondbg.VariableFound(caller_print) else {
+      fail("caller print should share only caller-scoped raw variables")
+    }
+    assert_eq(caller_print.value(), "20")
+
+    session.select_frame(0) |> ignore
+    let cached_locals = session.local_variables()
+    assert_eq(cached_locals.frame().index(), 0)
+    guard cached_locals.variables() is [cached, _, _] else {
+      fail("switching back should reuse the materialized frame summary")
+    }
+    assert_eq(cached.availability(), answer.availability())
+    guard session.find_variable(@moondbg.VariablePath::root("answer"))
+      is @moondbg.VariableFound(cached_print) else {
+      fail("switching back should retain the materialized print snapshot")
+    }
+    assert_eq(cached_print.value(), "10")
+
+    session.next() |> ignore
+    let resumed_locals = session.local_variables()
+    assert_eq(resumed_locals.frame().index(), 0)
+    guard resumed_locals.variables() is [after_resume] else {
+      fail("a resumed stop should rebuild local summaries")
+    }
+    assert_eq(
+      after_resume.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("30")),
+    )
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "scopes", "variables", "next", "stackTrace", "scopes", "variables",
+    ])
+  })
+}
+
+///|
+async test "P5 locals reports a missing Locals scope without loading globals" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4650, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+      }),
+      scripted_event(4651, "initialized", {}),
+      scripted_response(4652, 3, "configurationDone", {}),
+      scripted_response(4653, 2, "launch", {}),
+      scripted_event(4654, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(4655, 4, "stackTrace", scripted_stack_body(710, 3)),
+      scripted_response(4656, 5, "scopes", {
+        "scopes": [
+          { "name": "Globals", "variablesReference": 1 },
+          {
+            "name": "Registers",
+            "presentationHint": "registers",
+            "variablesReference": 2,
+          },
+        ],
+      }),
+    ])
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/no-locals", backend)
+    defer session.close()
+    session.run() |> ignore
+    let snapshot = session.local_variables()
+    assert_true(snapshot.scope_availability() is @moondbg.LocalScopeUnavailable)
+    assert_eq(snapshot.variables().length(), 0)
+    assert_eq(transport.remaining_inputs(), 0)
+    assert_eq(transport.sent_messages().filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes",
+    ])
+  })
+}
+
+///|
+async test "P5 locals summarize collections structs and enums without recursive rendering" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4700, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+        "supportsReadMemoryRequest": true,
+      }),
+      scripted_event(4701, "initialized", {}),
+      scripted_response(4702, 3, "configurationDone", {}),
+      scripted_response(4703, 2, "launch", {}),
+      scripted_event(4704, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(4705, 4, "stackTrace", scripted_stack_body(720, 9)),
+      scripted_response(4706, 5, "scopes", {
+        "scopes": [
+          {
+            "name": "Locals",
+            "presentationHint": "locals",
+            "variablesReference": 1,
+          },
+        ],
+      }),
+      scripted_response(4707, 6, "variables", {
+        "variables": [
+          {
+            "name": "count",
+            "type": "int",
+            "value": "3",
+            "variablesReference": 0,
+          },
+          {
+            "name": "fixed",
+            "type": "moonbit.array_i32",
+            "value": "moonbit.array_i32 @ 0x1000",
+            "variablesReference": 10,
+          },
+          {
+            "name": "broken",
+            "type": "moonbit.array_i32",
+            "value": "moonbit.array_i32 @ 0x5000",
+            "variablesReference": 50,
+          },
+          {
+            "name": "items",
+            "type": "moonbitlang/core/builtin/Array[double] &",
+            "value": "0x4000",
+            "variablesReference": 40,
+          },
+          {
+            "name": "point",
+            "type": "example/Point &",
+            "value": "0x2000",
+            "variablesReference": 20,
+          },
+          {
+            "name": "list",
+            "type": "example/List",
+            "value": "example/List @ 0x3000",
+            "variablesReference": 30,
+          },
+        ],
+      }),
+      scripted_response(4708, 7, "variables", {
+        "variables": [
+          {
+            "name": "body",
+            "type": "int *",
+            "value": "0x1000",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_response(4709, 8, "readMemory", { "data": "AAAAAAoAAAA=" }),
+      scripted_response(4710, 9, "variables", {
+        "variables": [
+          {
+            "name": "unexpected",
+            "type": "int",
+            "value": "1",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_response(4711, 10, "variables", {
+        "variables": [
+          {
+            "name": "buf",
+            "type": "FixedArray[UnsafeMaybeUninit[Double]]",
+            "value": "FixedArray @ 0x4000",
+            "variablesReference": 41,
+          },
+          {
+            "name": "len",
+            "type": "int",
+            "value": "4",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_response(4712, 11, "variables", {
+        "variables": [
+          {
+            "name": "body",
+            "type": "double *",
+            "value": "0x4000",
+            "variablesReference": 0,
+          },
+        ],
+      }),
+      scripted_response(4713, 12, "readMemory", { "data": "AAAAAAgAAAA=" }),
+      scripted_response(4714, 13, "variables", {
+        "variables": [
+          {
+            "name": "__moonbit_enum_marker",
+            "type": "moonbit.enum",
+            "value": "moonbit.enum @ 0x3000",
+            "variablesReference": 0,
+          },
+          {
+            "name": "Empty_0",
+            "type": "example/List.Empty *",
+            "value": "0x0000000000003000",
+            "variablesReference": 31,
+          },
+          {
+            "name": "Cons_1",
+            "type": "example/List.Cons *",
+            "value": "0x0000000000003000",
+            "variablesReference": 32,
+          },
+        ],
+      }),
+      scripted_response(4715, 14, "readMemory", { "data": "AQAAQA==" }),
+    ])
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new("/tmp/compact-locals", backend)
+    defer session.close()
+    session.run() |> ignore
+    guard session.local_variables().variables()
+      is [count, fixed, broken, items, point, list] else {
+      fail("compact locals should preserve root order")
+    }
+    assert_eq(count.type_name(), Some("Int"))
+    assert_eq(
+      count.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("3")),
+    )
+    assert_eq(fixed.type_name(), Some("FixedArray[Int]"))
+    assert_eq(
+      fixed.availability(),
+      @moondbg.LocalVariableAvailable(
+        @moondbg.LocalCollection(@moondbg.FixedArrayCollection, 10),
+      ),
+    )
+    assert_eq(broken.type_name(), Some("FixedArray[Int]"))
+    assert_eq(
+      broken.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+    )
+    assert_eq(point.type_name(), Some("Point"))
+    assert_eq(
+      point.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalStructure),
+    )
+    assert_eq(items.type_name(), Some("Array[Double]"))
+    assert_eq(
+      items.availability(),
+      @moondbg.LocalVariableAvailable(
+        @moondbg.LocalCollection(@moondbg.ArrayCollection, 4),
+      ),
+    )
+    assert_eq(list.type_name(), Some("List"))
+    assert_eq(
+      list.availability(),
+      @moondbg.LocalVariableAvailable(@moondbg.LocalEnumConstructor("Cons")),
+    )
+    assert_eq(transport.remaining_inputs(), 0)
+    let sent = transport.sent_messages()
+    assert_eq(sent.filter_map(sent_command), [
+      "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
+      "variables", "readMemory", "variables", "variables", "variables", "readMemory",
+      "variables", "readMemory",
+    ])
+    assert_false(
+      sent.any(message => {
+        message
+        is { "arguments": { "variablesReference": Number(20, ..), .. }, .. }
+      }),
+    )
+  })
+}
+
+///|
+async test "P5 compact aggregate summaries do not hide adapter request failures" {
+  @async.with_task_group(async fn(group) {
+    let transport = @dap_testkit.ScriptedTransport::new([
+      scripted_response(4750, 1, "initialize", {
+        "supportsConfigurationDoneRequest": true,
+      }),
+      scripted_event(4751, "initialized", {}),
+      scripted_response(4752, 3, "configurationDone", {}),
+      scripted_response(4753, 2, "launch", {}),
+      scripted_event(4754, "stopped", { "reason": "breakpoint", "threadId": 1 }),
+      scripted_response(4755, 4, "stackTrace", scripted_stack_body(730, 10)),
+      scripted_failed_response(4756, 5, "variables", "layout request failed"),
+    ])
+    let lldb_session = LldbDapSession::start_with_dispatcher_factory(
+      group,
+      () => @dap.DapDispatcher::from_transport(transport.as_transport()),
+      preparation_timeout_ms=10000,
+    )
+    let backend = LldbDapBackend::{
+      session: lldb_session,
+      imported_source_breakpoints: 0,
+      imported_function_breakpoints: 0,
+    }
+    let session = @moondbg.DebugSession::new(
+      "/tmp/failed-local-layout", backend,
+    )
+    defer session.close()
+    session.run() |> ignore
+    guard backend.session.execution is Some(execution) &&
+      execution.machine.current_stop_epoch() is Some(epoch) else {
+      fail("scripted aggregate failure should retain a stopped execution")
+    }
+    execution.variable_cache.select_frame(epoch, 0)
+    let failed = try {
+      execution.compact_local_variable(
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
+        DapVariable::{
+          name: "broken",
+          value: "moonbit.array_i32 @ 0x5000",
+          type_name: Some("moonbit.array_i32"),
+          variables_reference: 50,
+          evaluate_name: Some("broken"),
+        },
+      )
+      |> ignore
+      false
+    } catch {
+      RequestFailed(command="variables", message="layout request failed") =>
+        true
+      _ => false
+    }
+    assert_true(failed)
+    assert_eq(transport.remaining_inputs(), 0)
+  })
+}
+
+///|
 test "lldb-dap resume kinds share request construction and user actions" {
   let capabilities : Json = { "supportsSteppingGranularity": true }
   let cases = [
@@ -3030,8 +3530,11 @@ test "lldb-dap scopes exclude register-only lookup and variables retain DAP fiel
     fail("expected three parsed scopes")
   }
   assert_true(locals.is_relevant())
+  assert_true(locals.is_locals())
   assert_true(globals.is_relevant())
+  assert_false(globals.is_locals())
   assert_false(registers.is_relevant())
+  assert_false(registers.is_locals())
   guard parse_variables({
       "variables": [
         {
@@ -3050,6 +3553,24 @@ test "lldb-dap scopes exclude register-only lookup and variables retain DAP fiel
   assert_eq(snapshot.type_name(), Some("int"))
   assert_eq(snapshot.value(), "42")
   assert_eq(variable.variables_reference, 0)
+}
+
+///|
+test "local source names discard adapter location suffixes without selecting a shadow" {
+  let with_evaluate_name = DapVariable::{
+    name: "shadowed_value @ x19",
+    value: "3",
+    type_name: Some("int"),
+    variables_reference: 0,
+    evaluate_name: Some("shadowed_value"),
+  }
+  assert_eq(with_evaluate_name.source_local_name(), "shadowed_value")
+  let without_evaluate_name = {
+    ..with_evaluate_name,
+    name: "fallback @ ",
+    evaluate_name: None,
+  }
+  assert_eq(without_evaluate_name.source_local_name(), "fallback")
 }
 
 ///|

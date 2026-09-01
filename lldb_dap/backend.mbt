@@ -167,6 +167,19 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
 }
 
 ///|
+impl @moondbg.DebugBackend for LldbDapBackend with fn local_variables(
+  self,
+  thread,
+  frame,
+) {
+  self.session.local_variables(thread, frame) catch {
+    LldbDapBackendError::AdapterFailure(message) =>
+      raise @moondbg.DebugBackendError::failure(message)
+    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  }
+}
+
+///|
 impl @moondbg.DebugBackend for LldbDapBackend with fn breakpoint_snapshots(self) {
   self.session.source_breakpoints()
 }

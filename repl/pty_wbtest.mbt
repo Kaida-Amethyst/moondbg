@@ -50,6 +50,13 @@ test "REPL prompt and local help do not wait for a blocked adapter" {
     process.expect(b"Cannot select a frame while the debugger is Ready."),
   )
   expect_prompt(process)
+  assert_true(process.write(b"locals\r"))
+  assert_true(
+    process.expect(
+      b"Cannot inspect local variables while the debugger is Ready.",
+    ),
+  )
+  expect_prompt(process)
   assert_true(process.write(b"quit\r"))
   assert_true(process.expect(b"Debugger exited."))
   assert_adapter_cleanup(process)

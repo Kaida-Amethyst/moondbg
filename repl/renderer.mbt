@@ -478,6 +478,56 @@ fn variable_lookup_failure_message(
 }
 
 ///|
+fn local_type_suffix(type_name : String?) -> String {
+  match type_name {
+    Some(name) if name != "" => ": \{name}"
+    _ => ""
+  }
+}
+
+///|
+fn local_summary_line(variable : @moondbg.LocalVariableSnapshot) -> String {
+  let prefix = "  \{variable.name()}\{local_type_suffix(variable.type_name())}"
+  match variable.availability() {
+    @moondbg.LocalVariableUnavailable => "\{prefix} = <unavailable>"
+    @moondbg.LocalVariableAmbiguous => "\{prefix} = <ambiguous binding>"
+    @moondbg.LocalVariableAvailable(value) =>
+      match value {
+        @moondbg.LocalScalar(scalar) => "\{prefix} = \{scalar}"
+        @moondbg.LocalCollection(_, length) =>
+          "\{prefix} with length = \{length}"
+        @moondbg.LocalEnumConstructor(name) => "\{prefix} = \{name}"
+        @moondbg.LocalStructure | @moondbg.LocalOpaque => prefix
+      }
+  }
+}
+
+///|
+fn local_snapshot_lines(
+  snapshot : @moondbg.LocalVariablesSnapshot,
+) -> Array[String] {
+  guard snapshot.scope_availability() is @moondbg.LocalScopeAvailable else {
+    return ["Local variables are unavailable in the selected frame."]
+  }
+  let variables = snapshot.variables()
+  guard variables.length() > 0 else {
+    return ["No local variables in the selected frame."]
+  }
+  let lines = ["Locals:"]
+  for variable in variables {
+    lines.push(local_summary_line(variable))
+  }
+  lines
+}
+
+///|
+fn render_locals(snapshot : @moondbg.LocalVariablesSnapshot) -> Unit {
+  for line in local_snapshot_lines(snapshot) {
+    println(line)
+  }
+}
+
+///|
 async fn render_presentation_event(event : PresentationEvent) -> Unit {
   match event {
     HelpPresentation(entries) => render_help(entries)
@@ -502,6 +552,7 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
     VariablePresentation(variable) => render_variable(variable)
     VariableLookupFailurePresentation(failure) =>
       println(variable_lookup_failure_message(failure))
+    LocalsPresentation(snapshot) => render_locals(snapshot)
     NoStoppedSourcePresentation =>
       println("No stopped source location is available.")
     ProcessExitPresentation(exit_code) => render_process_exit(exit_code)

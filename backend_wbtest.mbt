@@ -6,6 +6,7 @@ priv struct RecordingBackend {
   mut steps : Int
   mut finishes : Int
   mut variable_lookups : Int
+  mut local_lookups : Int
   mut stack_requests : Int
   stack_windows : Array[StackWindow]
   mut executable : String?
@@ -15,6 +16,7 @@ priv struct RecordingBackend {
   function_breakpoint_launches : Array[Array[Int]]
   thread_selections : Array[Int]
   frame_selections : Array[Int]
+  local_frame_selections : Array[Int]
   mut stack : StackSnapshot?
   stack_responses : Array[StackSnapshot]
   mut next_stack_response : Int
@@ -39,6 +41,7 @@ fn RecordingBackend::new() -> RecordingBackend {
     steps: 0,
     finishes: 0,
     variable_lookups: 0,
+    local_lookups: 0,
     stack_requests: 0,
     stack_windows: [],
     executable: None,
@@ -48,6 +51,7 @@ fn RecordingBackend::new() -> RecordingBackend {
     function_breakpoint_launches: [],
     thread_selections: [],
     frame_selections: [],
+    local_frame_selections: [],
     stack: None,
     stack_responses: [],
     next_stack_response: 0,
@@ -261,6 +265,23 @@ impl DebugBackend for RecordingBackend with fn find_variable(
 }
 
 ///|
+impl DebugBackend for RecordingBackend with fn local_variables(
+  self,
+  thread,
+  frame,
+) {
+  self.local_lookups += 1
+  self.local_frame_selections.push(frame.index())
+  LocalVariablesSnapshot::available(thread, frame, [
+    LocalVariableSnapshot::new(
+      "answer",
+      Some("Int"),
+      LocalVariableAvailable(LocalScalar("42")),
+    ),
+  ])
+}
+
+///|
 impl DebugBackend for RecordingBackend with fn breakpoint_snapshots(self) {
   self.breakpoints.map(breakpoint => {
     id: breakpoint.id(),
@@ -373,6 +394,10 @@ async test "P4 application state owns epochs selections and stable breakpoint re
   }
   assert_eq(variable.name(), "answer")
   assert_eq(variable.value(), "42")
+  guard session.local_variables().variables() is [local_summary] else {
+    fail("local-variable lookup should delegate to the backend")
+  }
+  assert_eq(local_summary.name(), "answer")
   assert_true(session.state() is Stopped)
   assert_true(session.last_stop_snapshot() is Some(_))
   guard session.continue_execution() is RunOutcome::Exited(Some(0)) else {
@@ -383,11 +408,13 @@ async test "P4 application state owns epochs selections and stable breakpoint re
   assert_eq(backend.steps, 1)
   assert_eq(backend.finishes, 1)
   assert_eq(backend.variable_lookups, 1)
+  assert_eq(backend.local_lookups, 1)
   assert_eq(backend.continues, 1)
   assert_eq(backend.running_entries, 6)
   assert_eq(backend.invalid_running_entries, 0)
   assert_eq(backend.thread_selections, [0, 0, 0, 0, 0])
   assert_eq(backend.frame_selections, [0])
+  assert_eq(backend.local_frame_selections, [0])
   assert_true(session.state() is Ready)
   assert_eq(session.execution_epoch().map(epoch => epoch.number()), Some(2))
   assert_eq(session.stop_epoch(), None)

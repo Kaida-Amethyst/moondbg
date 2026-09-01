@@ -6,6 +6,9 @@ priv struct StackCommandTestBackend {
   mut next_stack_response : Int
   stack_windows : Array[@moondbg.StackWindow]
   variable_frames : Array[Int]
+  local_frames : Array[Int]
+  local_results : Map[Int, @moondbg.LocalVariablesSnapshot]
+  mut fail_locals : Bool
 }
 
 ///|
@@ -17,6 +20,9 @@ fn StackCommandTestBackend::new() -> StackCommandTestBackend {
     next_stack_response: 0,
     stack_windows: [],
     variable_frames: [],
+    local_frames: [],
+    local_results: Map([]),
+    fail_locals: false,
   }
 }
 
@@ -194,6 +200,21 @@ impl @moondbg.DebugBackend for StackCommandTestBackend with fn find_variable(
   @moondbg.VariableLookupResult::found(
     @moondbg.VariableSnapshot::new(path.display_name(), "42", Some("Int")),
   )
+}
+
+///|
+impl @moondbg.DebugBackend for StackCommandTestBackend with fn local_variables(
+  self,
+  thread,
+  frame,
+) {
+  self.local_frames.push(frame.index())
+  if self.fail_locals {
+    raise @moondbg.DebugBackendError::failure("locals adapter failed")
+  }
+  self.local_results
+  .get(frame.index())
+  .unwrap_or(@moondbg.LocalVariablesSnapshot::scope_unavailable(thread, frame))
 }
 
 ///|

@@ -121,6 +121,7 @@ fn default_command_registry() -> CommandRegistry raise CommandRegistryError {
     frame_command_spec(),
     up_command_spec(),
     down_command_spec(),
+    locals_command_spec(),
     help_command_spec(),
     quit_command_spec(),
   ])

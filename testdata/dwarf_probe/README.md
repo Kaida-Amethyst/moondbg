@@ -189,12 +189,18 @@ moon debug stack_frames
 rg -n 'MOONDBG_STACK_LEAF_BREAKPOINT' stack_support/stack_support.mbt
 ```
 
-在该位置停住后，现有 `list` 和 `p` 可用于基础观察；`bt`、frame 导航和 `locals` 是 T-06
-后续阶段将实现的能力，本 fixture 不预先声称这些命令已经可用。各层刻意使用不同的参数和
-local 名称及数值：main 和跨包 frame 持有 Array，递归 frame 持有不同 depth，泛型叶子持有
-泛型 envelope 和 leaf Array。`ordinary_frame` 的内外词法块包含同名 `shadowed_value`；
+在该位置停住后，可以用 `bt`、`frame N`、`up`、`down`、`locals`、`list` 和 `p` 观察并切换
+frame。例如先执行 `locals`，再切换到 `frame 5` 查看 `ordinary_frame`，最后切回 `frame 0`
+验证叶子 frame 的摘要和详细打印。各层刻意使用不同的参数和 local 名称及数值：main 和跨包
+frame 持有 Array，递归 frame 持有不同 depth，泛型叶子持有泛型 envelope 和 leaf Array。
+`ordinary_frame` 的内外词法块包含同名 `shadowed_value`；
 `nested_result`、`cross_result`、`stack_result` 等调用结果只在调用返回后才可用，用于验证
 源码位置对应的变量可用范围。`main` 之下自然保留 MoonBit runtime/native 入口边界。
+
+当前开发工具链在递归 caller frame 上仍可能把参数报告为 unavailable，并为部分 local 返回
+错误寄存器值；`ordinary_frame` 的两个同名 binding 也缺少可判定当前词法作用域的 DWARF
+信息。`locals` 会诚实显示 `<unavailable>` 或 `<ambiguous binding>`，不根据 LLDB 的寄存器
+后缀猜测绑定。这些工具链问题留给 T-06/P6 修复。
 
 ## 2026-08-30 验收结果
 

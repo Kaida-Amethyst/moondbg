@@ -11,6 +11,12 @@ fn DapScope::is_relevant(self : DapScope) -> Bool {
 }
 
 ///|
+fn DapScope::is_locals(self : DapScope) -> Bool {
+  self.presentation_hint == Some("locals") ||
+  (self.presentation_hint is None && self.name == "Locals")
+}
+
+///|
 priv struct DapVariable {
   name : String
   value : String
@@ -32,6 +38,30 @@ fn DapVariable::matches_lookup_name(self : DapVariable, name : String) -> Bool {
 ///|
 fn DapVariable::is_available(self : DapVariable) -> Bool {
   !self.value.has_prefix("<error:") && self.value != "<variable not available>"
+}
+
+///|
+fn DapVariable::source_local_name(self : DapVariable) -> String {
+  match self.evaluate_name {
+    Some(name) if name.trim() != "" => name.trim().to_owned()
+    _ =>
+      match self.name.split_once(" @ ") {
+        Some((name, _)) if name.trim() != "" => name.trim().to_owned()
+        _ => self.name
+      }
+  }
+}
+
+///|
+fn DapVariable::source_type_name(self : DapVariable) -> String? {
+  guard self.type_name is Some(debug_type) else { return None }
+  if self.moonbit_array_element_name() is Some(element_debug_type) {
+    let element_type = @runtime_value.source_name_from_debug_type(
+      element_debug_type,
+    ).unwrap_or(element_debug_type)
+    return Some("Array[\{element_type}]")
+  }
+  @runtime_value.source_name_from_debug_type(debug_type)
 }
 
 ///|
@@ -325,6 +355,7 @@ priv struct StopVariableCache {
   variables : Map[Int, Array[DapVariable]]
   evaluated_variables : Map[String, DapVariable]
   snapshots : Map[String, @moondbg.VariableSnapshot]
+  local_snapshots : Map[Int, @moondbg.LocalVariablesSnapshot]
 }
 
 ///|
@@ -342,6 +373,7 @@ fn StopVariableCache::new() -> StopVariableCache {
     variables: Map([]),
     evaluated_variables: Map([]),
     snapshots: Map([]),
+    local_snapshots: Map([]),
   }
 }
 
@@ -353,6 +385,7 @@ fn StopVariableCache::reset(self : StopVariableCache, epoch : Int) -> Unit {
   self.variables.clear()
   self.evaluated_variables.clear()
   self.snapshots.clear()
+  self.local_snapshots.clear()
 }
 
 ///|
@@ -416,6 +449,25 @@ fn StopVariableCache::store_snapshot(
 ) -> Unit {
   guard self.is_current(identity) else { return }
   self.snapshots.set(key, snapshot)
+}
+
+///|
+fn StopVariableCache::cached_local_snapshot(
+  self : StopVariableCache,
+  identity : VariableCacheIdentity,
+) -> @moondbg.LocalVariablesSnapshot? {
+  guard self.is_current(identity) else { return None }
+  self.local_snapshots.get(identity.frame_index)
+}
+
+///|
+fn StopVariableCache::store_local_snapshot(
+  self : StopVariableCache,
+  identity : VariableCacheIdentity,
+  snapshot : @moondbg.LocalVariablesSnapshot,
+) -> Unit {
+  guard self.is_current(identity) else { return }
+  self.local_snapshots.set(identity.frame_index, snapshot)
 }
 
 ///|
@@ -1047,37 +1099,7 @@ async fn DebugExecution::materialize_enum(
   variable : DapVariable,
   variants : Array[DapEnumVariant],
 ) -> @moondbg.VariableSnapshot {
-  guard variants is [first, ..] else {
-    raise InvalidEnumValue("boxed enum has no variant views")
-  }
-  let descriptor = self.read_memory(
-    first.payload_pointer,
-    @runtime_value.NATIVE_ENUM_DESCRIPTOR_OFFSET,
-    @runtime_value.NATIVE_ENUM_DESCRIPTOR_SIZE,
-  ) catch {
-    error =>
-      raise InvalidEnumValue(
-        "failed to read boxed enum descriptor: \{@debug.to_string(error)}",
-      )
-  }
-  let active_tag = @runtime_value.decode_boxed_enum_tag(descriptor) catch {
-    error =>
-      raise InvalidEnumValue(
-        "invalid boxed enum descriptor: \{@debug.to_string(error)}",
-      )
-  }
-  let mut active : DapEnumVariant? = None
-  for variant in variants {
-    if variant.tag == active_tag {
-      active = Some(variant)
-      break
-    }
-  }
-  guard active is Some(active) else {
-    raise InvalidEnumValue(
-      "boxed enum descriptor selects unknown tag \{active_tag}",
-    )
-  }
+  let active = self.active_enum_variant(variants)
   let direct_payload = if active.payload_reference > 0 {
     self.load_variables(identity, active.payload_reference)
   } else {
@@ -1114,6 +1136,224 @@ async fn DebugExecution::materialize_enum(
     variable.type_name,
     enum_value,
   )
+}
+
+///|
+async fn DebugExecution::active_enum_variant(
+  self : DebugExecution,
+  variants : Array[DapEnumVariant],
+) -> DapEnumVariant {
+  self.active_enum_variant_raw(variants) catch {
+    InvalidIndexedCollectionValue(message) =>
+      raise InvalidEnumValue("failed to read boxed enum descriptor: \{message}")
+    error => raise error
+  }
+}
+
+///|
+/// Reads only the enum descriptor while preserving request/protocol failures.
+/// Compact locals can therefore downgrade an invalid descriptor without
+/// accidentally hiding an adapter request failure.
+async fn DebugExecution::active_enum_variant_raw(
+  self : DebugExecution,
+  variants : Array[DapEnumVariant],
+) -> DapEnumVariant {
+  guard variants is [first, ..] else {
+    raise InvalidEnumValue("boxed enum has no variant views")
+  }
+  let descriptor = self.read_memory(
+    first.payload_pointer,
+    @runtime_value.NATIVE_ENUM_DESCRIPTOR_OFFSET,
+    @runtime_value.NATIVE_ENUM_DESCRIPTOR_SIZE,
+  )
+  let active_tag = @runtime_value.decode_boxed_enum_tag(descriptor) catch {
+    error =>
+      raise InvalidEnumValue(
+        "invalid boxed enum descriptor: \{@debug.to_string(error)}",
+      )
+  }
+  for variant in variants {
+    if variant.tag == active_tag {
+      return variant
+    }
+  }
+  raise InvalidEnumValue(
+    "boxed enum descriptor selects unknown tag \{active_tag}",
+  )
+}
+
+///|
+fn ambiguous_local_summary(
+  name : String,
+  variables : Array[DapVariable],
+) -> @moondbg.LocalVariableSnapshot {
+  let mut type_name : String? = None
+  let mut same_type = true
+  for index, variable in variables.iter2() {
+    let current = variable.source_type_name()
+    if index == 0 {
+      type_name = current
+    } else if current != type_name {
+      same_type = false
+    }
+  }
+  @moondbg.LocalVariableSnapshot::new(
+    name,
+    if same_type {
+      type_name
+    } else {
+      None
+    },
+    @moondbg.LocalVariableAmbiguous,
+  )
+}
+
+///|
+async fn DebugExecution::compact_local_variable(
+  self : DebugExecution,
+  identity : VariableCacheIdentity,
+  variable : DapVariable,
+) -> @moondbg.LocalVariableSnapshot {
+  let name = variable.source_local_name()
+  let source_type = variable.source_type_name()
+  guard variable.is_available() else {
+    return @moondbg.LocalVariableSnapshot::new(
+      name,
+      source_type,
+      @moondbg.LocalVariableUnavailable,
+    )
+  }
+  if variable.is_moonbit_array_candidate() ||
+    variable.is_moonbit_fixed_array_candidate() {
+    let layout = self.load_indexed_collection_layout(identity, variable) catch {
+      InvalidIndexedCollectionValue(_) =>
+        return @moondbg.LocalVariableSnapshot::new(
+          name,
+          source_type,
+          @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+        )
+      error => raise error
+    }
+    guard layout is Some(layout) else {
+      return @moondbg.LocalVariableSnapshot::new(
+        name,
+        source_type,
+        @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+      )
+    }
+    let type_name = Some(
+      "\{layout.kind.source_name()}[\{layout.element_type.source_name()}]",
+    )
+    return @moondbg.LocalVariableSnapshot::new(
+      name,
+      type_name,
+      @moondbg.LocalVariableAvailable(
+        @moondbg.LocalCollection(layout.kind, layout.total_length),
+      ),
+    )
+  }
+  if variable.is_moonbit_struct_type() {
+    return @moondbg.LocalVariableSnapshot::new(
+      name,
+      source_type,
+      @moondbg.LocalVariableAvailable(@moondbg.LocalStructure),
+    )
+  }
+  if variable.variables_reference > 0 {
+    let children = self.load_variables(identity, variable.variables_reference)
+    let enum_layout = detect_dap_enum_layout(children) catch {
+      InvalidEnumValue(_) =>
+        return @moondbg.LocalVariableSnapshot::new(
+          name,
+          source_type,
+          @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+        )
+      error => raise error
+    }
+    match enum_layout {
+      DapEnum(variants) => {
+        let active = self.active_enum_variant_raw(variants) catch {
+          InvalidIndexedCollectionValue(_) | InvalidEnumValue(_) =>
+            return @moondbg.LocalVariableSnapshot::new(
+              name,
+              source_type,
+              @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+            )
+          error => raise error
+        }
+        return @moondbg.LocalVariableSnapshot::new(
+          name,
+          source_type,
+          @moondbg.LocalVariableAvailable(
+            @moondbg.LocalEnumConstructor(active.variant_name),
+          ),
+        )
+      }
+      NotDapEnum => ()
+    }
+    return @moondbg.LocalVariableSnapshot::new(
+      name,
+      source_type,
+      @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+    )
+  }
+  @moondbg.LocalVariableSnapshot::new(
+    name,
+    source_type,
+    @moondbg.LocalVariableAvailable(@moondbg.LocalScalar(variable.value)),
+  )
+}
+
+///|
+async fn DebugExecution::load_local_variables_inner(
+  self : DebugExecution,
+  identity : VariableCacheIdentity,
+  frame_id : Int,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
+) -> @moondbg.LocalVariablesSnapshot {
+  if self.variable_cache.cached_local_snapshot(identity) is Some(snapshot) {
+    return snapshot
+  }
+  let scopes = self.load_scopes(identity, frame_id)
+  let local_scopes = scopes.filter(scope => scope.is_locals())
+  guard local_scopes is [_, ..] else {
+    let snapshot = @moondbg.LocalVariablesSnapshot::scope_unavailable(
+      thread, frame,
+    )
+    self.variable_cache.store_local_snapshot(identity, snapshot)
+    return snapshot
+  }
+  let groups : Map[String, Array[DapVariable]] = Map([])
+  let order : Array[String] = []
+  for scope in local_scopes {
+    for variable in self.load_variables(identity, scope.variables_reference) {
+      let name = variable.source_local_name()
+      match groups.get(name) {
+        Some(group) => group.push(variable)
+        None => {
+          groups.set(name, [variable])
+          order.push(name)
+        }
+      }
+    }
+  }
+  let summaries : Array[@moondbg.LocalVariableSnapshot] = []
+  for name in order {
+    guard groups.get(name) is Some(group) else { continue }
+    match group {
+      [variable] =>
+        summaries.push(self.compact_local_variable(identity, variable))
+      [_, _, ..] => summaries.push(ambiguous_local_summary(name, group))
+      [] => ()
+    }
+  }
+  self.ensure_variable_identity(identity)
+  let snapshot = @moondbg.LocalVariablesSnapshot::available(
+    thread, frame, summaries,
+  )
+  self.variable_cache.store_local_snapshot(identity, snapshot)
+  snapshot
 }
 
 ///|
@@ -1365,6 +1605,38 @@ async fn DebugExecution::find_variable(
 }
 
 ///|
+async fn DebugExecution::local_variables(
+  self : DebugExecution,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
+) -> @moondbg.LocalVariablesSnapshot {
+  guard self.machine.state is Stopped &&
+    self.machine.current_stop_epoch() is Some(epoch) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state=self.machine.state,
+      action="inspect local variables",
+    )
+  }
+  self.variable_cache.select_frame(epoch, frame.index())
+  let identity = VariableCacheIdentity::{ epoch, frame_index: frame.index(), }
+  let frame_id = self.selected_frame_id(
+    thread, frame, "inspect local variables",
+  )
+  let result = self.load_local_variables_inner(
+    identity, frame_id, thread, frame,
+  ) catch {
+    error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+  }
+  guard self.machine.current_stop_epoch() == Some(epoch) &&
+    self.variable_cache.is_current(identity) else {
+    raise LldbDapBackendError::AdapterFailure(
+      "local-variable result belongs to a stale stop or frame",
+    )
+  }
+  result
+}
+
+///|
 async fn LldbDapSession::find_variable(
   self : LldbDapSession,
   thread : @moondbg.ThreadSelection,
@@ -1378,6 +1650,29 @@ async fn LldbDapSession::find_variable(
     )
   }
   execution.find_variable(thread, frame, path) catch {
+    LldbDapBackendError::AdapterFailure(message) => {
+      self.recover_failed_execution(execution, try_disconnect=true) catch {
+        _ => ()
+      }
+      raise LldbDapBackendError::AdapterFailure(message)
+    }
+    error => raise error
+  }
+}
+
+///|
+async fn LldbDapSession::local_variables(
+  self : LldbDapSession,
+  thread : @moondbg.ThreadSelection,
+  frame : @moondbg.FrameSelection,
+) -> @moondbg.LocalVariablesSnapshot {
+  guard self.execution is Some(execution) else {
+    raise LldbDapBackendError::OperationNotAllowed(
+      state=self.detached_state,
+      action="inspect local variables",
+    )
+  }
+  execution.local_variables(thread, frame) catch {
     LldbDapBackendError::AdapterFailure(message) => {
       self.recover_failed_execution(execution, try_disconnect=true) catch {
         _ => ()
