@@ -76,6 +76,27 @@ initialization timeout、异常退出和进程组资源回收，因此目前保�
 不因测试语言迁移而删除。用法见其 `--help`；它适合检查新 lldb-dap 版本的 capability、
 消息顺序和变量结果。
 
+`tools/stack_frame_probe.py` 固化 T-06/P1 的真实调用栈、栈帧和局部变量协议基线。先构建
+`stack_frames` fixture，再从仓库根目录运行：
+
+```sh
+source ~/.zshrc
+set_moon_dev
+cd testdata/dwarf_probe
+moon check
+moon build --target native --debug
+cd ../..
+PYTHONDONTWRITEBYTECODE=1 python3 tools/stack_frame_probe.py
+```
+
+探针通过源码中的唯一 `MOONDBG_STACK_LEAF_BREAKPOINT` 标记定位停点，默认以 3 帧为一页
+请求 `stackTrace`，并逐 frame 记录 `scopes`、Locals 和直接 variables。标准输出是带
+`schemaVersion` 的 JSON，包含未经 renderer 改写的 DAP frame/scope/variable、推断出的
+availability、请求与消息顺序、结构检查和已知工具链 findings。它还重新选择顶层 frame，并
+在 continue 后探测旧 frame/variables reference 的 adapter 行为。该工具是显式诊断，不由
+默认 `moon test` 调用；地址、threadId、frameId 和错误寄存器值会随运行变化，不应把完整
+JSON 当作文本快照。
+
 `tools/dynamic_breakpoint_probe.py` 固化 Q-02 所依赖的 stopped 状态动态断点协议语义。先在
 `testdata/dwarf_probe` 中执行 `moon build --target native --debug`，再从仓库根目录运行：
 

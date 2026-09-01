@@ -324,6 +324,99 @@ thread 维度，为 T-01 已确认的后续 `threads` 与 `thread <id>` 留出�
 **Review 节点：** review 原始 DAP/DWARF 证据和问题归属，确认是否需要先修改 `ideas5` 或
 `moon`，再建立正式领域模型。
 
+#### P1 实施结果（2026-09-01）
+
+P1 已完成协议和 DWARF 基线调查，尚未修改 moondbg 正式行为、`ideas5` 或 `moon`。调查使用
+以下开发环境：
+
+- `moonc v0.10.11+fa880aae3-dev (2026-09-01)`；
+- `moon 0.1.20260901 (5d8c18d6 2026-09-01)`；
+- `/Library/Developer/CommandLineTools/usr/bin/lldb-dap`，LLVM 21.0.0、
+  `liblldb 2100.0.17.203`；
+- Homebrew `llvm-dwarfdump 18.1.8` 和同版本 `llvm-objdump`；
+- Python 3.14.5，仅用于显式诊断探针，不进入默认测试。
+
+新增 `tools/stack_frame_probe.py`，复用 `dap_capability_probe.py` 的 `DapClient`，不复制 DAP
+framing 或进程管理。探针默认使用 3 帧小分页，逐物理 frame 请求 `scopes`，只对 Locals
+scope 请求 `variables`，并在版本化 JSON 中保留：
+
+- DAP frame 的 id、name、source、line、column、moduleId 和 instruction pointer；
+- scope 原始对象以及 local/parameter 的 name、evaluateName、type、value、availability、
+  variablesReference；
+- client request、adapter response/event 的实际顺序；
+- 顶层 frame 重新选择，以及 continue 后旧 frameId/variablesReference 的响应；
+- 不把随机地址、临时 ID 和错误寄存器值固化成稳定期望的结构检查。
+
+复现命令记录在 `docs/testing.md`。DWARF 对照使用以下只读命令，其中 object 用于隔离
+MoonBit compilation unit，dSYM 用于核对链接后的地址：
+
+```sh
+stack_dwarf_object=testdata/dwarf_probe/_build/native/debug/build/stack_frames/\
+__moonbit_link_core__/stack_frames.o
+stack_dsym=testdata/dwarf_probe/_build/native/debug/build/stack_frames/\
+stack_frames.exe.dSYM/Contents/Resources/DWARF/stack_frames.exe
+
+llvm-dwarfdump --verify "$stack_dwarf_object"
+llvm-dwarfdump --debug-info "$stack_dwarf_object"
+llvm-dwarfdump --eh-frame "$stack_dsym"
+llvm-objdump --disassemble --no-show-raw-insn "$stack_dwarf_object"
+
+lldb --batch -o 'breakpoint set --file stack_support.mbt --line 30' \
+  -o run -o 'thread backtrace' -- \
+  testdata/dwarf_probe/_build/native/debug/build/stack_frames/stack_frames.exe
+```
+
+上面的 LLDB 命令中的 30 是本次证据对应的实际行号；可重复探针本身不依赖该数字，而是读取
+唯一 `MOONDBG_STACK_LEAF_BREAKPOINT` 标记。
+
+##### DAP 能力矩阵
+
+| 能力 | 当前事实 | 归属与后续要求 |
+| --- | --- | --- |
+| 叶子断点 | source breakpoint verified，停在 `generic_leaf[Int]` 标记行，line/column 为 30:3 | 已满足，moondbg 直接消费结构化 source/location |
+| 物理栈 | 稳定得到 `#0 generic_leaf[Int]`、`#1..#4 recursive_frame`、`#5 ordinary_frame`、`#6 enter_stack`、`#7 moonbit_main`、`#8 main`、`#9 dyld start` | 已满足；frame 序号可直接使用分页结果的物理位置，不重新编号 |
+| 跨包、递归、泛型 | 三类 frame 均保留，四个递归 frame 的 instruction pointer/source line 也可区分叶子调用和递归调用位置 | 已满足 stack 导航；泛型 source identity 的展示名称仍有下述缺口 |
+| 小分页 | `startFrame=0/3/6/9, levels=3` 分别返回 3/3/3/1 帧 | lldb-dap 支持分页，但终止条件不能只信 `totalFrames` |
+| `totalFrames` | 同一 stop 四页依次报告 `23/26/29/10`，而实际最终只有 10 帧；连续三次运行结果一致 | LLDB/lldb-dap 映射缺口；P3 应以短页/空页和已加载物理范围为主要终止证据，把 totalFrames 作为会修正的 hint |
+| frame source | `#0..#6` 指向 `stack_support.mbt`，`#7` 指向 `stack_frames/main.mbt`；`#8/#9` 是带 `presentationHint=deemphasize` 的 synthetic sourceReference | 足以可靠识别 `.mbt` 用户 frame；不应解析函数名前缀或构建路径猜用户 frame |
+| scopes | 所有 10 个 frame 的 `scopes(frameId)` 成功；均包含 Locals、Globals、Registers；MoonBit frame 的 Locals namedVariables 数量正确 | P5 只读取 Locals，排除 Globals/Registers |
+| scope reference | 每个 frame 的 Locals 都返回同一个 `variablesReference=1`；重新请求某 frame 的 scopes 后，同一个 1 会转而表示该 frame | lldb-dap 行为；backend 不能把 variablesReference 当作跨 frame 唯一键，也不能在切换 frame 后延迟使用旧 reference；应立即读取并缓存领域摘要，或重取对应 frame scopes |
+| 参数与 locals | DWARF 用 `DW_TAG_formal_parameter`/`DW_TAG_variable` 区分，但 lldb-dap 把二者都平铺进 Locals，variable 没有角色字段 | LLDB/DAP 映射限制；T-06 的紧凑 `locals` 不区分分组，因此不阻塞；领域层不要伪造 parameter/local 角色 |
+| availability | DAP 没有独立 availability 字段，以 `<error: variable not available>`、`<error: register ... is not available>` 或正常 value 表达 | lldb-dap 表示；backend 需要把这些 adapter 结果转换成结构化 available/unavailable，但不得把错误值当作有效标量 |
+| shadowing | `ordinary_frame` 同时返回 `shadowed_value @ x19` 与 `shadowed_value @ `，二者 `evaluateName` 都是 `shadowed_value` | 直接原因是编译器缺少 lexical block，见 DWARF 矩阵；在修复前 P5 无法可靠选择源语言当前 binding |
+| 调用后变量 | `nested_result`、`cross_result`、`stack_result`、`main_after_call` 在尚未返回的调用位置均明确 unavailable | 符合源码作用域/位置预期；`locals` 应保留 unavailable 状态，不误报“不存在” |
+| resume 生命周期 | continue 后用旧 frameId 请求 scopes 仍 success，但 namedVariables 变为 0；旧 Locals reference 请求 variables 也 success 并返回空列表 | adapter 不负责拒绝 stale ID；moondbg 必须在 resume 时按 stop epoch 主动清空 frame/scope/variable 选择与缓存 |
+| artificial/runtime | DAP 不暴露 DWARF `DW_AT_artificial`；`#8/#9` 只通过非 `.mbt` source 和 deemphasize hint 表现为非用户 frame | 默认隐藏用户/非用户边界可基于 source 事实；若产品必须细分 artificial 与 native，需要 adapter 扩展或版本化构建元数据，不能解析名称 |
+
+##### DWARF 与 LLDB 对照
+
+| 检查项 | 当前事实 | 归属与结论 |
+| --- | --- | --- |
+| 格式完整性 | `llvm-dwarfdump --verify` 对 `.o` 和最终 dSYM 均报告 `No errors` | DWARF 结构合法；合法不代表 source identity、scope 和 unwind 语义完整 |
+| 函数名称 | 普通/递归/泛型函数只有 `DW_AT_name="$pkg.function|[T]|"`，没有 `DW_AT_linkage_name`；真实 Mach-O symbol 是另一套 `__M0...` mangled name | 编译器 DWARF 缺口；应把 MoonBit 源码身份放入 `DW_AT_name`，真实 native symbol 放入 `DW_AT_linkage_name` |
+| `main` 名称 | MoonBit main 的 `DW_AT_name` 是 `$.../stack_frames.main`，`DW_AT_linkage_name` 是 `moonbit_main`；lldb-dap 最终只显示 `moonbit_main` | LLDB 默认选择 linkage name；只有改 renderer 无法找回已丢失的 source identity，P6 需要调整编译器/DWARF 或确认可用 adapter 字段 |
+| 泛型身份 | 泛型实例只通过 `DW_AT_name` 后缀 `|[Int]|` 表达，没有独立模板/原始函数身份属性 | 编译器表示缺口；P2 可保留 raw/display 两个字段，但最终 source name 与实例类型需由编译器提供，不在 renderer 拆字符串 |
+| 参数和变量 | fixture 的参数使用 `DW_TAG_formal_parameter`，locals 使用 `DW_TAG_variable`，并均带源码名、类型和 location list | 基础类型/变量枚举已满足；值正确性受 location/unwind 缺口影响 |
+| lexical scope | MoonBit object 中 `DW_TAG_lexical_block=0`；两个同名 `shadowed_value` 都是 subprogram 直接 child | 编译器 DWARF 缺口，直接阻塞可靠 shadow binding 选择；应按源码块嵌套 DIE，而不是由 moondbg 猜 LLDB 后缀 |
+| location list | location 范围是具体寄存器区间；叶子停点处部分参数/已结束 lifetime 的临时值不在范围内，因此 LLDB 正确显示 unavailable | 部分 unavailable 是编译器当前 location policy 的直接结果；是否扩大参数/用户 local 生命周期应在 P6 以 debug profile 回归确定 |
+| caller frame 错值 | 三个 caller `recursion_depth` 显示相同随机大整数，`main_seed` 也不是 7；LLDB CLI 与 DAP 完全一致 | 不是 moondbg 或 DAP JSON 解析问题，而是更底层的 unwind/location 组合错误 |
+| callee-saved unwind | `recursive_frame` 指令实际把 x19..x22 保存到栈，但对应 `.eh_frame` FDE 只描述 CFA、x29 和 x30，没有 x19..x22 的恢复规则；这些变量的 location 又使用 W19..W22 | 编译器/LLVM 产物缺口，是 caller frame 错值的直接原因；P6 必须补齐 callee-saved register CFI 或把跨调用可观察值放到可正确定位的位置 |
+| artificial frame | `__moonbit_c_abi_main` 正确带 `DW_AT_artificial(true)`，linkage name 为 `main`；lldb-dap 没有传递该属性 | 编译器事实存在、adapter 映射缺失；默认用户 frame 过滤不受阻，精细分类另需承载方式 |
+| inline 信息 | 本 fixture 使用 `-O0`，MoonBit object 没有 `DW_TAG_inlined_subroutine` | 符合本轮非目标，不阻塞 T-06；不能据此推断未来优化构建的 inline 体验 |
+
+##### 对后续阶段的约束
+
+P2 的 backend 无关领域模型没有被上述缺口阻塞，可以继续建立物理 frame 序号、可见性、逻辑
+选择和 unavailable 状态。P3 的真实分页/选择也可以继续，但必须遵守三个已证实的 adapter
+约束：`totalFrames` 只作为 hint、variablesReference 不跨 frame 保存、resume 时由 moondbg
+主动按 stop epoch 失效全部引用。
+
+P4 可以先携带 adapter 返回的 raw name，但一流用户体验所需的源码函数名不能靠 renderer
+拆 `$`、包路径或 `|[T]|`。P5 可以建立 locals 领域结果和 fake/scripted 行为，但真实调用者
+标量值和 shadow binding 的最终验收分别被 callee-saved CFI 与 lexical block 缺口阻塞。
+这些问题归入 P6 的 `ideas5` 修复面；无需在 P2 前修改 `moon`，当前 `moon debug` 已确认对
+fixture 的 `build-package` 和 `link-core` 都传入 `-g -O0`。
+
 ### P2. 建立 stack/frame 领域模型与 session 选择状态
 
 **目标：** 在 core 中表达调用栈、稳定物理深度、frame 分类和当前选择，不泄漏 DAP 临时 ID。
@@ -353,8 +446,8 @@ thread 维度，为 T-01 已确认的后续 `threads` 与 `thread <id>` 留出�
 
 **工作内容：**
 
-1. 实现 `stackTrace(startFrame, levels)` 首批 20 帧预取和按需分页，保存 totalFrames/完成
-   状态并拒绝重复、越界或协议不一致的页面；
+1. 实现 `stackTrace(startFrame, levels)` 首批 20 帧预取和按需分页；将 totalFrames 保存为
+   adapter 可能修正的 hint，以短页/空页确认完成，并拒绝重叠、重复或倒退的物理页面；
 2. 基于 DWARF/DAP 事实分类 MoonBit、runtime/artificial、native 和 unknown frame；
 3. 建立物理 frame 序号与当前 stop epoch 内 frameId 的私有映射；
 4. 统一 stopped 默认选帧、停点卡片、`list`、`print` 和后续 `locals` 的 frame 来源；
