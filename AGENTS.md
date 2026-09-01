@@ -45,13 +45,15 @@ You can browse and install extra skills here:
    `command -v moonc`、`command -v moon`、`command -v moondbg` 分别解析到这三个路径，
    避免实际运行到其他工具链。
 
-3. 确认开发版 `moonc` 的 `build-package` 和 `link-core` 子命令支持
-   `-debug-info {none|minimal|full}`，从而可以实际传入 `-debug-info full`。可以使用以下
-   命令检查：
+3. 确认开发版 `moonc` 的 `build-package` 和 `link-core` 子命令同时支持 `-g` 和 `-O0`。
+   当前工具链已经取消 `-debug-info full`；完整的调试构建改为同时传入 `-g -O0`，分别生成
+   调试信息并关闭优化。可以使用以下命令检查：
 
    ```sh
-   moonc build-package -help 2>&1 | rg -- '-debug-info.*full'
-   moonc link-core -help 2>&1 | rg -- '-debug-info.*full'
+   moonc build-package -help 2>&1 | rg -- '-g .*debugging information'
+   moonc build-package -help 2>&1 | rg -- '-O0 .*optimization'
+   moonc link-core -help 2>&1 | rg -- '-g .*debugging information'
+   moonc link-core -help 2>&1 | rg -- '-O0 .*optimization'
    ```
 
 4. 确认开发版 `moon` 提供 `moon debug` 子命令，并检查 `moon debug --help` 能正常显示
