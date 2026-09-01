@@ -506,3 +506,43 @@ async test "P2 frame selection is rejected outside a stable stop" {
     session.close()
   }
 }
+
+///|
+async test "P4 stack loading and navigation reject non-stopped phases" {
+  for phase in [Ready, Running, Exited] {
+    let backend = RecordingBackend::new()
+    let session = DebugSession::new("/tmp/program", backend)
+    session.application.transition_without_stop(phase)
+    assert_true(
+      try {
+        session.complete_stack_snapshot() |> ignore
+        false
+      } catch {
+        OperationNotAllowed(state~, action="load the complete stack") =>
+          state == phase
+        _ => false
+      },
+    )
+    assert_true(
+      try {
+        session.select_visible_caller_frame() |> ignore
+        false
+      } catch {
+        OperationNotAllowed(state~, action="select a caller frame") =>
+          state == phase
+        _ => false
+      },
+    )
+    assert_true(
+      try {
+        session.select_visible_callee_frame() |> ignore
+        false
+      } catch {
+        OperationNotAllowed(state~, action="select a callee frame") =>
+          state == phase
+        _ => false
+      },
+    )
+    session.close()
+  }
+}

@@ -40,6 +40,9 @@ priv enum PresentationEvent {
   FunctionBreakpointUpdatePresentation(@moondbg.FunctionBreakpointSnapshot)
   BreakpointErrorPresentation(BreakpointCommandError)
   StopPresentation(@moondbg.StopSnapshot)
+  BacktracePresentation(BacktraceView)
+  FrameSelectedPresentation(@moondbg.StackFrameSnapshot)
+  FrameSelectionFailurePresentation(FrameSelectionFailure)
   SourceViewPresentation(SourceView)
   VariablePresentation(@moondbg.VariableSnapshot)
   VariableLookupFailurePresentation(@moondbg.VariableLookupFailure)
@@ -47,6 +50,42 @@ priv enum PresentationEvent {
   ProcessExitPresentation(Int?)
   OperationNotAllowedPresentation(@moondbg.DebugSessionState, String)
   AdapterFailurePresentation(String)
+}
+
+///|
+priv struct BacktraceView {
+  frames : Array[@moondbg.StackFrameSnapshot]
+  selected_frame : Int?
+}
+
+///|
+fn BacktraceView::from_stack(
+  stack : @moondbg.StackSnapshot,
+  selected_frame : Int?,
+  show_all~ : Bool,
+) -> BacktraceView {
+  let frames : Array[@moondbg.StackFrameSnapshot] = []
+  if show_all {
+    for frame in stack.frames() {
+      frames.push(frame)
+    }
+  } else {
+    for frame in stack.visible_frames() {
+      frames.push(frame)
+    }
+  }
+  if !show_all && frames is [] && stack.frames() is [first, ..] {
+    frames.push(first)
+  }
+  { frames, selected_frame, }
+}
+
+///|
+priv enum FrameSelectionFailure {
+  FrameUnavailable(Int)
+  CurrentFrameUnavailable
+  CallerBoundary(Int)
+  CalleeBoundary(Int)
 }
 
 ///|

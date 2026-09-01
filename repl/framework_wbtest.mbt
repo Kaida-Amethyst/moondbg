@@ -199,6 +199,7 @@ test "P7 registry resolves every fixed alias through command specs" {
       ("s", "step"),
       ("fin", "finish"),
       ("p", "print"),
+      ("bt", "backtrace"),
     ] {
     guard registry.lookup(entry.0) is Some(spec) else {
       fail("missing alias '\{entry.0}'")
@@ -210,7 +211,7 @@ test "P7 registry resolves every fixed alias through command specs" {
 ///|
 test "P5 help metadata is derived from registry order" {
   let entries = default_command_registry().help_entries()
-  assert_eq(entries.length(), 10)
+  assert_eq(entries.length(), 14)
   assert_eq(entries[0].usage, "break <location>")
   assert_eq(entries[0].aliases, ["b"])
   assert_eq(entries[0].alias_usage(), "b <location>")
@@ -218,11 +219,14 @@ test "P5 help metadata is derived from registry order" {
     entries[0].summary,
     "Set a breakpoint at file:line, function, or @alias.function",
   )
-  assert_eq(entries[8].usage, "help")
-  assert_eq(entries[9].usage, "quit")
-  assert_eq(entries[9].aliases, ["q", "exit"])
-  assert_eq(entries[9].alias_usage(), "q, exit")
-  assert_eq(entries[9].summary, "Exit moondbg")
+  assert_eq(entries[8].usage, "backtrace [--all]")
+  assert_eq(entries[8].aliases, ["bt"])
+  assert_eq(entries[8].alias_usage(), "bt [--all]")
+  assert_eq(entries[12].usage, "help")
+  assert_eq(entries[13].usage, "quit")
+  assert_eq(entries[13].aliases, ["q", "exit"])
+  assert_eq(entries[13].alias_usage(), "q, exit")
+  assert_eq(entries[13].summary, "Exit moondbg")
 }
 
 ///|
@@ -233,7 +237,7 @@ test "P5 human help renderer preserves existing column layout" {
     "  break <location>     b <location>     Set a breakpoint at file:line, function, or @alias.function",
   )
   assert_eq(
-    format_help_entry(entries[9]),
+    format_help_entry(entries[13]),
     "  quit                  q, exit          Exit moondbg",
   )
 }
@@ -247,7 +251,7 @@ async test "P5 help command returns structured registry help" {
     fail("help should return one structured presentation event")
   }
   assert_eq(entries.length(), context.registry.specs.length())
-  assert_eq(entries[8].summary, "Show this help")
+  assert_eq(entries[12].summary, "Show this help")
 }
 
 ///|

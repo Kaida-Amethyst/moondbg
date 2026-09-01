@@ -188,6 +188,71 @@ fn render_stop_header(snapshot : @moondbg.StopSnapshot) -> Unit {
 }
 
 ///|
+fn stack_frame_location(frame : @moondbg.StackFrameSnapshot) -> String {
+  match (frame.source_path(), frame.line()) {
+    (Some(source_path), Some(line)) => "\{source_path}:\{line}"
+    (Some(source_path), None) => source_path
+    (None, _) => "source unavailable"
+  }
+}
+
+///|
+fn stack_frame_kind_label(kind : @moondbg.FrameKind) -> String {
+  match kind {
+    @moondbg.MoonBitUserFrame => "moonbit"
+    @moondbg.MoonBitRuntimeFrame => "runtime"
+    @moondbg.NativeFrame => "native"
+    @moondbg.UnknownFrame => "unknown"
+  }
+}
+
+///|
+fn backtrace_lines(view : BacktraceView) -> Array[String] {
+  guard view.frames is [_, ..] else {
+    return ["No stack frames are available."]
+  }
+  let lines = view.frames.map(frame => {
+    let marker = if view.selected_frame == Some(frame.physical_index()) {
+      "*"
+    } else {
+      " "
+    }
+    "\{marker} #\{frame.physical_index()} [\{stack_frame_kind_label(frame.kind())}] \{frame.display_name()} at \{stack_frame_location(frame)}"
+  })
+  if view.selected_frame is Some(selected) &&
+    !view.frames.any(frame => frame.physical_index() == selected) {
+    lines.push(
+      "  Current frame #\{selected} is hidden; use 'bt --all' to show it.",
+    )
+  }
+  lines
+}
+
+///|
+fn render_backtrace(view : BacktraceView) -> Unit {
+  for line in backtrace_lines(view) {
+    println(line)
+  }
+}
+
+///|
+fn frame_selected_line(frame : @moondbg.StackFrameSnapshot) -> String {
+  "Selected frame #\{frame.physical_index()}: \{frame.display_name()} at \{stack_frame_location(frame)}"
+}
+
+///|
+fn render_frame_selection_failure(failure : FrameSelectionFailure) -> Unit {
+  match failure {
+    FrameUnavailable(index) => println("Frame #\{index} is not available.")
+    CurrentFrameUnavailable => println("No current frame is selected.")
+    CallerBoundary(index) =>
+      println("Frame #\{index} has no visible MoonBit caller.")
+    CalleeBoundary(index) =>
+      println("Frame #\{index} has no visible MoonBit callee.")
+  }
+}
+
+///|
 fn moonbit_variable_type_name(type_name : StringView) -> String {
   match type_name {
     "bool" => "Bool"
@@ -429,6 +494,10 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
       render_function_breakpoint_update(breakpoint)
     BreakpointErrorPresentation(error) => render_breakpoint_error(error)
     StopPresentation(snapshot) => render_stop_header(snapshot)
+    BacktracePresentation(view) => render_backtrace(view)
+    FrameSelectedPresentation(frame) => println(frame_selected_line(frame))
+    FrameSelectionFailurePresentation(failure) =>
+      render_frame_selection_failure(failure)
     SourceViewPresentation(view) => render_source_view(view)
     VariablePresentation(variable) => render_variable(variable)
     VariableLookupFailurePresentation(failure) =>
