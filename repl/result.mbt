@@ -39,6 +39,9 @@ priv enum PresentationEvent {
   FunctionBreakpointPendingPresentation(Int, String)
   FunctionBreakpointUpdatePresentation(@moondbg.FunctionBreakpointSnapshot)
   BreakpointErrorPresentation(BreakpointCommandError)
+  BreakpointsPresentation(Array[@moondbg.BreakpointListEntry])
+  BreakpointManagedPresentation(@moondbg.BreakpointManagementResult)
+  BreakpointManagementFailurePresentation(BreakpointManagementFailure)
   StopPresentation(@moondbg.StopSnapshot)
   BacktracePresentation(BacktraceView)
   FrameSelectedPresentation(@moondbg.StackFrameSnapshot)
@@ -125,6 +128,12 @@ priv enum BreakpointCommandError {
   BreakpointFunctionContextMissing
   BreakpointUnknownPackageAlias(String)
   BreakpointUnexpectedFailure(String)
+}
+
+///|
+priv enum BreakpointManagementFailure {
+  BreakpointIdNotFound(Int)
+  BreakpointManagementRefused(String)
 }
 
 ///|

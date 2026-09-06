@@ -110,6 +110,10 @@ fn CommandRegistry::parse_line(
 fn default_command_registry() -> CommandRegistry raise CommandRegistryError {
   CommandRegistry::new([
     break_command_spec(),
+    breakpoints_command_spec(),
+    delete_command_spec(),
+    disable_command_spec(),
+    enable_command_spec(),
     run_command_spec(),
     continue_command_spec(),
     next_command_spec(),

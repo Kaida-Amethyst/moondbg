@@ -3,6 +3,17 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn synchronize_b
   self,
   configuration,
 ) {
+  self.syncs += 1
+  if self.fail_sync {
+    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      "test synchronization was interrupted",
+    )
+  }
+  if self.refuse_sync {
+    raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
+      "test rejected without changes",
+    )
+  }
   let sources : Array[@moondbg.BreakpointSnapshot] = []
   let functions : Array[@moondbg.FunctionBreakpointSnapshot] = []
   for breakpoint in configuration.sources() {

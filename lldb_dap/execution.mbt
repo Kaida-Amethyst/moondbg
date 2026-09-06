@@ -167,6 +167,9 @@ fn DebugExecution::accept_event(
   match event.name() {
     "stopped" => {
       self.stop_reason = match event.body() {
+        // LLDB descriptions contain physical ids such as "breakpoint 3.1".
+        // They must not look like the stable logical ids used by REPL commands.
+        { "reason": String("breakpoint"), .. } => "breakpoint"
         { "description": String(description), .. } => description
         { "reason": String(reason), .. } => reason
         _ => "stopped"

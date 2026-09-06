@@ -403,7 +403,7 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 ### P5. 接入四个 REPL 命令
 
-**状态：待实施**
+**状态：已完成（主会话 review、258/258 测试与真实停止提示验收通过）**
 
 **工作内容：**
 
@@ -414,6 +414,44 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 **完成条件：** 四个命令通过统一领域接口工作；命令文件不拼 DAP/LLDB 请求，不解析
 adapter 原始输出，列表能够清楚表达待安装、禁用、失败和多落点状态。
+
+#### P5 实施结果（2026-09-06）
+
+- 新增 `breakpoints.mbt`、`delete.mbt`、`disable.mbt`、`enable.mbt`，分别拥有独立
+  command struct、parser、spec 与 `ReplCommand` 实现；统一 registry/help 注册，不增加
+  别名。`breakpoints` 无参数，其余仅接受单个十进制正整数 ID；符号、小数、超界、多参数、
+  范围及 `all` 均拒绝，前导零仍按十进制处理。
+- 命令只调用领域层的 `breakpoints()` / `manage_breakpoint()`，通过结构化
+  presentation event 传递列表、管理结果及错误。Ready 管理不触发 backend 同步，列表
+  不等待 adapter；Stopped 管理等待领域层确认同步结果。
+- 新增独立 `breakpoint_renderer.mbt`：混合列表按稳定 ID 排序，显示 enabled/disabled、
+  原始请求路径或函数名、`not installed / current / previous` 安装状态与 rejected 原因。
+  实际源码只使用已知结构化路径/行，未知时明确输出 `source location unknown`，不拿请求
+  位置补猜。历史落点/数量另加 `previous` 标记，不冒充当前安装。
+- family 显示 `locations: N` 或 `locations: unknown`；已知零单独显示 0，不把单个
+  代表位置当作总数 1。每项最多显示 3 个代表位置，超过时明确提示截断；不称作实例数量。
+- 删除、禁用有明确完成反馈，重复启停显示 `already enabled/disabled`；启用反馈包含
+  安装状态，因此 enabled 与 rejected 可同时清楚表达。未知 ID、明确拒绝、状态限制与
+  不确定故障分别呈现，回收错误保留 `current execution was discarded` 信息。
+- `run` 的旧断点反馈仅筛选启用逻辑项，保持原有先源码后函数的输出顺序；不会把禁用项
+  打印为 pending/verified，与新列表保持一致。原 `b` 语法和反馈未改变。
+- 断点停止原因统一显示 `breakpoint`，不透传 LLDB description 中的物理编号（例如
+  `breakpoint 3.1`），避免与管理命令的逻辑 ID 混淆。本阶段不扩展命中逻辑 ID 映射；
+  step、exception 等其他停止原因仍保留原描述。
+- 专项测试覆盖严格参数边界、help 注册、Ready 零同步、Stopped 同步、幂等操作、无效
+  ID/状态、拒绝与故障回收、rejected 启用、混合列表与历史状态、代表位置上限，以及
+  `run` 不报告禁用项。`moon info && moon fmt`、`moon check`、`git diff --check` 通过；
+  默认 `moon test` **258/258**，`moon build` 通过，无新增警告，无可见接口变更。
+  完整真实交互验收留给 P6。
+- 补充停止原因回归测试后，`moon check` 在 lldb_dap whitebox 检查阶段触发编译器
+  `lib/xml/typing/typer.ml:4859` assertion failure（版本 `v0.10.11+050b1e1ee-nightly`，
+  退出码 255），主会话原样复现后暂停。调查确认是 foreach 元组 pattern 的 typing
+  分支尚未实现，并非 async 问题。经用户同意，将 `for (body, expected) in cases`
+  等价改为 `for pair in cases`，在循环体内 `let (body, expected) = pair`；保留全部
+  5 个停止原因测试输入和断言，不修改编译器或降低验收标准。改写后重新完成环境检查、
+  info/fmt/check、258 项测试、build 与差异检查，阻塞解除。此前四命令真实闭环已由
+  主会话验收；最终独立复核 258 项测试通过，真实 main/identity 停止提示均显示
+  `Stopped (breakpoint)`，不暴露 LLDB 内部编号。
 
 ### P6. 真实闭环验收与收尾
 

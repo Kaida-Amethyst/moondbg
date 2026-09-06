@@ -543,6 +543,14 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
     FunctionBreakpointUpdatePresentation(breakpoint) =>
       render_function_breakpoint_update(breakpoint)
     BreakpointErrorPresentation(error) => render_breakpoint_error(error)
+    BreakpointsPresentation(entries) =>
+      for line in breakpoint_list_lines(entries) {
+        println(line)
+      }
+    BreakpointManagedPresentation(result) =>
+      println(breakpoint_managed_line(result))
+    BreakpointManagementFailurePresentation(failure) =>
+      println(breakpoint_management_failure_line(failure))
     StopPresentation(snapshot) => render_stop_header(snapshot)
     BacktracePresentation(view) => render_backtrace(view)
     FrameSelectedPresentation(frame) => println(frame_selected_line(frame))

@@ -13,11 +13,23 @@ fn append_breakpoint_updates(
   events : Array[PresentationEvent],
   session : @moondbg.DebugSession,
 ) -> Unit {
+  let enabled : Map[Int, Bool] = Map([])
+  let configuration = session.breakpoint_configuration()
+  for breakpoint in configuration.sources() {
+    enabled.set(breakpoint.id(), breakpoint.enabled())
+  }
+  for breakpoint in configuration.functions() {
+    enabled.set(breakpoint.id(), breakpoint.enabled())
+  }
   for breakpoint in session.source_breakpoints() {
-    events.push(BreakpointUpdatePresentation(breakpoint))
+    if enabled.get(breakpoint.id()) is Some(true) {
+      events.push(BreakpointUpdatePresentation(breakpoint))
+    }
   }
   for breakpoint in session.function_breakpoints() {
-    events.push(FunctionBreakpointUpdatePresentation(breakpoint))
+    if enabled.get(breakpoint.id()) is Some(true) {
+      events.push(FunctionBreakpointUpdatePresentation(breakpoint))
+    }
   }
 }
 

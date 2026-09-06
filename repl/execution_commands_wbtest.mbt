@@ -11,6 +11,11 @@ priv struct ExecutionCommandTestBackend {
   mut fail_next : Bool
   mut fail_installs : Bool
   mut reject_installs : Bool
+  mut syncs : Int
+  mut fail_sync : Bool
+  mut refuse_sync : Bool
+  source_snapshot_overrides : Array[@moondbg.BreakpointSnapshot]
+  function_snapshot_overrides : Array[@moondbg.FunctionBreakpointSnapshot]
 }
 
 ///|
@@ -27,6 +32,11 @@ fn ExecutionCommandTestBackend::new() -> ExecutionCommandTestBackend {
     fail_next: false,
     fail_installs: false,
     reject_installs: false,
+    syncs: 0,
+    fail_sync: false,
+    refuse_sync: false,
+    source_snapshot_overrides: [],
+    function_snapshot_overrides: [],
   }
 }
 
@@ -178,6 +188,9 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn local_variabl
 impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn breakpoint_snapshots(
   self,
 ) {
+  if self.source_snapshot_overrides is [_, ..] {
+    return self.source_snapshot_overrides.copy()
+  }
   self.breakpoints.map(breakpoint => {
     @moondbg.BreakpointSnapshot::verified(
       breakpoint.id(),
@@ -192,6 +205,9 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn breakpoint_sn
 impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn function_breakpoint_snapshots(
   self,
 ) {
+  if self.function_snapshot_overrides is [_, ..] {
+    return self.function_snapshot_overrides.copy()
+  }
   self.function_breakpoints.map(breakpoint => {
     @moondbg.FunctionBreakpointSnapshot::verified(
       breakpoint.id(),
