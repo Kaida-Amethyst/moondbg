@@ -357,7 +357,7 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 ### P4. 实现 function family 管理与落点快照
 
-**状态：待实施**
+**状态：已完成（主会话 review、250/250 测试与真实函数断点链路通过）**
 
 **工作内容：**
 
@@ -368,6 +368,38 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 **完成条件：** 一个逻辑 ID 控制完整 family；不会误用旧 ID，也不会遗留隐藏断点或
 把 locations 数量当作精确泛型实例数。
+
+#### P4 实施结果（2026-09-06）
+
+- `ExecutionBreakpointState` 独立保存逻辑 ID 对应的 family 句柄及启用状态；LLDB 句柄
+  使用专用 `LldbBreakpointId` 类型，不再放入 DAP `dap_id` 字段。相同目标的多个逻辑
+  family 分别拥有自己的句柄，不影响源码/精确函数集合及其他 family。
+- 同步入口额外接收完整 family 配置，包括禁用项，以区分禁用与删除。禁用保留句柄，
+  重新启用复用；删除释放句柄及结果；从未安装的禁用项不创建底层断点。重新 run 使用
+  新 execution，旧句柄不跨次复用，禁用项之后启用才首次安装。
+- 零 location 的创建结果保留 LLDB 句柄，用户快照仍为 rejected，已知 count 为 0；
+  禁用、启用及删除均可管理。启用确认不等于已解析，后续详情未知时保留此前 rejected
+  状态，count 与位置详情置为未知，不擅自升级为 verified。
+- 创建结果只接受已验证的零落点、多落点及单地址格式，未知文本不再默认一个 location。
+  启停/删除严格匹配确认文本；`evaluate.success: true` 内含 `error:` 或未知文本也按
+  不确定处理并回收 execution，保留领域层既定的配置事务语义。
+- 创建/启用后先查询 brief；仅可靠 count 在 1..8 时查询 full，再对至多 8 个地址分别
+  请求单条 `disassemble`。校验 summary/各 location 的父 ID、数量和十六进制地址；
+  若指令响应提供 address，按数值核对请求地址（允许大小写与前导零差异）。源码信息仅用
+  结构化响应，不从 basename 猜路径。P5 的列表展示仍最多取 3 个代表位置。
+- 可选详情请求被拒绝、不支持、缺字段或无法解析时，仅位置详情未知，不否认已确认的
+  创建/启用；创建响应本身明确给出的 count 可保留，但 brief 未知时仍不发送 full。
+  真正的连接结束/传输失败则回收 execution，不保留虚假的可继续状态。禁用/删除确认后
+  不发送多余详情查询，禁用句柄保留既有内部快照供后续状态判断。
+- 专项测试覆盖重复 family 与混合断点隔离、幂等启停、零落点、禁用未安装项、非零
+  frame 1/stop epoch 保持、8/9 上限与未知 summary、错误地址/不支持 disassemble、
+  12 组管理失败、部分 launch 已安装源码后的 family 故障，以及跨 execution 新句柄。
+- `moon info && moon fmt`、`moon check`、`git diff --check` 通过，无新增警告；默认
+  `moon test` **250/250**。接口仅为 rejected 函数快照增加可选 `location_count`，用于
+  表达已知零落点。真实 REPL 管理闭环仍由 P5/P6 接入和验收，旧门控基线差异未改写。
+- 主会话独立 `moon check`、`moon test`、`moon build` 通过；真实执行
+  `moon debug breakpoint_management`，依次命中 main、ordinary、identity 的 Int/Double
+  两个落点并正常退出，确认新增 family 创建与详情查询没有破坏实际调试链路。
 
 ### P5. 接入四个 REPL 命令
 

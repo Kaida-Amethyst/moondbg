@@ -1,9 +1,22 @@
 ///|
-async test "P3 unsupported family mutation emits no requests or context changes" {
+async test "P4 family enable reuses its handle without changing stopped context" {
   @async.with_task_group(async fn(group) {
-    let transport = @dap_testkit.ScriptedTransport::new(
-      function_family_script(),
-    )
+    let script = function_family_script()
+    script.append([
+      scripted_response(7200, 7, "evaluate", {
+        "result": "1 breakpoints disabled.\n",
+      }),
+      scripted_response(7201, 8, "evaluate", {
+        "result": "1 breakpoints enabled.\n",
+      }),
+      scripted_response(7202, 9, "evaluate", {
+        "result": "7: name = identity, locations = 9",
+      }),
+      scripted_response(7203, 10, "evaluate", {
+        "result": "1 breakpoints deleted; 0 breakpoint locations disabled.\n",
+      }),
+    ])
+    let transport = @dap_testkit.ScriptedTransport::new(script)
     let lldb_session = LldbDapSession::start_with_dispatcher_factory(
       group,
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
@@ -24,39 +37,24 @@ async test "P3 unsupported family mutation emits no requests or context changes"
     let sent_before = transport.sent_messages().length()
     let frame_before = session.selected_frame()
     let epoch_before = session.stop_epoch()
-    for operation in [@moondbg.DeleteBreakpoint, @moondbg.DisableBreakpoint] {
-      try {
-        session.manage_breakpoint(1, operation) |> ignore
-        fail("unsupported management should reject")
-      } catch {
-        @moondbg.BreakpointManagementRejected(_) => ()
-        error => raise error
-      }
-      assert_eq(transport.sent_messages().length(), sent_before)
+    for
+      operation in [
+        @moondbg.DisableBreakpoint,
+        @moondbg.EnableBreakpoint,
+        @moondbg.DeleteBreakpoint,
+      ] {
+      session.manage_breakpoint(1, operation) |> ignore
       assert_eq(session.selected_frame(), frame_before)
       assert_eq(session.stop_epoch(), epoch_before)
       assert_true(session.state() is @moondbg.Stopped)
-      assert_eq(lldb_session.function_breakpoints.map(item => item.id), [1])
-      assert_true(session.breakpoints()[0].enabled)
     }
-    // A full configuration could combine source additions with a forbidden
-    // family deletion. Validate the whole plan before even the source request.
-    let candidate = @moondbg.DebugSession::new("/tmp/program", backend)
-    candidate.add_source_breakpoint("/tmp/new.mbt", 4) |> ignore
-    try {
-      @moondbg.DebugBackend::synchronize_breakpoints(
-        backend,
-        candidate.breakpoint_configuration(),
-      )
-      |> ignore
-      fail("mixed unsupported family mutation")
-    } catch {
-      @moondbg.BreakpointSyncError::BreakpointSyncRejected(_) => ()
-      error => raise error
-    }
-    assert_eq(transport.sent_messages().length(), sent_before)
-    assert_eq(lldb_session.source_breakpoints.length(), 0)
-    assert_eq(lldb_session.function_breakpoints.map(item => item.id), [1])
+    assert_eq(transport.sent_messages().length(), sent_before + 4)
+    assert_eq(lldb_session.function_breakpoints.length(), 0)
+    assert_true(
+      lldb_session.execution is Some({ breakpoint_state: { families, .. }, .. }) &&
+      families.is_empty(),
+    )
+    assert_eq(transport.remaining_inputs(), 0)
   })
 }
 

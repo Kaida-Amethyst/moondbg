@@ -154,11 +154,12 @@ pub fn FunctionBreakpointSnapshot::rejected(
   id : Int,
   display_name : String,
   message : String,
+  location_count? : Int? = None,
 ) -> FunctionBreakpointSnapshot {
   {
     id,
     display_name,
-    location_count: None,
+    location_count,
     status: Rejected(message),
     locations: [],
   }

@@ -69,6 +69,10 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
     .functions()
     .filter(item => item.enabled())
     .map(LogicalFunctionBreakpoint::from_domain),
+    families=configuration
+      .functions()
+      .filter(item => item.selector() is @moondbg.MoonBitFunctionFamily(_))
+      .map(FamilyConfiguration::from_domain),
   )
 }
 

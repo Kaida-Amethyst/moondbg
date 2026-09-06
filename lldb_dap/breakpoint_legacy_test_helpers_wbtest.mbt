@@ -51,3 +51,20 @@ async fn LldbDapSession::install_function_breakpoint(
   .find_first(item => item.id() == breakpoint.id)
   .unwrap_or(breakpoint.pending_snapshot())
 }
+
+///|
+fn ExecutionBreakpointState::verify(
+  self : ExecutionBreakpointState,
+  breakpoint_id : Int,
+  actual_line : Int?,
+  dap_id : Int?,
+  location_count? : Int? = None,
+) -> Unit {
+  self.outcomes.set(breakpoint_id, {
+    actual_line,
+    dap_id,
+    location_count,
+    status: AdapterVerified,
+    locations: [],
+  })
+}

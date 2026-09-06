@@ -119,24 +119,14 @@ async fn LldbDapSession::synchronize_breakpoints(
   self : LldbDapSession,
   sources : Array[LogicalSourceBreakpoint],
   functions : Array[LogicalFunctionBreakpoint],
+  families? : Array[FamilyConfiguration] = family_function_breakpoints(
+    functions,
+  ).map(breakpoint => { breakpoint, enabled: true, }),
 ) -> @moondbg.BreakpointSyncResult {
   guard self.state() is Stopped && self.execution is Some(execution) else {
     raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
       "breakpoint synchronization requires a stopped execution",
     )
-  }
-  let previous_families = family_function_breakpoints(self.function_breakpoints)
-  let current_families = family_function_breakpoints(functions)
-  // P4 supplies family mutation. Reject unsupported changes before ANY source
-  // or exact replacement, otherwise this cannot be a non-mutating rejection.
-  for previous in previous_families {
-    guard current_families.iter().find_first(item => item.id == previous.id)
-      is Some(current) &&
-      current == previous else {
-      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
-        "function family removal and disable are not implemented yet",
-      )
-    }
   }
   let affected : Map[String, Bool] = Map([])
   let all_paths : Array[String] = []
@@ -164,12 +154,7 @@ async fn LldbDapSession::synchronize_breakpoints(
   if previous_exact != current_exact {
     execution.configure_exact_function_breakpoints(current_exact)
   }
-  for breakpoint in current_families {
-    if previous_families.iter().find_first(item => item.id == breakpoint.id)
-      is None {
-      execution.configure_family_function_breakpoint(breakpoint)
-    }
-  }
+  execution.synchronize_families(families)
   // Only now can this execution's applied configuration be replaced. Shared
   // DAP ids are never deleted individually: group replacement owns them.
   let active : Map[Int, Bool] = Map([])
@@ -181,7 +166,10 @@ async fn LldbDapSession::synchronize_breakpoints(
   }
   let removed = execution.breakpoint_state.outcomes
     .keys()
-    .filter(id => active.get(id) is None)
+    .filter(id => {
+      active.get(id) is None &&
+      execution.breakpoint_state.families.get(id) is None
+    })
     .collect()
   for id in removed {
     execution.breakpoint_state.outcomes.remove(id)

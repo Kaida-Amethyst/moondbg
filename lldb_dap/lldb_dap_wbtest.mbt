@@ -289,14 +289,15 @@ fn function_family_script() -> Array[@dap_testkit.ScriptedInput] {
       "result": "Breakpoint 7: 2 locations.\n",
       "variablesReference": 0,
     }),
-    scripted_response(203, 4, "configurationDone", {}),
+    scripted_response(207, 4, "evaluate", { "result": "details unavailable" }),
+    scripted_response(203, 5, "configurationDone", {}),
     scripted_response(204, 2, "launch", {}),
     scripted_event(205, "stopped", {
       "reason": "breakpoint",
       "threadId": 1,
       "hitBreakpointIds": [7],
     }),
-    scripted_response(206, 5, "stackTrace", scripted_stack_body(20, 8)),
+    scripted_response(206, 6, "stackTrace", scripted_stack_body(20, 8)),
   ]
 }
 
@@ -334,11 +335,15 @@ fn dynamic_breakpoint_script() -> Array[@dap_testkit.ScriptedInput] {
       "result": "Breakpoint 57: 2 locations.\n",
       "variablesReference": 0,
     }),
-    scripted_response(311, 10, "evaluate", {
+    scripted_response(313, 10, "evaluate", { "result": "details unavailable" }),
+    scripted_response(311, 11, "evaluate", {
       "result": "Breakpoint 58: no locations (pending).\n",
       "variablesReference": 0,
     }),
-    scripted_response(312, 11, "setBreakpoints", {
+    scripted_response(314, 12, "evaluate", {
+      "result": "58: name = missing, locations = 0",
+    }),
+    scripted_response(312, 13, "setBreakpoints", {
       "breakpoints": [{ "verified": false, "message": "source is unavailable" }],
     }),
   ]
@@ -2903,11 +2908,15 @@ async test "scripted function family breakpoint uses LLDB command and one logica
       execution.breakpoint_state.outcomes.get(pending.id()) is Some(outcome) else {
       fail("LLDB breakpoint id should be retained for the active execution")
     }
-    assert_eq(outcome.dap_id, Some(7))
+    assert_eq(outcome.dap_id, None)
+    assert_true(
+      execution.breakpoint_state.families.get(pending.id())
+      is Some({ id: LldbBreakpointId(7), .. }),
+    )
     assert_eq(outcome.location_count, Some(2))
     let sent = transport.sent_messages()
     assert_eq(sent.filter_map(sent_command), [
-      "initialize", "launch", "evaluate", "configurationDone", "stackTrace",
+      "initialize", "launch", "evaluate", "evaluate", "configurationDone", "stackTrace",
     ])
     guard sent[2]
       is {
@@ -2997,7 +3006,11 @@ async test "stopped execution dynamically synchronizes complete sets and one fam
     assert_eq(first_outcome.actual_line, Some(5))
     assert_eq(first_exact_outcome.dap_id, Some(47))
     assert_eq(second_exact_outcome.dap_id, Some(48))
-    assert_eq(family_outcome.dap_id, Some(57))
+    assert_eq(family_outcome.dap_id, None)
+    assert_true(
+      execution.breakpoint_state.families.get(5)
+      is Some({ id: LldbBreakpointId(57), .. }),
+    )
     assert_eq(family_outcome.location_count, Some(2))
     assert_eq(session.source_breakpoints.length(), 3)
     assert_eq(session.function_breakpoints.length(), 4)
@@ -3006,7 +3019,7 @@ async test "stopped execution dynamically synchronizes complete sets and one fam
     assert_eq(sent.filter_map(sent_command), [
       "initialize", "launch", "configurationDone", "stackTrace", "setBreakpoints",
       "setBreakpoints", "setFunctionBreakpoints", "setFunctionBreakpoints", "evaluate",
-      "evaluate", "setBreakpoints",
+      "evaluate", "evaluate", "evaluate", "setBreakpoints",
     ])
     guard sent[5]
       is { "arguments": { "breakpoints": Array(source_set), .. }, .. } &&

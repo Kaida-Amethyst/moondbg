@@ -309,7 +309,7 @@ pub fn FunctionBreakpointSnapshot::id(Self) -> Int
 pub fn FunctionBreakpointSnapshot::location_count(Self) -> Int?
 pub fn FunctionBreakpointSnapshot::locations(Self) -> Array[BreakpointLocation]
 pub fn FunctionBreakpointSnapshot::pending(Int, String) -> Self
-pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
+pub fn FunctionBreakpointSnapshot::rejected(Int, String, String, location_count? : Int?) -> Self
 pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
 pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
 pub fn FunctionBreakpointSnapshot::with_locations(Self, Array[BreakpointLocation]) -> Self

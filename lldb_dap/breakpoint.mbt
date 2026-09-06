@@ -72,43 +72,12 @@ priv enum AdapterBreakpointStatus {
 ///|
 priv struct ExecutionBreakpointState {
   outcomes : Map[Int, AdapterBreakpointOutcome]
+  families : Map[Int, FamilyHandle]
 }
 
 ///|
 fn ExecutionBreakpointState::new() -> ExecutionBreakpointState {
-  { outcomes: Map([]), }
-}
-
-///|
-fn ExecutionBreakpointState::verify(
-  self : ExecutionBreakpointState,
-  breakpoint_id : Int,
-  actual_line : Int?,
-  dap_id : Int?,
-  location_count? : Int? = None,
-) -> Unit {
-  self.outcomes.set(breakpoint_id, {
-    actual_line,
-    dap_id,
-    location_count,
-    status: AdapterVerified,
-    locations: [],
-  })
-}
-
-///|
-fn ExecutionBreakpointState::reject(
-  self : ExecutionBreakpointState,
-  breakpoint_id : Int,
-  message : String,
-) -> Unit {
-  self.outcomes.set(breakpoint_id, {
-    actual_line: None,
-    dap_id: None,
-    location_count: None,
-    status: AdapterRejected(message),
-    locations: [],
-  })
+  { outcomes: Map([]), families: Map([]), }
 }
 
 ///|
@@ -158,6 +127,7 @@ fn ExecutionBreakpointState::function_snapshot(
         breakpoint.id,
         breakpoint.display_name,
         message,
+        location_count=outcome.location_count,
       )
   }
   snapshot.with_locations(outcome.locations)
@@ -361,17 +331,24 @@ fn LldbCreatedBreakpoint::parse(result : StringView) -> LldbCreatedBreakpoint? {
     return None
   }
   let id = Some(@string.parse_int(id_text, base=10)) catch { _ => None }
-  guard id is Some(id) else { return None }
-  let detail = detail.trim()
-  if detail.has_prefix("no locations") {
+  guard id is Some(id) && id > 0 else { return None }
+  guard detail.trim().split("\n").next() is Some(detail) else { return None }
+  if detail == "no locations (pending)." {
     return Some({ id, location_count: 0, })
   }
-  let location_count = match detail.split_once(" locations.") {
-    Some((count_text, _)) =>
+  let location_count = match detail.strip_suffix(" locations.") {
+    Some(count_text) =>
       Some(@string.parse_int(count_text, base=10)) catch {
         _ => None
       }
-    None => Some(1)
+    None =>
+      if detail.has_prefix("where = ") &&
+        detail.split_once(", address = ") is Some((_, address)) &&
+        family_address_value(address) is Some(_) {
+        Some(1)
+      } else {
+        None
+      }
   }
   guard location_count is Some(location_count) && location_count > 0 else {
     return None
@@ -401,40 +378,31 @@ async fn DebugExecution::configure_family_function_breakpoint(
     "context": "repl",
   })
   guard self.wait_for_response(seq, "evaluate") is Some(response) else {
-    self.breakpoint_state.reject(
-      breakpoint.id,
+    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
       "lldb-dap exited before creating the function family breakpoint",
     )
-    return
   }
   guard lldb_command_result(response) is Some(result) else {
-    self.breakpoint_state.reject(
-      breakpoint.id,
+    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
       response
       .message()
       .unwrap_or("lldb-dap rejected the function family breakpoint"),
     )
-    return
   }
   guard LldbCreatedBreakpoint::parse(result) is Some(created) else {
-    self.breakpoint_state.reject(
-      breakpoint.id,
+    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
       "lldb-dap returned an unrecognized LLDB breakpoint result",
     )
-    return
   }
-  guard created.location_count > 0 else {
-    self.breakpoint_state.reject(
-      breakpoint.id,
-      "no matching function instances were found",
-    )
-    return
+  let handle = FamilyHandle::{
+    id: LldbBreakpointId(created.id),
+    enabled: true,
   }
-  self.breakpoint_state.verify(
+  self.breakpoint_state.families.set(breakpoint.id, handle)
+  self.refresh_family_details(
     breakpoint.id,
-    None,
-    Some(created.id),
-    location_count=Some(created.location_count),
+    handle.id,
+    created_count=Some(created.location_count),
   )
 }
 
