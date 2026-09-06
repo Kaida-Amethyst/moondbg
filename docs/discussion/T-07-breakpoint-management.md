@@ -281,7 +281,7 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 ### P2. 建立可修改的逻辑配置与同步契约
 
-**状态：待实施**
+**状态：已完成（主会话 review 与独立检查通过，236/236 测试通过）**
 
 **工作内容：**
 
@@ -292,6 +292,33 @@ enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，�
 
 **完成条件：** 领域测试能证明编号、目标、状态和配置所有权正确；已有添加断点及重复
 运行行为不回退，REPL 不接触底层句柄。
+
+#### P2 实施结果（2026-09-06）
+
+- `SourceBreakpoint` / `FunctionBreakpoint` 增加不可变 `enabled`；源码配置独立保存
+  `display_path` 和规范 `source_path`，原 `b` 命令已把用户输入路径传到领域层。
+- `DebugSession.breakpoint_configuration()` 返回防御性复制的完整配置，backend 无法通过
+  修改收到的数组改写权威配置。删除不复用 ID，重复目标仍是独立逻辑项；重跑只安装启用项。
+- 增加统一 `breakpoints()` 视图与 `manage_breakpoint(id, operation)`；列表使用 ID Map
+  汇总并按稳定编号排序，启用意图与 `NotInstalled / CurrentInstallation /
+  PreviousInstallation` 分开，不把 Ready 后的旧 verified 信息冒充当前安装。
+- backend 的旧两个 `install_*` 入口被统一 `synchronize_breakpoints(configuration)`
+  取代；结果必须为每个启用逻辑 ID 返回唯一、匹配目标的 snapshot。遗漏、重复或错配结果
+  按不确定处理，不能把缺失响应伪装成 pending 后确认管理成功。
+- 删除/禁用仅在同步确认后提交配置；明确未修改的拒绝保留 stopped 上下文。启用的无法
+  解析结果保留 enabled 与 rejected snapshot；不确定故障回收 execution、保留启用意图。
+  新增依然遵循 Q-02：先保留逻辑项，失败后可在下一次 run 重试。
+- 增加 `abandon_execution` 后端能力，回收不确定执行但允许重新 run；错误明确附带
+  `current execution was discarded`。成功管理不改变 stop epoch、所选 frame 或变量观察。
+- `LldbDapBackend` 已去掉两个导入数量游标与旧 import helper。每次 launch 用当前配置
+  替换执行副本；停止时按稳定 ID 比较配置并复用已有动态新增实现。**本阶段尚未实现的
+  底层删除/禁用在发出任何 DAP 请求前明确拒绝**，不提前替换执行副本或假报成功；P3/P4
+  在同一个同步入口内继续补齐协议操作。REPL 四个新管理命令仍留给 P5。
+- 新增独立领域与 adapter 管理测试文件，覆盖中间删除再新增、重复目标其中一项禁用、
+  跨 run 编号/启用状态、防御性复制、幂等/非法 ID/状态限制、rejected 启用、不确定启用、
+  删除/禁用失败配置保留、不完整响应回收，以及非零 frame 1 的 stop/观察保持。
+- `moon info && moon fmt`、`moon check` 通过，无新增警告；默认 `moon test` **236/236**。
+  生成接口变更对应本阶段领域值与 backend 契约。已知旧真实门控基线差异未修改或弱化。
 
 ### P3. 实现源码与精确函数断点管理
 

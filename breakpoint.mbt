@@ -7,6 +7,8 @@ pub struct SourceBreakpoint {
   priv id : Int
   priv source_path : String
   priv requested_line : Int
+  priv display_path : String
+  priv enabled : Bool
 }
 
 ///|
@@ -14,8 +16,27 @@ fn SourceBreakpoint::new(
   id : Int,
   source_path : String,
   requested_line : Int,
+  display_path? : String = source_path,
 ) -> SourceBreakpoint {
-  { id, source_path, requested_line, }
+  { id, source_path, requested_line, display_path, enabled: true, }
+}
+
+///|
+pub fn SourceBreakpoint::enabled(self : SourceBreakpoint) -> Bool {
+  self.enabled
+}
+
+///|
+pub fn SourceBreakpoint::display_path(self : SourceBreakpoint) -> String {
+  self.display_path
+}
+
+///|
+fn SourceBreakpoint::with_enabled(
+  self : SourceBreakpoint,
+  enabled : Bool,
+) -> SourceBreakpoint {
+  { ..self, enabled, }
 }
 
 ///|

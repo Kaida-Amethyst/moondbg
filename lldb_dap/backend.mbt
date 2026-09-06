@@ -3,8 +3,6 @@
 /// Protocol processes and execution-scoped identifiers remain private here.
 pub struct LldbDapBackend {
   priv session : LldbDapSession
-  priv mut imported_source_breakpoints : Int
-  priv mut imported_function_breakpoints : Int
 }
 
 ///|
@@ -15,35 +13,31 @@ pub fn[X] LldbDapBackend::start(
   adapter : String,
   preparation_timeout_ms? : Int = 10000,
 ) -> LldbDapBackend {
-  {
-    session: LldbDapSession::start(group, adapter, preparation_timeout_ms~),
-    imported_source_breakpoints: 0,
-    imported_function_breakpoints: 0,
-  }
+  { session: LldbDapSession::start(group, adapter, preparation_timeout_ms~), }
 }
 
 ///|
-fn LldbDapBackend::sync_source_breakpoints(
+fn LldbDapBackend::replace_launch_breakpoints(
   self : LldbDapBackend,
   breakpoints : Array[@moondbg.SourceBreakpoint],
-) -> Unit raise {
-  for index in self.imported_source_breakpoints..<breakpoints.length() {
-    let breakpoint = breakpoints[index]
-    self.session.import_source_breakpoint(breakpoint) |> ignore
+  functions : Array[@moondbg.FunctionBreakpoint],
+) -> Unit {
+  self.session.source_breakpoints.clear()
+  for breakpoint in breakpoints {
+    if breakpoint.enabled() {
+      self.session.source_breakpoints.push(
+        LogicalSourceBreakpoint::from_domain(breakpoint),
+      )
+    }
   }
-  self.imported_source_breakpoints = breakpoints.length()
-}
-
-///|
-fn LldbDapBackend::sync_function_breakpoints(
-  self : LldbDapBackend,
-  breakpoints : Array[@moondbg.FunctionBreakpoint],
-) -> Unit raise {
-  for index in self.imported_function_breakpoints..<breakpoints.length() {
-    let breakpoint = breakpoints[index]
-    self.session.import_function_breakpoint(breakpoint) |> ignore
+  self.session.function_breakpoints.clear()
+  for breakpoint in functions {
+    if breakpoint.enabled() {
+      self.session.function_breakpoints.push(
+        LogicalFunctionBreakpoint::from_domain(breakpoint),
+      )
+    }
   }
-  self.imported_function_breakpoints = breakpoints.length()
 }
 
 ///|
@@ -53,12 +47,7 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
   source_breakpoints,
   function_breakpoints,
 ) {
-  self.sync_source_breakpoints(source_breakpoints) catch {
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
-  }
-  self.sync_function_breakpoints(function_breakpoints) catch {
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
-  }
+  self.replace_launch_breakpoints(source_breakpoints, function_breakpoints)
   self.session.run(executable) catch {
     LldbDapBackendError::AdapterFailure(message) =>
       raise @moondbg.DebugBackendError::failure(message)
@@ -67,36 +56,75 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn install_source_breakpoint(
+impl @moondbg.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
   self,
-  breakpoint,
+  configuration,
 ) {
-  defer {
-    self.imported_source_breakpoints = self.session.source_breakpoints.length()
+  let sources = configuration
+    .sources()
+    .filter(item => item.enabled())
+    .map(LogicalSourceBreakpoint::from_domain)
+  let functions = configuration
+    .functions()
+    .filter(item => item.enabled())
+    .map(LogicalFunctionBreakpoint::from_domain)
+  // P2 only reuses the already-supported dynamic-add operations. Detect every
+  // destructive change before touching protocol state; P3/P4 extend this same
+  // complete-configuration synchronization boundary.
+  for previous in self.session.source_breakpoints {
+    guard sources.iter().find_first(item => item.id == previous.id)
+      is Some(current) &&
+      current == previous else {
+      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
+        "source breakpoint removal and disable are not implemented yet",
+      )
+    }
   }
-  self.session.install_source_breakpoint(
-    LogicalSourceBreakpoint::from_domain(breakpoint),
-  ) catch {
-    LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+  for previous in self.session.function_breakpoints {
+    guard functions.iter().find_first(item => item.id == previous.id)
+      is Some(current) &&
+      current == previous else {
+      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
+        "function breakpoint removal and disable are not implemented yet",
+      )
+    }
   }
+  for breakpoint in sources {
+    if self.session.source_breakpoints
+      .iter()
+      .find_first(item => item.id == breakpoint.id)
+      is None {
+      (self.session.install_source_breakpoint(breakpoint) catch {
+        LldbDapBackendError::AdapterFailure(message) =>
+          raise @moondbg.DebugBackendError::failure(message)
+        error => raise error
+      })
+      |> ignore
+    }
+  }
+  for breakpoint in functions {
+    if self.session.function_breakpoints
+      .iter()
+      .find_first(item => item.id == breakpoint.id)
+      is None {
+      (self.session.install_function_breakpoint(breakpoint) catch {
+        LldbDapBackendError::AdapterFailure(message) =>
+          raise @moondbg.DebugBackendError::failure(message)
+        error => raise error
+      })
+      |> ignore
+    }
+  }
+  @moondbg.BreakpointSyncResult::new(
+    self.session.source_breakpoints(),
+    self.session.function_breakpoints(),
+  )
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn install_function_breakpoint(
-  self,
-  breakpoint,
-) {
-  defer {
-    self.imported_function_breakpoints = self.session.function_breakpoints.length()
-  }
-  self.session.install_function_breakpoint(
-    LogicalFunctionBreakpoint::from_domain(breakpoint),
-  ) catch {
-    LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+impl @moondbg.DebugBackend for LldbDapBackend with fn abandon_execution(self) {
+  if self.session.execution is Some(execution) {
+    self.session.recover_failed_execution(execution, try_disconnect=true)
   }
 }
 

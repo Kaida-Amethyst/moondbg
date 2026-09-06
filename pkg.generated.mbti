@@ -8,6 +8,12 @@ import {
 // Values
 
 // Errors
+pub(all) suberror BreakpointSyncError {
+  BreakpointSyncRejected(String)
+  BreakpointSyncUncertain(String)
+} derive(@debug.Debug)
+pub fn BreakpointSyncError::to_repr(Self) -> @debug.Repr
+
 pub suberror DebugBackendError {
   BackendFailure(String)
 } derive(@debug.Debug)
@@ -33,6 +39,8 @@ pub suberror DebugSessionError {
   NoVisibleCaller(Int)
   NoVisibleCallee(Int)
   AdapterFailure(String)
+  BreakpointNotFound(Int)
+  BreakpointManagementRejected(String)
 } derive(@debug.Debug)
 pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
 
@@ -68,6 +76,47 @@ pub fn VariableSnapshotError::not_equal(Self, Self) -> Bool
 pub fn VariableSnapshotError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+pub struct BreakpointConfiguration {
+  // private fields
+}
+pub fn BreakpointConfiguration::functions(Self) -> Array[FunctionBreakpoint]
+pub fn BreakpointConfiguration::sources(Self) -> Array[SourceBreakpoint]
+
+pub enum BreakpointInstallation {
+  NotInstalled
+  CurrentInstallation(BreakpointStatus)
+  PreviousInstallation(BreakpointStatus)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointInstallation::equal(Self, Self) -> Bool
+pub fn BreakpointInstallation::not_equal(Self, Self) -> Bool
+pub fn BreakpointInstallation::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointListEntry {
+  id : Int
+  target : BreakpointTarget
+  enabled : Bool
+  installation : BreakpointInstallation
+  actual_line : Int?
+  location_count : Int?
+} derive(@debug.Debug)
+pub fn BreakpointListEntry::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointManagementResult {
+  operation : BreakpointOperation
+  breakpoint : BreakpointListEntry
+  changed : Bool
+} derive(@debug.Debug)
+pub fn BreakpointManagementResult::to_repr(Self) -> @debug.Repr
+
+pub(all) enum BreakpointOperation {
+  DeleteBreakpoint
+  DisableBreakpoint
+  EnableBreakpoint
+} derive(Eq, @debug.Debug)
+pub fn BreakpointOperation::equal(Self, Self) -> Bool
+pub fn BreakpointOperation::not_equal(Self, Self) -> Bool
+pub fn BreakpointOperation::to_repr(Self) -> @debug.Repr
+
 pub struct BreakpointSnapshot {
   // private fields
 }
@@ -88,6 +137,21 @@ pub enum BreakpointStatus {
 pub fn BreakpointStatus::equal(Self, Self) -> Bool
 pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
 pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointSyncResult {
+  // private fields
+}
+pub fn BreakpointSyncResult::functions(Self) -> Array[FunctionBreakpointSnapshot]
+pub fn BreakpointSyncResult::new(Array[BreakpointSnapshot], Array[FunctionBreakpointSnapshot]) -> Self
+pub fn BreakpointSyncResult::sources(Self) -> Array[BreakpointSnapshot]
+
+pub enum BreakpointTarget {
+  SourceTarget(display_path~ : String, source_path~ : String, line~ : Int)
+  FunctionTarget(display_name~ : String, selector~ : FunctionBreakpointSelector)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointTarget::equal(Self, Self) -> Bool
+pub fn BreakpointTarget::not_equal(Self, Self) -> Bool
+pub fn BreakpointTarget::to_repr(Self) -> @debug.Repr
 
 pub struct DebugContext {
   // private fields
@@ -119,7 +183,9 @@ pub struct DebugSession {
   // private fields
 }
 pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
-pub async fn DebugSession::add_source_breakpoint(Self, String, Int) -> BreakpointSnapshot
+pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String) -> BreakpointSnapshot
+pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
+pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::complete_stack_snapshot(Self) -> StackSnapshot raise DebugSessionError
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
@@ -130,6 +196,7 @@ pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnapshot]
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
 pub async fn DebugSession::local_variables(Self) -> LocalVariablesSnapshot
+pub async fn DebugSession::manage_breakpoint(Self, Int, BreakpointOperation) -> BreakpointManagementResult
 pub fn DebugSession::new(String, &DebugBackend, debug_context? : DebugContext) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
@@ -196,6 +263,7 @@ pub struct FunctionBreakpoint {
   // private fields
 }
 pub fn FunctionBreakpoint::display_name(Self) -> String
+pub fn FunctionBreakpoint::enabled(Self) -> Bool
 pub fn FunctionBreakpoint::id(Self) -> Int
 pub fn FunctionBreakpoint::selector(Self) -> FunctionBreakpointSelector
 
@@ -327,6 +395,8 @@ pub fn RunOutcome::stopped(StopSnapshot) -> Self
 pub struct SourceBreakpoint {
   // private fields
 }
+pub fn SourceBreakpoint::display_path(Self) -> String
+pub fn SourceBreakpoint::enabled(Self) -> Bool
 pub fn SourceBreakpoint::id(Self) -> Int
 pub fn SourceBreakpoint::requested_line(Self) -> Int
 pub fn SourceBreakpoint::source_path(Self) -> String
@@ -521,8 +591,8 @@ pub fn VariableStructureSnapshot::to_repr(Self) -> @debug.Repr
 // Traits
 pub(open) trait DebugBackend {
   async fn launch(Self, String, Array[SourceBreakpoint], Array[FunctionBreakpoint]) -> RunOutcome
-  async fn install_source_breakpoint(Self, SourceBreakpoint) -> BreakpointSnapshot
-  async fn install_function_breakpoint(Self, FunctionBreakpoint) -> FunctionBreakpointSnapshot
+  async fn synchronize_breakpoints(Self, BreakpointConfiguration) -> BreakpointSyncResult
+  async fn abandon_execution(Self) -> Unit
   async fn continue_execution(Self, ThreadSelection) -> RunOutcome
   async fn next(Self, ThreadSelection) -> RunOutcome
   async fn step(Self, ThreadSelection) -> RunOutcome

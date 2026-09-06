@@ -26,6 +26,8 @@ pub suberror DebugSessionError {
   NoVisibleCaller(Int)
   NoVisibleCallee(Int)
   AdapterFailure(String)
+  BreakpointNotFound(Int)
+  BreakpointManagementRejected(String)
 } derive(Debug)
 
 ///|

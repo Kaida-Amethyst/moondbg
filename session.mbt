@@ -3,12 +3,14 @@
 /// session. Adapter resources and protocol state are held behind backend.
 pub struct DebugSession {
   priv executable : String
-  priv source_breakpoints : Array[SourceBreakpoint]
-  priv function_breakpoints : Array[FunctionBreakpoint]
+  priv mut source_breakpoints : Array[SourceBreakpoint]
+  priv mut function_breakpoints : Array[FunctionBreakpoint]
   priv mut next_breakpoint_id : Int
   priv backend : &DebugBackend
   priv debug_context : DebugContext
   priv application : DebugApplicationState
+  priv source_sync_results : Map[Int, BreakpointSnapshot]
+  priv function_sync_results : Map[Int, FunctionBreakpointSnapshot]
 }
 
 ///|
@@ -26,6 +28,8 @@ pub fn DebugSession::new(
     backend,
     debug_context,
     application: DebugApplicationState::new(),
+    source_sync_results: Map([]),
+    function_sync_results: Map([]),
   }
 }
 
@@ -153,6 +157,7 @@ pub async fn DebugSession::add_source_breakpoint(
   self : DebugSession,
   source_path : String,
   line : Int,
+  display_path? : String = source_path,
 ) -> BreakpointSnapshot {
   let phase = self.application.phase
   guard phase is Ready || phase is Stopped else {
@@ -162,15 +167,17 @@ pub async fn DebugSession::add_source_breakpoint(
     self.next_breakpoint_id,
     source_path,
     line,
+    display_path~,
   )
   self.next_breakpoint_id += 1
   self.source_breakpoints.push(breakpoint)
   guard phase is Stopped else { return breakpoint.pending_snapshot() }
-  self.backend.install_source_breakpoint(breakpoint) catch {
-    DebugBackendError::BackendFailure(message) =>
-      self.backend_failed(message, next_state=Ready)
-    error => self.backend_failed(@debug.to_string(error), next_state=Failed)
-  }
+  let result = self.synchronize_breakpoints(self.breakpoint_configuration())
+  result
+  .sources()
+  .iter()
+  .find_first(item => item.id() == breakpoint.id())
+  .unwrap_or(breakpoint.pending_snapshot())
 }
 
 ///|
@@ -208,11 +215,12 @@ pub async fn DebugSession::add_function_breakpoint(
   self.next_breakpoint_id += 1
   self.function_breakpoints.push(breakpoint)
   guard phase is Stopped else { return breakpoint.pending_snapshot() }
-  self.backend.install_function_breakpoint(breakpoint) catch {
-    DebugBackendError::BackendFailure(message) =>
-      self.backend_failed(message, next_state=Ready)
-    error => self.backend_failed(@debug.to_string(error), next_state=Failed)
-  }
+  let result = self.synchronize_breakpoints(self.breakpoint_configuration())
+  result
+  .functions()
+  .iter()
+  .find_first(item => item.id() == breakpoint.id())
+  .unwrap_or(breakpoint.pending_snapshot())
 }
 
 ///|
@@ -223,6 +231,9 @@ pub fn DebugSession::source_breakpoints(
   let snapshots_by_id : Map[Int, BreakpointSnapshot] = Map([])
   for snapshot in backend_snapshots {
     snapshots_by_id.set(snapshot.id(), snapshot)
+  }
+  for id, snapshot in self.source_sync_results {
+    snapshots_by_id.set(id, snapshot)
   }
   self.source_breakpoints.map(breakpoint => {
     match snapshots_by_id.get(breakpoint.id()) {
@@ -240,6 +251,9 @@ pub fn DebugSession::function_breakpoints(
   let snapshots_by_id : Map[Int, FunctionBreakpointSnapshot] = Map([])
   for snapshot in backend_snapshots {
     snapshots_by_id.set(snapshot.id(), snapshot)
+  }
+  for id, snapshot in self.function_sync_results {
+    snapshots_by_id.set(id, snapshot)
   }
   self.function_breakpoints.map(breakpoint => {
     match snapshots_by_id.get(breakpoint.id()) {
@@ -371,10 +385,12 @@ pub async fn DebugSession::run(self : DebugSession) -> RunOutcome {
     )
   }
   self.application.begin_execution()
+  self.source_sync_results.clear()
+  self.function_sync_results.clear()
   let outcome = self.backend.launch(
     self.executable,
-    self.source_breakpoints,
-    self.function_breakpoints,
+    self.source_breakpoints.filter(item => item.enabled()),
+    self.function_breakpoints.filter(item => item.enabled()),
   ) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)
@@ -397,6 +413,8 @@ async fn DebugSession::resume_execution(
     )
   }
   self.application.begin_resume()
+  self.source_sync_results.clear()
+  self.function_sync_results.clear()
   let outcome = operation(thread) catch {
     DebugBackendError::BackendFailure(message) =>
       self.backend_failed(message, next_state=Ready)

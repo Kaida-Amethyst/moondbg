@@ -29,6 +29,11 @@ priv struct RecordingBackend {
   mut function_installs : Int
   mut reject_installs : Bool
   mut fail_installs : Bool
+  mut syncs : Int
+  mut reject_sync : Bool
+  mut uncertain_sync : Bool
+  mut malformed_sync : Bool
+  mut abandons : Int
   mut closed : Bool
 }
 
@@ -64,6 +69,11 @@ fn RecordingBackend::new() -> RecordingBackend {
     function_installs: 0,
     reject_installs: false,
     fail_installs: false,
+    syncs: 0,
+    reject_sync: false,
+    uncertain_sync: false,
+    malformed_sync: false,
+    abandons: 0,
     closed: false,
   }
 }
@@ -139,10 +149,10 @@ impl DebugBackend for RecordingBackend with fn launch(
 }
 
 ///|
-impl DebugBackend for RecordingBackend with fn install_source_breakpoint(
-  self,
-  breakpoint,
-) {
+fn RecordingBackend::install_source_breakpoint(
+  self : RecordingBackend,
+  breakpoint : SourceBreakpoint,
+) -> BreakpointSnapshot raise {
   self.source_installs += 1
   self.breakpoints.push(breakpoint)
   if self.fail_installs {
@@ -167,10 +177,10 @@ impl DebugBackend for RecordingBackend with fn install_source_breakpoint(
 }
 
 ///|
-impl DebugBackend for RecordingBackend with fn install_function_breakpoint(
-  self,
-  breakpoint,
-) {
+fn RecordingBackend::install_function_breakpoint(
+  self : RecordingBackend,
+  breakpoint : FunctionBreakpoint,
+) -> FunctionBreakpointSnapshot raise {
   self.function_installs += 1
   self.function_breakpoints.push(breakpoint)
   if self.fail_installs {
@@ -534,7 +544,9 @@ async test "dynamic adapter failure retains configuration for the next execution
     session.add_source_breakpoint("/tmp/retry.mbt", 6) |> ignore
     false
   } catch {
-    AdapterFailure("recording backend failed to install a breakpoint") => true
+    AdapterFailure(
+      "recording backend failed to install a breakpoint; current execution was discarded"
+    ) => true
     _ => false
   }
   assert_true(failed)

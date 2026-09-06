@@ -140,7 +140,9 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
       SourceBreakTarget(source, line) => {
         let canonical_source = resolve_breakpoint_source(source)
         let breakpoint = context.session.add_source_breakpoint(
-          canonical_source, line,
+          canonical_source,
+          line,
+          display_path=source,
         )
         source_breakpoint_presentation(breakpoint, source)
       }

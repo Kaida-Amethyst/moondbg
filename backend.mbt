@@ -27,8 +27,17 @@ pub(open) trait DebugBackend {
     source_breakpoints : Array[SourceBreakpoint],
     function_breakpoints : Array[FunctionBreakpoint],
   ) -> RunOutcome
-  async fn install_source_breakpoint(Self, breakpoint : SourceBreakpoint) -> BreakpointSnapshot
-  async fn install_function_breakpoint(Self, breakpoint : FunctionBreakpoint) -> FunctionBreakpointSnapshot
+  /// Synchronizes a complete authoritative configuration while stopped.
+  /// The result contains exactly one snapshot per enabled logical source or
+  /// function ID, including unresolved targets; disabled IDs are not included.
+  /// Confirmed non-mutating rejection uses BreakpointSyncRejected; any partial
+  /// or unknown result must use BreakpointSyncUncertain (or throw an error).
+  async fn synchronize_breakpoints(
+    Self,
+    configuration : BreakpointConfiguration,
+  ) -> BreakpointSyncResult
+  /// Discards an uncertain execution, retaining the ability to launch again.
+  async fn abandon_execution(Self) -> Unit
   async fn continue_execution(Self, thread : ThreadSelection) -> RunOutcome
   async fn next(Self, thread : ThreadSelection) -> RunOutcome
   async fn step(Self, thread : ThreadSelection) -> RunOutcome

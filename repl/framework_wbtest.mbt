@@ -12,10 +12,10 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn launch(
 }
 
 ///|
-impl @moondbg.DebugBackend for FrameworkTestBackend with fn install_source_breakpoint(
-  _self,
-  breakpoint,
-) {
+fn FrameworkTestBackend::install_source_breakpoint(
+  _self : FrameworkTestBackend,
+  breakpoint : @moondbg.SourceBreakpoint,
+) -> @moondbg.BreakpointSnapshot {
   @moondbg.BreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.source_path(),
@@ -25,10 +25,10 @@ impl @moondbg.DebugBackend for FrameworkTestBackend with fn install_source_break
 }
 
 ///|
-impl @moondbg.DebugBackend for FrameworkTestBackend with fn install_function_breakpoint(
-  _self,
-  breakpoint,
-) {
+fn FrameworkTestBackend::install_function_breakpoint(
+  _self : FrameworkTestBackend,
+  breakpoint : @moondbg.FunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot {
   @moondbg.FunctionBreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.display_name(),

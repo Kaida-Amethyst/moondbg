@@ -61,10 +61,10 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn launch(
 }
 
 ///|
-impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn install_source_breakpoint(
-  self,
-  breakpoint,
-) {
+fn ExecutionCommandTestBackend::install_source_breakpoint(
+  self : ExecutionCommandTestBackend,
+  breakpoint : @moondbg.SourceBreakpoint,
+) -> @moondbg.BreakpointSnapshot raise {
   self.breakpoints.push(breakpoint)
   if self.fail_installs {
     raise @moondbg.DebugBackendError::failure("breakpoint adapter failed")
@@ -86,10 +86,10 @@ impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn install_sourc
 }
 
 ///|
-impl @moondbg.DebugBackend for ExecutionCommandTestBackend with fn install_function_breakpoint(
-  self,
-  breakpoint,
-) {
+fn ExecutionCommandTestBackend::install_function_breakpoint(
+  self : ExecutionCommandTestBackend,
+  breakpoint : @moondbg.FunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot raise {
   self.function_breakpoints.push(breakpoint)
   if self.fail_installs {
     raise @moondbg.DebugBackendError::failure("breakpoint adapter failed")
@@ -473,7 +473,12 @@ async test "dynamic breakpoint adapter failure is presented and invalidates the 
   backend.fail_installs = true
   let result = execute_framework_command(context, "b repl/main.mbt:4")
   assert_true(
-    result.events is [AdapterFailurePresentation("breakpoint adapter failed")],
+    result.events
+    is [
+      AdapterFailurePresentation(
+        "breakpoint adapter failed; current execution was discarded"
+      ),
+    ],
   )
   assert_true(context.session.state() is @moondbg.Ready)
   assert_eq(context.session.stop_epoch(), None)

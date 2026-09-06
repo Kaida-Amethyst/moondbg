@@ -74,6 +74,7 @@ pub struct FunctionBreakpoint {
   priv id : Int
   priv display_name : String
   priv selector : FunctionBreakpointSelector
+  priv enabled : Bool
 }
 
 ///|
@@ -82,7 +83,20 @@ fn FunctionBreakpoint::new(
   display_name : String,
   selector : FunctionBreakpointSelector,
 ) -> FunctionBreakpoint {
-  { id, display_name, selector, }
+  { id, display_name, selector, enabled: true, }
+}
+
+///|
+pub fn FunctionBreakpoint::enabled(self : FunctionBreakpoint) -> Bool {
+  self.enabled
+}
+
+///|
+fn FunctionBreakpoint::with_enabled(
+  self : FunctionBreakpoint,
+  enabled : Bool,
+) -> FunctionBreakpoint {
+  { ..self, enabled, }
 }
 
 ///|

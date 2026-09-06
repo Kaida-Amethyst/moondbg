@@ -1878,11 +1878,7 @@ async test "P3 initial selection pages past native frames without renumbering" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/paged-program", backend)
     defer session.close()
     guard session.run() is @moondbg.Stopped(initial_stop) else {
@@ -2208,11 +2204,7 @@ async test "P3 frame-scoped raw caches coexist with reusable domain snapshots" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/frame-cache-program", backend,
     )
@@ -2366,11 +2358,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/locals-cache", backend)
     defer session.close()
     session.run() |> ignore
@@ -2478,11 +2466,7 @@ async test "P5 locals reports a missing Locals scope without loading globals" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/no-locals", backend)
     defer session.close()
     session.run() |> ignore
@@ -2635,11 +2619,7 @@ async test "P5 locals summarize collections structs and enums without recursive 
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/compact-locals", backend)
     defer session.close()
     session.run() |> ignore
@@ -2716,11 +2696,7 @@ async test "P5 compact aggregate summaries do not hide adapter request failures"
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/failed-local-layout", backend,
     )
@@ -2794,11 +2770,7 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(executable, backend)
     defer session.close()
     let rejected = try {
@@ -2903,11 +2875,7 @@ async test "scripted function family breakpoint uses LLDB command and one logica
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let debug_context = @moondbg.DebugContext::new("example/app/main", [
       ("util", "example/lib/util"),
     ])
@@ -3122,11 +3090,7 @@ async test "scripted launch failure is recovered by a fresh prepared execution" 
       },
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/moondbg-recovery-program", backend,
     )
@@ -3176,11 +3140,7 @@ async test "scripted preparation failure is recovered before the next run" {
       },
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/moondbg-preparation-recovery-program", backend,
     )
@@ -3800,11 +3760,7 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/struct-program", backend)
     defer session.close()
     guard session.run() is @moondbg.Stopped(_) else {
@@ -3868,11 +3824,7 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/field-path-program", backend)
     defer session.close()
     guard session.run() is @moondbg.Stopped(_) else {
@@ -3974,11 +3926,7 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/fixed-array-program", backend,
     )
@@ -4105,11 +4053,7 @@ async test "lldb-dap materializes Array logical values within bounded storage re
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/array-program", backend)
     defer session.close()
     guard session.run() is @moondbg.Stopped(_) else {
@@ -4274,11 +4218,7 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/indexed-path-program", backend,
     )
@@ -4434,11 +4374,7 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/index-failure-program", backend,
     )
@@ -4507,11 +4443,7 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/enum-program", backend)
     defer session.close()
     guard session.run() is @moondbg.Stopped(_) else {
@@ -4615,11 +4547,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new(
       "/tmp/malformed-enum-program", backend,
     )
@@ -4688,11 +4616,7 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/truncated-program", backend)
     defer session.close()
     session.run() |> ignore
@@ -4752,11 +4676,7 @@ async test "lldb-dap variable materialization truncates recursive references" {
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let backend = LldbDapBackend::{
-      session: lldb_session,
-      imported_source_breakpoints: 0,
-      imported_function_breakpoints: 0,
-    }
+    let backend = LldbDapBackend::{ session: lldb_session, }
     let session = @moondbg.DebugSession::new("/tmp/cyclic-program", backend)
     defer session.close()
     session.run() |> ignore

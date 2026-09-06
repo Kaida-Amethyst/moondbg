@@ -116,10 +116,10 @@ impl @moondbg.DebugBackend for StackCommandTestBackend with fn launch(
 }
 
 ///|
-impl @moondbg.DebugBackend for StackCommandTestBackend with fn install_source_breakpoint(
-  _self,
-  breakpoint,
-) {
+fn StackCommandTestBackend::install_source_breakpoint(
+  _self : StackCommandTestBackend,
+  breakpoint : @moondbg.SourceBreakpoint,
+) -> @moondbg.BreakpointSnapshot {
   @moondbg.BreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.source_path(),
@@ -129,10 +129,10 @@ impl @moondbg.DebugBackend for StackCommandTestBackend with fn install_source_br
 }
 
 ///|
-impl @moondbg.DebugBackend for StackCommandTestBackend with fn install_function_breakpoint(
-  _self,
-  breakpoint,
-) {
+fn StackCommandTestBackend::install_function_breakpoint(
+  _self : StackCommandTestBackend,
+  breakpoint : @moondbg.FunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot {
   @moondbg.FunctionBreakpointSnapshot::verified(
     breakpoint.id(),
     breakpoint.display_name(),

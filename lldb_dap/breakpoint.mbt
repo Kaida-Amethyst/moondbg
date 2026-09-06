@@ -3,7 +3,7 @@ priv struct LogicalSourceBreakpoint {
   id : Int
   source_path : String
   requested_line : Int
-}
+} derive(Eq)
 
 ///|
 fn LogicalSourceBreakpoint::from_domain(
@@ -32,7 +32,7 @@ priv struct LogicalFunctionBreakpoint {
   id : Int
   display_name : String
   selector : @moondbg.FunctionBreakpointSelector
-}
+} derive(Eq)
 
 ///|
 fn LogicalFunctionBreakpoint::from_domain(
@@ -159,23 +159,6 @@ fn ExecutionBreakpointState::function_snapshot(
 }
 
 ///|
-fn LldbDapSession::import_source_breakpoint(
-  self : LldbDapSession,
-  source_breakpoint : @moondbg.SourceBreakpoint,
-) -> @moondbg.BreakpointSnapshot raise LldbDapBackendError {
-  let state = self.state()
-  guard state is Ready else {
-    raise LldbDapBackendError::OperationNotAllowed(
-      state~,
-      action="add source breakpoint",
-    )
-  }
-  let breakpoint = LogicalSourceBreakpoint::from_domain(source_breakpoint)
-  self.source_breakpoints.push(breakpoint)
-  breakpoint.pending_snapshot()
-}
-
-///|
 fn LldbDapSession::source_breakpoints(
   self : LldbDapSession,
 ) -> Array[@moondbg.BreakpointSnapshot] {
@@ -192,23 +175,6 @@ fn LldbDapSession::source_breakpoints(
         }
       })
   }
-}
-
-///|
-fn LldbDapSession::import_function_breakpoint(
-  self : LldbDapSession,
-  function_breakpoint : @moondbg.FunctionBreakpoint,
-) -> @moondbg.FunctionBreakpointSnapshot raise LldbDapBackendError {
-  let state = self.state()
-  guard state is Ready else {
-    raise LldbDapBackendError::OperationNotAllowed(
-      state~,
-      action="add function breakpoint",
-    )
-  }
-  let breakpoint = LogicalFunctionBreakpoint::from_domain(function_breakpoint)
-  self.function_breakpoints.push(breakpoint)
-  breakpoint.pending_snapshot()
 }
 
 ///|
