@@ -33,6 +33,12 @@ cd testdata/dwarf_probe
 moon debug breakpoint_management
 ```
 
+停止后可使用 `b 18` 或 `break 18`，在**当前选中 frame 的源码文件**设置第 18 行断点。
+数字是从 1 开始的绝对行号，不支持 `+3`、`-3` 或不带参数的 `b`。源码选择与 `list`
+一致，`frame`、`up`、`down` 会影响此后新建的裸行号断点；已创建的断点固定在原路径上。
+尚未停止或选中 frame 没有源码时，会提示使用 `b <file>:<line>`，不会猜测文件。
+原来的 `b <function>`、`b @alias.function` 和 `b <file>:<line>` 仍可使用。
+
 `breakpoints` 列出稳定逻辑 ID、启用状态、当前/历史安装结果及已知落点。`delete <id>`、
 `disable <id>`、`enable <id>` 只接受一个十进制正整数，不接受范围或 `all`。禁用保留逻辑
 断点，删除不复用 ID；设置跨 `run` 保持，底层句柄每次运行重新建立。

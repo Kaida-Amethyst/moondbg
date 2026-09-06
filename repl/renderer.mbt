@@ -436,6 +436,14 @@ fn render_process_exit(exit_code : Int?) -> Unit {
 ///|
 fn render_breakpoint_error(error : BreakpointCommandError) -> Unit {
   match error {
+    BreakpointCurrentFrameMissing =>
+      println(
+        "Cannot set breakpoint by line: no stopped frame is selected. Use b <file>:<line>.",
+      )
+    BreakpointCurrentFrameSourceMissing =>
+      println(
+        "Cannot set breakpoint by line: the selected frame has no source file. Use b <file>:<line>.",
+      )
     BreakpointSourceNotFound(path) =>
       println("Cannot set breakpoint: source file not found: \{path}")
     BreakpointSourceNotAFile(path) =>

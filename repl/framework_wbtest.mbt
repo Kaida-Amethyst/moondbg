@@ -226,7 +226,7 @@ test "P5 help metadata is derived from registry order" {
   assert_eq(entries[0].alias_usage(), "b <location>")
   assert_eq(
     entries[0].summary,
-    "Set a breakpoint at file:line, function, or @alias.function",
+    "Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
   )
   assert_eq(entries[12].usage, "backtrace [--all]")
   assert_eq(entries[12].aliases, ["bt"])
@@ -244,7 +244,7 @@ test "P5 human help renderer preserves existing column layout" {
   let entries = default_command_registry().help_entries()
   assert_eq(
     format_help_entry(entries[0]),
-    "  break <location>     b <location>     Set a breakpoint at file:line, function, or @alias.function",
+    "  break <location>     b <location>     Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
   )
   assert_eq(
     format_help_entry(entries[18]),

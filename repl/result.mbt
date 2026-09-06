@@ -122,6 +122,8 @@ fn SourceView::from_frame(
 /// cases semantic lets non-human renderers distinguish invalid paths from
 /// debugger-state failures without parsing terminal text.
 priv enum BreakpointCommandError {
+  BreakpointCurrentFrameMissing
+  BreakpointCurrentFrameSourceMissing
   BreakpointSourceNotFound(String)
   BreakpointSourceNotAFile(String)
   BreakpointOperationNotAllowed(@moondbg.DebugSessionState, String)

@@ -12,6 +12,7 @@ priv struct CommandBreak {
 ///|
 priv enum BreakCommandTarget {
   SourceBreakTarget(String, Int)
+  CurrentSourceBreakTarget(Int)
   FunctionBreakTarget(@moondbg.FunctionBreakpointRequest)
 }
 
@@ -57,9 +58,27 @@ fn parse_break_command(
   arguments : StringView,
 ) -> CommandParseResult {
   guard arguments != "" else {
-    return invalid_command("break requires <file>:<line> or <function>")
+    return invalid_command(
+      "break requires <line>, <file>:<line>, or <function>",
+    )
   }
   guard arguments.rev_find(":") is Some(separator) else {
+    if arguments is ['0'..='9' | '+' | '-', ..] {
+      guard arguments.all(character => character is ('0'..='9')) else {
+        return invalid_command(
+          "breakpoint line must be a positive decimal integer",
+        )
+      }
+      let line = Some(@string.parse_int(arguments, base=10)) catch { _ => None }
+      guard line is Some(line) && line > 0 else {
+        return invalid_command(
+          "breakpoint line must be a positive decimal integer",
+        )
+      }
+      return parsed_command(CommandBreak::{
+        target: CurrentSourceBreakTarget(line),
+      })
+    }
     return parse_function_break_target(arguments)
   }
   let source = arguments[:separator].trim(char_set=" \t")
@@ -87,7 +106,7 @@ fn break_command_spec() -> CommandSpec {
     "break",
     ["b"],
     "break <location>",
-    "Set a breakpoint at file:line, function, or @alias.function",
+    "Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
     parse_break_command,
   )
 }
@@ -134,17 +153,38 @@ async fn resolve_breakpoint_source(path : String) -> String {
 }
 
 ///|
+async fn set_source_breakpoint(
+  session : @moondbg.DebugSession,
+  source : String,
+  line : Int,
+) -> PresentationEvent {
+  let canonical_source = resolve_breakpoint_source(source)
+  let breakpoint = session.add_source_breakpoint(
+    canonical_source,
+    line,
+    display_path=source,
+  )
+  source_breakpoint_presentation(breakpoint, source)
+}
+
+///|
 impl ReplCommand for CommandBreak with fn execute(self, context) {
   let event = try {
     match self.target {
-      SourceBreakTarget(source, line) => {
-        let canonical_source = resolve_breakpoint_source(source)
-        let breakpoint = context.session.add_source_breakpoint(
-          canonical_source,
-          line,
-          display_path=source,
-        )
-        source_breakpoint_presentation(breakpoint, source)
+      SourceBreakTarget(source, line) =>
+        set_source_breakpoint(context.session, source, line)
+      CurrentSourceBreakTarget(line) => {
+        guard context.session.selected_frame_snapshot() is Some(frame) else {
+          return CommandResult::continuing(events=[
+            BreakpointErrorPresentation(BreakpointCurrentFrameMissing),
+          ])
+        }
+        guard frame.source_path() is Some(source) && source != "" else {
+          return CommandResult::continuing(events=[
+            BreakpointErrorPresentation(BreakpointCurrentFrameSourceMissing),
+          ])
+        }
+        set_source_breakpoint(context.session, source, line)
       }
       FunctionBreakTarget(request) => {
         let breakpoint = context.session.add_function_breakpoint(request)
