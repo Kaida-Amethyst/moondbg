@@ -1,0 +1,53 @@
+///|
+// Test-only convenience for older add-operation scenarios. Product callers
+// always supply a complete configuration through the domain synchronization port.
+async fn LldbDapSession::install_source_breakpoint(
+  self : LldbDapSession,
+  breakpoint : LogicalSourceBreakpoint,
+) -> @moondbg.BreakpointSnapshot {
+  let sources = self.source_breakpoints.copy()
+  let functions = self.function_breakpoints.copy()
+  sources.push(breakpoint)
+  let result = self.synchronize_breakpoints(sources, functions) catch {
+    error => {
+      if self.execution is Some(execution) {
+        self.recover_failed_execution(execution, try_disconnect=true) catch {
+          _ => ()
+        }
+      }
+      raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
+  }
+  result
+  .sources()
+  .iter()
+  .find_first(item => item.id() == breakpoint.id)
+  .unwrap_or(breakpoint.pending_snapshot())
+}
+
+///|
+// Test-only convenience for older add-operation scenarios. Product callers
+// always supply a complete configuration through the domain synchronization port.
+async fn LldbDapSession::install_function_breakpoint(
+  self : LldbDapSession,
+  breakpoint : LogicalFunctionBreakpoint,
+) -> @moondbg.FunctionBreakpointSnapshot {
+  let sources = self.source_breakpoints.copy()
+  let functions = self.function_breakpoints.copy()
+  functions.push(breakpoint)
+  let result = self.synchronize_breakpoints(sources, functions) catch {
+    error => {
+      if self.execution is Some(execution) {
+        self.recover_failed_execution(execution, try_disconnect=true) catch {
+          _ => ()
+        }
+      }
+      raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
+  }
+  result
+  .functions()
+  .iter()
+  .find_first(item => item.id() == breakpoint.id)
+  .unwrap_or(breakpoint.pending_snapshot())
+}

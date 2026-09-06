@@ -99,6 +99,7 @@ pub struct BreakpointListEntry {
   installation : BreakpointInstallation
   actual_line : Int?
   location_count : Int?
+  locations : Array[BreakpointLocation]
 } derive(Debug)
 
 ///|
@@ -183,6 +184,7 @@ pub fn DebugSession::breakpoints(
       ),
       actual_line: snapshot.actual_line(),
       location_count: None,
+      locations: snapshot.locations(),
     })
   }
   for breakpoint in self.function_breakpoints {
@@ -200,8 +202,12 @@ pub fn DebugSession::breakpoints(
         snapshot.status(),
         self.state() is Stopped && breakpoint.enabled(),
       ),
-      actual_line: None,
+      actual_line: match snapshot.locations().get(0) {
+        Some(location) => location.line
+        None => None
+      },
       location_count: snapshot.location_count(),
+      locations: snapshot.locations(),
     })
   }
   entries.sort_by((left, right) => left.id.compare(right.id))

@@ -98,8 +98,19 @@ pub struct BreakpointListEntry {
   installation : BreakpointInstallation
   actual_line : Int?
   location_count : Int?
+  locations : Array[BreakpointLocation]
 } derive(@debug.Debug)
 pub fn BreakpointListEntry::to_repr(Self) -> @debug.Repr
+
+pub(all) struct BreakpointLocation {
+  source_path : String?
+  line : Int?
+  column : Int?
+  instruction_reference : String?
+} derive(Eq, @debug.Debug)
+pub fn BreakpointLocation::equal(Self, Self) -> Bool
+pub fn BreakpointLocation::not_equal(Self, Self) -> Bool
+pub fn BreakpointLocation::to_repr(Self) -> @debug.Repr
 
 pub struct BreakpointManagementResult {
   operation : BreakpointOperation
@@ -122,12 +133,14 @@ pub struct BreakpointSnapshot {
 }
 pub fn BreakpointSnapshot::actual_line(Self) -> Int?
 pub fn BreakpointSnapshot::id(Self) -> Int
+pub fn BreakpointSnapshot::locations(Self) -> Array[BreakpointLocation]
 pub fn BreakpointSnapshot::pending(Int, String, Int) -> Self
 pub fn BreakpointSnapshot::rejected(Int, String, Int, String) -> Self
 pub fn BreakpointSnapshot::requested_line(Self) -> Int
 pub fn BreakpointSnapshot::source_path(Self) -> String
 pub fn BreakpointSnapshot::status(Self) -> BreakpointStatus
 pub fn BreakpointSnapshot::verified(Int, String, Int, Int?) -> Self
+pub fn BreakpointSnapshot::with_locations(Self, Array[BreakpointLocation]) -> Self
 
 pub enum BreakpointStatus {
   Pending
@@ -294,10 +307,12 @@ pub struct FunctionBreakpointSnapshot {
 pub fn FunctionBreakpointSnapshot::display_name(Self) -> String
 pub fn FunctionBreakpointSnapshot::id(Self) -> Int
 pub fn FunctionBreakpointSnapshot::location_count(Self) -> Int?
+pub fn FunctionBreakpointSnapshot::locations(Self) -> Array[BreakpointLocation]
 pub fn FunctionBreakpointSnapshot::pending(Int, String) -> Self
 pub fn FunctionBreakpointSnapshot::rejected(Int, String, String) -> Self
 pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
 pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
+pub fn FunctionBreakpointSnapshot::with_locations(Self, Array[BreakpointLocation]) -> Self
 
 pub(all) enum IndexedCollectionKind {
   FixedArrayCollection

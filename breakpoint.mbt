@@ -81,6 +81,7 @@ pub struct BreakpointSnapshot {
   priv requested_line : Int
   priv actual_line : Int?
   priv status : BreakpointStatus
+  priv locations : Array[BreakpointLocation]
 }
 
 ///|
@@ -90,7 +91,14 @@ pub fn BreakpointSnapshot::pending(
   source_path : String,
   requested_line : Int,
 ) -> BreakpointSnapshot {
-  { id, source_path, requested_line, actual_line: None, status: Pending, }
+  {
+    id,
+    source_path,
+    requested_line,
+    actual_line: None,
+    status: Pending,
+    locations: [],
+  }
 }
 
 ///|
@@ -101,7 +109,14 @@ pub fn BreakpointSnapshot::verified(
   requested_line : Int,
   actual_line : Int?,
 ) -> BreakpointSnapshot {
-  { id, source_path, requested_line, actual_line, status: Verified, }
+  {
+    id,
+    source_path,
+    requested_line,
+    actual_line,
+    status: Verified,
+    locations: [],
+  }
 }
 
 ///|
@@ -118,6 +133,7 @@ pub fn BreakpointSnapshot::rejected(
     requested_line,
     actual_line: None,
     status: Rejected(message),
+    locations: [],
   }
 }
 
@@ -146,4 +162,35 @@ pub fn BreakpointSnapshot::status(
   self : BreakpointSnapshot,
 ) -> BreakpointStatus {
   self.status
+}
+
+///|
+/// Locations actually reported by the backend; one representative DAP location
+/// does not imply that the breakpoint has exactly one resolved location.
+pub(all) struct BreakpointLocation {
+  source_path : String?
+  line : Int?
+  column : Int?
+  instruction_reference : String?
+} derive(Debug, Eq)
+
+///|
+pub extend BreakpointLocation with @debug.Debug::{to_repr}
+
+///|
+pub extend BreakpointLocation with Eq::{equal, not_equal}
+
+///|
+pub fn BreakpointSnapshot::with_locations(
+  self : BreakpointSnapshot,
+  locations : Array[BreakpointLocation],
+) -> BreakpointSnapshot {
+  { ..self, locations: locations.copy(), }
+}
+
+///|
+pub fn BreakpointSnapshot::locations(
+  self : BreakpointSnapshot,
+) -> Array[BreakpointLocation] {
+  self.locations.copy()
 }

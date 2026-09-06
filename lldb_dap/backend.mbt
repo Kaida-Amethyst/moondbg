@@ -60,64 +60,15 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
   self,
   configuration,
 ) {
-  let sources = configuration
+  self.session.synchronize_breakpoints(
+    configuration
     .sources()
     .filter(item => item.enabled())
-    .map(LogicalSourceBreakpoint::from_domain)
-  let functions = configuration
+    .map(LogicalSourceBreakpoint::from_domain),
+    configuration
     .functions()
     .filter(item => item.enabled())
-    .map(LogicalFunctionBreakpoint::from_domain)
-  // P2 only reuses the already-supported dynamic-add operations. Detect every
-  // destructive change before touching protocol state; P3/P4 extend this same
-  // complete-configuration synchronization boundary.
-  for previous in self.session.source_breakpoints {
-    guard sources.iter().find_first(item => item.id == previous.id)
-      is Some(current) &&
-      current == previous else {
-      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
-        "source breakpoint removal and disable are not implemented yet",
-      )
-    }
-  }
-  for previous in self.session.function_breakpoints {
-    guard functions.iter().find_first(item => item.id == previous.id)
-      is Some(current) &&
-      current == previous else {
-      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
-        "function breakpoint removal and disable are not implemented yet",
-      )
-    }
-  }
-  for breakpoint in sources {
-    if self.session.source_breakpoints
-      .iter()
-      .find_first(item => item.id == breakpoint.id)
-      is None {
-      (self.session.install_source_breakpoint(breakpoint) catch {
-        LldbDapBackendError::AdapterFailure(message) =>
-          raise @moondbg.DebugBackendError::failure(message)
-        error => raise error
-      })
-      |> ignore
-    }
-  }
-  for breakpoint in functions {
-    if self.session.function_breakpoints
-      .iter()
-      .find_first(item => item.id == breakpoint.id)
-      is None {
-      (self.session.install_function_breakpoint(breakpoint) catch {
-        LldbDapBackendError::AdapterFailure(message) =>
-          raise @moondbg.DebugBackendError::failure(message)
-        error => raise error
-      })
-      |> ignore
-    }
-  }
-  @moondbg.BreakpointSyncResult::new(
-    self.session.source_breakpoints(),
-    self.session.function_breakpoints(),
+    .map(LogicalFunctionBreakpoint::from_domain),
   )
 }
 

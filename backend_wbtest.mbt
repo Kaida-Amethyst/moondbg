@@ -299,6 +299,7 @@ impl DebugBackend for RecordingBackend with fn breakpoint_snapshots(self) {
     requested_line: breakpoint.requested_line(),
     actual_line: Some(breakpoint.requested_line()),
     status: Verified,
+    locations: [],
   })
 }
 

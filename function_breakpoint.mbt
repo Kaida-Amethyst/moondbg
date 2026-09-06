@@ -129,6 +129,7 @@ pub struct FunctionBreakpointSnapshot {
   priv display_name : String
   priv location_count : Int?
   priv status : BreakpointStatus
+  priv locations : Array[BreakpointLocation]
 }
 
 ///|
@@ -136,7 +137,7 @@ pub fn FunctionBreakpointSnapshot::pending(
   id : Int,
   display_name : String,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, location_count: None, status: Pending, }
+  { id, display_name, location_count: None, status: Pending, locations: [], }
 }
 
 ///|
@@ -145,7 +146,7 @@ pub fn FunctionBreakpointSnapshot::verified(
   display_name : String,
   location_count? : Int? = None,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, location_count, status: Verified, }
+  { id, display_name, location_count, status: Verified, locations: [], }
 }
 
 ///|
@@ -154,7 +155,28 @@ pub fn FunctionBreakpointSnapshot::rejected(
   display_name : String,
   message : String,
 ) -> FunctionBreakpointSnapshot {
-  { id, display_name, location_count: None, status: Rejected(message), }
+  {
+    id,
+    display_name,
+    location_count: None,
+    status: Rejected(message),
+    locations: [],
+  }
+}
+
+///|
+pub fn FunctionBreakpointSnapshot::with_locations(
+  self : FunctionBreakpointSnapshot,
+  locations : Array[BreakpointLocation],
+) -> FunctionBreakpointSnapshot {
+  { ..self, locations: locations.copy(), }
+}
+
+///|
+pub fn FunctionBreakpointSnapshot::locations(
+  self : FunctionBreakpointSnapshot,
+) -> Array[BreakpointLocation] {
+  self.locations.copy()
 }
 
 ///|

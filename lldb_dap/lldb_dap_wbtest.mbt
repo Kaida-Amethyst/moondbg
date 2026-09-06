@@ -338,7 +338,9 @@ fn dynamic_breakpoint_script() -> Array[@dap_testkit.ScriptedInput] {
       "result": "Breakpoint 58: no locations (pending).\n",
       "variablesReference": 0,
     }),
-    scripted_failed_response(312, 11, "setBreakpoints", "source is unavailable"),
+    scripted_response(312, 11, "setBreakpoints", {
+      "breakpoints": [{ "verified": false, "message": "source is unavailable" }],
+    }),
   ]
 }
 
@@ -3053,11 +3055,10 @@ async test "dynamic transport failure archives configuration and prepares recove
     assert_true(session.state() is Ready)
     assert_true(session.execution is None)
     assert_true(session.preparation is Some(_))
-    assert_eq(session.source_breakpoints.length(), 1)
-    guard session.source_breakpoints() is [pending] else {
-      fail("failed dynamic installation should retain one logical breakpoint")
-    }
-    assert_true(pending.status() is @moondbg.Pending)
+    assert_eq(session.source_breakpoints.length(), 0)
+    // This is the execution's applied copy, not authoritative configuration.
+    // The application-level recovery test separately retains the logical ID.
+    assert_eq(session.source_breakpoints().length(), 0)
   })
 }
 
@@ -3300,23 +3301,25 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
 }
 
 ///|
-test "a failed setBreakpoints response rejects the complete source set" {
+test "a failed setBreakpoints response is uncertain and cannot replace outcomes" {
   let first = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
   let second = LogicalSourceBreakpoint::new(2, "/tmp/main.mbt", 9)
   let state = ExecutionBreakpointState::new()
-  apply_breakpoint_response(
-    state,
-    [first, second],
-    test_failed_response(41, 5, "setBreakpoints", "source is unavailable"),
-  )
-  assert_true(
-    state.source_snapshot(first).status()
-    is @moondbg.Rejected("source is unavailable"),
-  )
-  assert_true(
-    state.source_snapshot(second).status()
-    is @moondbg.Rejected("source is unavailable"),
-  )
+  try {
+    apply_breakpoint_response(
+      state,
+      [first, second],
+      test_failed_response(41, 5, "setBreakpoints", "source is unavailable"),
+    )
+    fail("request failure is not an ordinary rejected location")
+  } catch {
+    @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      "source is unavailable"
+    ) => ()
+    error => raise error
+  }
+  assert_true(state.source_snapshot(first).status() is @moondbg.Pending)
+  assert_true(state.source_snapshot(second).status() is @moondbg.Pending)
 }
 
 ///|
