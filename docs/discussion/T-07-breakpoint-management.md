@@ -196,7 +196,7 @@ P1 的底层 ID、混合管理和位置查询属于技术验证，不作为产�
 
 ### P1. 验证 adapter 管理语义与落点信息
 
-**状态：待实施**
+**状态：已完成（主会话独立复跑 30 项检查通过，已 review）**
 
 **工作内容：**
 
@@ -208,6 +208,76 @@ P1 的底层 ID、混合管理和位置查询属于技术验证，不作为产�
 
 **完成条件：** 明确三类断点的同步路径、底层 ID 所属和成功/失败判据，没有尚未解决的
 协议阻塞；测试程序可用于后续手动观察。
+
+#### P1 验证结果（2026-09-06）
+
+新增 `testdata/dwarf_probe/breakpoint_management`：连续三轮调用普通函数 `ordinary`、
+`identity[Int]` 和 `identity[Double]`，第一轮末尾设置独立源码 checkpoint，能够观察
+“禁用两个泛型落点但普通/源码仍命中—启用后两个泛型落点再次命中—删除后第三轮直接结束”。
+验证使用 `tools/breakpoint_management_probe.py` 复用现有原始 DAP 探针基础，独立于产品
+断点实现；它是显式开发诊断，不是运行时 Python 依赖，也不加入默认测试的外部环境要求。
+
+当前 adapter 为 `lldb-2100.0.17.203`（Apple Swift 6.3.3）。30 项检查全部通过：
+
+| 验证项 | 观察与后续实现约束 |
+| --- | --- |
+| 源码/精确函数集合替换 | 两者的空数组均真正清空自己的集合；不删除另外一类，也不删除 LLDB regex family |
+| 底层 ID 生命周期 | 本次源码 ID 2/3、精确函数 ID 1/4；清空再加变成 7/8；始终重新读取整组响应，不假定 ID 保持 |
+| 重复逻辑目标 | 重复源码行返回同一 DAP ID（2/2）；重复精确名称也是同一 ID（4/4）；删掉一个重复目标后剩余项仍 verified。逻辑 ID 与底层 ID 是多对一，不能按逻辑项直接删除共享句柄 |
+| DAP/LLDB ID | 当前 adapter 的 DAP ID 数字可在 LLDB `breakpoint list` 查到；family 5 的两次 stopped 都返回 `hitBreakpointIds: [5]`。这只是当前 adapter 的映射证据，仍分别保存/标明 DAP 与 LLDB 句柄来源 |
+| 零 location | 创建返回 `Breakpoint 6: no locations (pending).`，但 LLDB 6 确实存在；`breakpoint delete 6` 后才消失，rejected 结果不得丢清理句柄 |
+| family 启停 | `breakpoint disable 5` 禁用全部 locations；普通函数仍命中，两个 generic 调用均跳过并停在 checkpoint。`enable 5` 复用原句柄，随后依次命中 5.1/5.2 两个不同 PC |
+| 删除 family | 删除 5 后第三轮两个 generic 调用均不再停止，程序正常结束 |
+| 命令失败 | 无效 `breakpoint disable/delete` 的 DAP `evaluate` 仍可能 `success: true`，但 `body.result` 是 `error:`；必须核验具体操作确认文本，不能只核验 DAP success |
+
+启停的已验证成功文本分别是 `1 breakpoints disabled.`、`1 breakpoints enabled.`；
+删除成功文本为 `1 breakpoints deleted; 0 breakpoint locations disabled.`。解析时允许
+末尾换行差异，但未知文本不能当作已确认成功。错误/未知结果进入前文定义的失败分类，
+需要确认操作未改变时才保留当前 execution。
+
+**落点信息与有界补查契约：**
+
+1. 源码和精确函数的 DAP `Breakpoint` 响应可直接提供 `source.path`、`line`、`column`
+   和 `instructionReference`，优先保存这些结构化字段；不把响应的一个位置说成所有位置。
+2. family 先发送 `breakpoint list --brief <LLDB ID>`，其 summary 提供 `locations = N`，
+   不展开 locations。`breakpoint list <ID>.1` 实测仍打印全部 locations，不能用作分页。
+3. 本轮将详细补查上限固定为 **8 locations**：仅 count 在 1..8 时使用 `--full <ID>`；
+   count 大于 8 或无法识别时不发送 full。零 location 保留句柄和已知 0；查询失败才是未知。
+4. full 中的 `at main.mbt:9:16` 只有 basename，不能擅自拼规范路径。解析至多 8 个内部
+   address，对每个地址发送 `disassemble(memoryReference=address, instructionCount=1,
+   resolveSymbols=false)`；当前 adapter 返回结构化 `location.path`、`line`、`column`。
+   两个 generic locations 均已验证到 fixture 完整源码路径的第 9 行。
+5. 列表最多显示 3 条代表位置；有界补查的结果不足或 count 超过 8 时，可以只有 count
+   而没有代表位置，明确显示源码位置未知。不得仅为得到代表位置无界读取整个 family。
+6. address/文本无法解析、adapter 不支持 disassemble 或返回无源码时，位置详情为未知；
+   不否认已经确认成功的启停/删除。count 是 LLDB location 数，不是单态化实例统计。
+
+当前工具链 `stackTrace.name` 返回 `$包.identity|[Int]|` / `$包.identity|[Double]|`，
+不是二进制 linkage 名的 `GiE` / `GdE` 后缀。探针校验实际源码名、family ID、两个不同 PC
+与 LLDB location 明细的对应关系。最初失败是探针误用了 linkage 名断言，不是启用失败；
+原始请求、响应、stopped 与 frame 均保留在探针生成的证据中。
+
+**复跑：**
+
+```sh
+source ~/.zshrc
+set_moon_dev
+cd testdata/dwarf_probe
+printf 'quit\n' | moon debug breakpoint_management
+cd ../..
+PYTHONDONTWRITEBYTECODE=1 python3 tools/breakpoint_management_probe.py \
+  --output _build/breakpoint_management_probe.json
+```
+
+JSON 保存全部有序请求/响应以及命中现场；探针失败返回非零，退出时 disconnect 并回收
+自身 adapter/debuggee。动态地址与本地路径证据不提交到仓库，通过上述命令重新生成。
+
+本阶段没有修改产品功能或外部工具链。主会话另行发现的既有门控验收中 generic 名称、
+enum 可用性和 shadowing 差异，不属于本探针管理语义的失败，也不能用本阶段通过替代
+旧验收；后续阶段应单独记录这些基线问题。
+
+默认测试 228/228 通过，`moon check` 通过。`moon info` 同时将两份生成接口中损坏的
+`StringView` 参数文本恢复为正确类型；已核对没有实际 API 变更。
 
 ### P2. 建立可修改的逻辑配置与同步契约
 

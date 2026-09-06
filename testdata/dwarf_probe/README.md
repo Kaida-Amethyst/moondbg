@@ -15,6 +15,33 @@
 - `list` 包中 boxed enum 的 active constructor 与浅层 payload 打印。
 - `stack_frames` 包中跨包、普通函数、递归和泛型调用组成的调用栈，以及各 frame 的参数、
   局部变量、shadowing 和作用域边界。
+- `breakpoint_management` 包中三轮普通函数与 `Int`/`Double` 泛型调用，用于断点集合替换、
+  禁用/启用和删除的 T-07 验收。
+
+## 断点管理 fixture
+
+运行 `moon debug breakpoint_management` 后，现阶段可以用 `b main`、`run`、`b ordinary`、
+`b identity`、`continue` 观察普通函数与两个 generic locations。管理命令在 T-07 后续阶段
+接入；P1 使用原始 DAP 探针验证底层语义，不要求尚未实现的 REPL 命令。
+
+可通过 `rg -n 'MOONDBG_BREAKPOINT_' breakpoint_management/main.mbt` 查找普通函数、
+generic 函数和第一轮末尾 checkpoint 的稳定源码标记。三轮分别输出：
+
+```text
+first: 11, 1.5
+second: 21, 2.5
+third: 31, 3.5
+```
+
+从 moondbg 仓库根目录运行诊断（先用 `moon debug breakpoint_management` 构建并退出）：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 tools/breakpoint_management_probe.py \
+  --output _build/breakpoint_management_probe.json
+```
+
+探针保存完整请求/响应和停点证据，只有全部检查通过才返回 0；它不依赖 moondbg 的产品
+断点实现，也不是产品运行时依赖。协议观察和当前查询上限见 T-07 的 P1 验证结果。
 
 ## 使用完整调试信息构建
 
