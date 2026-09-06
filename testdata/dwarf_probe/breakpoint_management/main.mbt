@@ -19,7 +19,7 @@ fn main {
   let second = ordinary(20)
   let second_int = identity(second)
   let second_double = identity(2.5)
-  println("second: \{second_int}, \{second_double}")
+  println("second: \{second_int}, \{second_double}") // MOONDBG_BREAKPOINT_SECOND_CHECKPOINT
   let third = ordinary(30)
   let third_int = identity(third)
   let third_double = identity(3.5)

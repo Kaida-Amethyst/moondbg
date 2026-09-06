@@ -20,12 +20,14 @@
 
 ## 断点管理 fixture
 
-运行 `moon debug breakpoint_management` 后，现阶段可以用 `b main`、`run`、`b ordinary`、
-`b identity`、`continue` 观察普通函数与两个 generic locations。管理命令在 T-07 后续阶段
-接入；P1 使用原始 DAP 探针验证底层语义，不要求尚未实现的 REPL 命令。
+运行 `moon debug breakpoint_management` 后，可以用 `b main`、`run`、`b ordinary`、
+`b identity`、`continue` 观察普通函数与两个 generic locations。已支持 `breakpoints`、
+`delete <id>`、`disable <id>`、`enable <id>`；ID 是稳定逻辑编号，设置跨 `run` 保持。
+完整手动命令序列及 MoonBit 门控验收入口见[仓库 README](../../README.md#手动体验断点管理)。
+P1 的原始 DAP 探针仍可用于独立诊断底层协议，不取代产品 REPL 验收。
 
 可通过 `rg -n 'MOONDBG_BREAKPOINT_' breakpoint_management/main.mbt` 查找普通函数、
-generic 函数和第一轮末尾 checkpoint 的稳定源码标记。三轮分别输出：
+generic 函数和第一、第二轮末尾 checkpoint 的稳定源码标记。三轮分别输出：
 
 ```text
 first: 11, 1.5

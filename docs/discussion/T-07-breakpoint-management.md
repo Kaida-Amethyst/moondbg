@@ -191,8 +191,8 @@ P1 的底层 ID、混合管理和位置查询属于技术验证，不作为产�
 
 ## 任务划分
 
-按 `P1` 至 `P6` 顺序推进，阶段状态为“待实施”“进行中”“已完成”或“阻塞”。本文件只记录
-计划，不代表任何阶段已经验收。
+按 `P1` 至 `P6` 顺序推进，阶段状态为“待实施”“进行中”“已完成”或“阻塞”。各阶段的
+实施结果与验收状态记录如下；完整工具链门控的既有失败单独列在 P6，不视为全部门控通过。
 
 ### P1. 验证 adapter 管理语义与落点信息
 
@@ -455,7 +455,7 @@ adapter 原始输出，列表能够清楚表达待安装、禁用、失败和多
 
 ### P6. 真实闭环验收与收尾
 
-**状态：待实施**
+**状态：本轮实现与新增验收已完成，主会话 review 通过；完整门控保留三项既有基线失败**
 
 **工作内容：**
 
@@ -468,3 +468,53 @@ adapter 原始输出，列表能够清楚表达待安装、禁用、失败和多
 
 **完成条件：** 默认测试与门控验收通过，重新 run 后设置保持，当前 execution 无残留
 断点或后台进程，文档明确列出已验证能力和已知限制。
+
+#### P6 实施结果（2026-09-06）
+
+新增独立 `acceptance/breakpoint_management_wbtest.mbt`，复用现有 MoonBit PTY 和开发
+工具链检查。两个测试均在 `MOONDBG_TOOLCHAIN_ACCEPTANCE=1` 时才读取本地路径并启动
+进程；默认测试提前返回。每次命令核验预期输出并等待新提示符；命中核验使用完整
+`Stopped (breakpoint) in ...` 前缀，避免把高亮源码中的函数名误当作停止事件。
+
+1. **精确函数与源码集合：** 重复 `b main` 禁用一个后另一个仍命中；同文件重复源码目标
+   禁用一个后另一个仍命中，禁用最后一个行目标不影响同文件 checkpoint；删除最后一项
+   清空集合。覆盖 Ready/Stopped 修改、非法参数/ID、幂等启停、删除后继续新增不复用 ID、
+   重跑保持设置、禁用项不安装，以及管理前后 `p value`/`locals` 观察保持。
+2. **family 与非零 frame：** family 禁用跨 run 保持，第一轮两个泛型调用均跳过；启用后
+   第二轮依次命中 Int/Double 落点，`p value` 分别为 21 和 2.5；删除后第三轮不再命中。
+   零落点 family 显示 rejected/count 0，仍可禁用、启用、删除。选中 frame 1 后管理
+   源码断点，`bt` 仍选中 #1，`p`/`locals`/`list` 保持同一观察；回 frame 0 后 `p value`
+   仍为 21。各会话最终清空逻辑项并正常退出，PTY 使用 defer 回收。
+
+fixture 仅在第二处 checkpoint 增加行内 marker，不移动源码行；门控测试从 marker
+查找唯一源码语句并读取行号，不硬编码 18/22。手动使用序列已写入 [README](../../README.md)。
+
+**本机验证范围：** macOS 26.6.2，`lldb-2100.0.17.203`（Apple Swift 6.3.3），开发工具链
+`MOON_HOME=~/.moon_dev`、`-g -O0`，通过 `moon debug breakpoint_management` 启动。
+本阶段没有修改产品实现、Python runtime、readline、构建系统或编译器。
+
+| 验证命令 | 实际结果 |
+| --- | --- |
+| `MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/breakpoint_management_wbtest.mbt --no-parallelize` | **2/2 通过** |
+| `MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance --no-parallelize` | **6/9 通过，3 项既有基线失败** |
+| `moon test`（未开启门控） | **260/260 通过** |
+| `moon info && moon fmt`、`moon check`、`moon build`、`git diff --check` | **通过，无新增警告，无可见接口变更** |
+
+完整门控失败均位于未改动的 `acceptance/toolchain_acceptance_wbtest.mbt`，与 P1 前记录一致：
+
+- 第 133 行：泛型停点当前返回源码函数名，旧验收期待旧式 `identity[Int]` 名称。
+- 第 400 行：boxed enum 的 `p list` 当前显示 unavailable。
+- 第 511 行：`shadowed_value` 当前读到 40，旧验收期待 340。
+
+这三项没有 skip、修改预期或改编译器来使结果转绿；**不能声称全部真实工具链门控通过**。
+T-07 新增两项通过是本轮断点管理验收结果，不替代其他调试功能的基线修复。
+
+另一个已独立确认的观察限制：本 fixture 第二轮 identity 停止时，调用者 main frame 的
+局部变量在未执行任何管理命令的情况下也显示 unavailable。测试核验管理前后可用性相同，
+不要求工具链当前没有提供的值；回 frame 0 仍核验实际值 21。该现象的具体成因未在本轮
+定位，不据此推断一定是哪一层调试信息的问题。
+
+本轮不扩展其他 adapter 版本的 CLI 兼容性、交互式 stdin 或 readline 编辑中异步输出
+重绘。主会话独立复跑 `moon check`、260 项默认测试、`moon build`、完整 9 项门控及
+`moon info && moon fmt`，结果与上表一致，新增两项门控均通过；差异与接口检查通过。
+最终进程检查未发现遗留的 lldb-dap、REPL 或 breakpoint_management 可执行进程。
