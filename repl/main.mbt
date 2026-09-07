@@ -11,7 +11,7 @@ priv suberror CliError {
 fn command() -> @argparse.Command {
   @argparse.Command(
     "moondbg",
-    about="Debug a native executable with lldb-dap.",
+    about="Debug a native executable with lldb-dap. Use moondbg --dap for the DAP connection test (no executable).",
     arg_required_else_help=true,
     positionals=[
       @argparse.PositionArg(
@@ -152,6 +152,27 @@ async fn run(
 
 ///|
 async fn main {
+  // Dispatch before argparse: help/error output from the human CLI must never
+  // enter the DAP stdout stream. The existing executable remains the launcher.
+  let argv = @env.args()
+  if argv.length() > 1 && argv[1] == "--dap" {
+    guard argv.length() == 2 else {
+      @stdio.stderr.write("moondbg --dap accepts no additional arguments.\n") catch {
+        _ => ()
+      }
+      exit_process(2)
+      return
+    }
+    @dap_frontend.serve(@stdio.stdin, @stdio.stdout) catch {
+      error => {
+        @stdio.stderr.write("moondbg DAP: \{@debug.to_string(error)}\n") catch {
+          _ => ()
+        }
+        exit_process(1)
+      }
+    }
+    return
+  }
   try {
     let matches = command().parse()
     let executable = executable_argument(matches)
@@ -163,3 +184,6 @@ async fn main {
     error => println("moondbg: \{@debug.to_string(error)}")
   }
 }
+
+///|
+extern "c" fn exit_process(code : Int) = "exit"

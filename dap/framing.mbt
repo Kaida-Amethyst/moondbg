@@ -1,5 +1,5 @@
 ///|
-fn frame_message(body : String) -> String {
+pub fn frame_message(body : String) -> String {
   "Content-Length: " +
   @utf8.encode(body).length().to_string() +
   "\r\n\r\n" +
@@ -19,7 +19,7 @@ fn parse_content_length(line : String) -> Int? {
 }
 
 ///|
-async fn read_frame(reader : &@io.Reader) -> String? {
+pub async fn read_frame(reader : &@io.Reader) -> String? {
   let mut content_length = -1
   for ;; {
     guard reader.read_until("\n") is Some(line) else { return None }

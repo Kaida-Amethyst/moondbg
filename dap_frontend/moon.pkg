@@ -1,0 +1,8 @@
+import {
+  "Kaida-Amethyst/moondbg/dap",
+  "moonbitlang/async",
+  "moonbitlang/async/io",
+  "moonbitlang/core/json",
+}
+
+supported_targets = "+native"

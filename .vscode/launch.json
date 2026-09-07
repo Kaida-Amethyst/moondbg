@@ -6,6 +6,9 @@
       "type": "extensionHost",
       "request": "launch",
       "runtimeExecutable": "${execPath}",
+      "env": {
+        "MOON_HOME": "${env:HOME}/.moon_dev"
+      },
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode",
         "${workspaceFolder}/testdata/dwarf_probe"

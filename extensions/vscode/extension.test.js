@@ -17,18 +17,40 @@ test("launch configuration loads this extension and opens the existing fixture",
   assert.ok(configuration);
   assert.equal(configuration.request, "launch");
   assert.equal(configuration.runtimeExecutable, "${execPath}");
+  assert.equal(configuration.env.MOON_HOME, "${env:HOME}/.moon_dev");
   const args = configuration.args.map((arg) =>
     arg.replaceAll("${workspaceFolder}", repository),
   );
   assert.equal(args[0], `--extensionDevelopmentPath=${__dirname}`);
   assert.ok(fs.statSync(args[1]).isDirectory());
   assert.ok(fs.statSync(path.join(__dirname, manifest.main)).isFile());
+  const fixtureLaunch = JSON.parse(fs.readFileSync(path.join(args[1], ".vscode/launch.json"), "utf8"));
+  assert.equal(fixtureLaunch.configurations[0].type, "moondbg");
+  assert.equal(fixtureLaunch.configurations[0].connectionTest, true);
+  assert.equal(manifest.contributes.debuggers[0].type, "moondbg");
+  assert.ok(manifest.activationEvents.includes("onDebugResolve:moondbg"));
 });
 
 test("activation registers the declared status command and disposes with the host", async () => {
   const commands = new Map();
   const messages = [];
+  const registrations = new Map();
   const vscode = {
+    DebugAdapterExecutable: class {
+      constructor(command, args) { this.command = command; this.args = args; }
+    },
+    debug: {
+      registerDebugConfigurationProvider(type, provider) {
+        assert.equal(type, "moondbg");
+        registrations.set("provider", provider);
+        return { dispose: () => registrations.delete("provider") };
+      },
+      registerDebugAdapterDescriptorFactory(type, factory) {
+        assert.equal(type, "moondbg");
+        registrations.set("factory", factory);
+        return { dispose: () => registrations.delete("factory") };
+      },
+    },
     commands: {
       registerCommand(id, handler) {
         assert.ok(!commands.has(id));
@@ -37,6 +59,7 @@ test("activation registers the declared status command and disposes with the hos
       },
     },
     window: {
+      showErrorMessage(message) { messages.push(message); },
       showInformationMessage(message) {
         messages.push(message);
         return Promise.resolve(undefined);
@@ -46,6 +69,9 @@ test("activation registers the declared status command and disposes with the hos
   const sandbox = {
     module: { exports: {} },
     require(id) {
+      if (id === "./launcher") {
+        return { resolveDebugger: async () => "/test/.moon_dev/bin/moondbg" };
+      }
       assert.equal(id, "vscode");
       return vscode;
     },
@@ -67,10 +93,18 @@ test("activation registers the declared status command and disposes with the hos
     await handler();
   }
   assert.deepEqual(messages, [
-    "moondbg 扩展已加载。当前仅验证扩展加载，尚未接入 DAP 调试。",
+    "moondbg 扩展已加载。可运行 DAP 连接验证；尚不支持调试用户程序。",
   ]);
+  const provider = registrations.get("provider");
+  assert.equal(provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);
+  const configuration = { request: "launch", connectionTest: true };
+  assert.equal(provider.resolveDebugConfiguration(undefined, configuration), configuration);
+  const descriptor = await registrations.get("factory").createDebugAdapterDescriptor();
+  assert.equal(descriptor.command, "/test/.moon_dev/bin/moondbg");
+  assert.equal(descriptor.args.join(" "), "--dap");
   for (const disposable of context.subscriptions) {
     disposable.dispose();
   }
   assert.equal(commands.size, 0);
+  assert.equal(registrations.size, 0);
 });

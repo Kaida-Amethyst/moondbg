@@ -3,11 +3,16 @@ package "Kaida-Amethyst/moondbg/dap"
 
 import {
   "moonbitlang/async",
+  "moonbitlang/async/io",
   "moonbitlang/core/debug",
 }
 
 // Values
 pub fn classify_message(Json) -> IncomingMessage raise DapClientError
+
+pub fn frame_message(String) -> String
+
+pub async fn read_frame(&@io.Reader) -> String?
 
 pub fn stepping_request(DapStepKind, Int, supports_stepping_granularity~ : Bool) -> DapRequest
 

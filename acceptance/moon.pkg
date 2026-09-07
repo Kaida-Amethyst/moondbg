@@ -1,4 +1,5 @@
 import {
+  "Kaida-Amethyst/moondbg/dap",
   "Kaida-Amethyst/moondbg/testkit/pty" @pty_testkit,
   "moonbitlang/async",
   "moonbitlang/async/fs",
@@ -6,6 +7,7 @@ import {
   "moonbitlang/async/process",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/env",
+  "moonbitlang/core/json",
   "moonbitlang/core/string",
 } for "wbtest"
 

@@ -1,7 +1,7 @@
 {
   "name": "moondbg-dev",
   "displayName": "moondbg (Development)",
-  "description": "moondbg 的本地 VS Code 扩展骨架；尚未接入 DAP 调试。",
+  "description": "moondbg 的本地 DAP 连接验证；尚不运行用户程序。",
   "version": "0.0.1",
   "publisher": "moondbg-local",
   "private": true,
@@ -11,7 +11,7 @@
   },
   "categories": ["Debuggers"],
   "main": "./extension.js",
-  "activationEvents": ["onCommand:moondbg.showStatus"],
+  "activationEvents": ["onCommand:moondbg.showStatus", "onDebugResolve:moondbg"],
   "contributes": {
     "commands": [
       {
@@ -19,9 +19,37 @@
         "title": "检查扩展加载",
         "category": "moondbg"
       }
+    ],
+    "debuggers": [
+      {
+        "type": "moondbg",
+        "label": "moondbg（连接验证）",
+        "configurationAttributes": {
+          "launch": {
+            "required": ["connectionTest"],
+            "properties": {
+              "connectionTest": {
+                "type": "boolean",
+                "enum": [true],
+                "default": true,
+                "description": "仅验证 DAP 初始化和会话结束，不启动用户程序。"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "moondbg",
+            "request": "launch",
+            "name": "moondbg：DAP 连接验证（不运行程序）",
+            "connectionTest": true,
+            "internalConsoleOptions": "openOnSessionStart"
+          }
+        ]
+      }
     ]
   },
   "scripts": {
-    "test": "node --test extension.test.js"
+    "test": "node --test extension.test.js launcher.test.js"
   }
 }

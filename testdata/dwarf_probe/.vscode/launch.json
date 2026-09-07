@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "moondbg",
+      "request": "launch",
+      "name": "moondbg：DAP 连接验证（不运行程序）",
+      "connectionTest": true,
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ]
+}
