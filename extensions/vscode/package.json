@@ -1,0 +1,27 @@
+{
+  "name": "moondbg-dev",
+  "displayName": "moondbg (Development)",
+  "description": "moondbg 的本地 VS Code 扩展骨架；尚未接入 DAP 调试。",
+  "version": "0.0.1",
+  "publisher": "moondbg-local",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Debuggers"],
+  "main": "./extension.js",
+  "activationEvents": ["onCommand:moondbg.showStatus"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "moondbg.showStatus",
+        "title": "检查扩展加载",
+        "category": "moondbg"
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node --test extension.test.js"
+  }
+}

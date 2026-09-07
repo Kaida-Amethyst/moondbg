@@ -2,6 +2,9 @@
 
 MoonBit native 程序的 REPL 调试器，通过 `lldb-dap` 调试，不依赖 Python formatter。
 
+VS Code 本地扩展骨架及逐步操作说明见 [扩展 README](extensions/vscode/README.md)。
+当前只验证扩展加载，尚未接入 DAP 调试；从本仓库根目录选择“运行 moondbg 扩展（开发窗口）”启动。
+
 ## 开发与验证
 
 开发工具链要求见 [AGENTS.md](AGENTS.md)。先切换到本地开发环境并构建 moondbg：
