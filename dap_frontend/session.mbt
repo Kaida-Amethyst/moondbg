@@ -1,6 +1,5 @@
 ///|
-/// This frontend currently verifies the protocol connection only. It owns no
-/// DebugSession, backend, target process, or REPL state.
+/// Shared client sequence space plus the connection-test state machine.
 priv struct ConnectionSession {
   mut next_seq : Int
   mut last_request_seq : Int
@@ -72,10 +71,20 @@ fn ConnectionSession::event(
 }
 
 ///|
+#warnings("-unused_value")
 fn ConnectionSession::handle(
   self : ConnectionSession,
   message : Json,
 ) -> Array[Json] raise {
+  let (seq, command, arguments) = self.read_request(message)
+  self.handle_request(seq, command, arguments)
+}
+
+///|
+fn ConnectionSession::read_request(
+  self : ConnectionSession,
+  message : Json,
+) -> (Int, String, Json) raise {
   guard message
     is {
       "seq": Number(raw_seq, ..),
@@ -96,6 +105,16 @@ fn ConnectionSession::handle(
     { "arguments": arguments, .. } => arguments
     _ => {}
   }
+  (seq, command, arguments)
+}
+
+///|
+fn ConnectionSession::handle_request(
+  self : ConnectionSession,
+  seq : Int,
+  command : String,
+  arguments : Json,
+) -> Array[Json] {
   if command == "disconnect" {
     let messages = []
     if self.launch_seq is Some(pending) {
@@ -113,6 +132,19 @@ fn ConnectionSession::handle(
     return messages
   }
   if command == "initialize" && !self.initialized {
+    if arguments is { "pathFormat": String("uri"), .. } ||
+      arguments is { "linesStartAt1": False, .. } ||
+      arguments is { "columnsStartAt1": False, .. } {
+      return [
+        self.response(
+          seq,
+          command,
+          error=Some(
+            "moondbg requires native paths and 1-based lines and columns.",
+          ),
+        ),
+      ]
+    }
     self.initialized = true
     return [
       self.response(seq, command, body={

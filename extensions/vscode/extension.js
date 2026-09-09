@@ -5,16 +5,18 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("moondbg.showStatus", () =>
       vscode.window.showInformationMessage(
-        "moondbg 扩展已加载。可运行 DAP 连接验证；尚不支持调试用户程序。",
+        "moondbg 扩展已加载。支持已编译程序的行断点、调用栈和继续运行。",
       ),
     ),
   );
   context.subscriptions.push(
     vscode.debug.registerDebugConfigurationProvider("moondbg", {
       resolveDebugConfiguration(_folder, configuration) {
-        if (configuration.request !== "launch" || configuration.connectionTest !== true) {
+        if (configuration.request !== "launch" ||
+            (configuration.connectionTest !== true &&
+             (typeof configuration.program !== "string" || !configuration.program.trim()))) {
           vscode.window.showErrorMessage(
-            "当前仅支持 moondbg 的 DAP 连接验证。请选择连接验证配置（connectionTest: true）；不会运行用户程序。",
+            "请选择连接验证配置，或为 launch 配置 program（已使用 -g -O0 编译的可执行文件路径）。当前不支持 attach。",
           );
           return undefined;
         }

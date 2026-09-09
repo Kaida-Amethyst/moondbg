@@ -93,12 +93,15 @@ test("activation registers the declared status command and disposes with the hos
     await handler();
   }
   assert.deepEqual(messages, [
-    "moondbg 扩展已加载。可运行 DAP 连接验证；尚不支持调试用户程序。",
+    "moondbg 扩展已加载。支持已编译程序的行断点、调用栈和继续运行。",
   ]);
   const provider = registrations.get("provider");
   assert.equal(provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);
   const configuration = { request: "launch", connectionTest: true };
   assert.equal(provider.resolveDebugConfiguration(undefined, configuration), configuration);
+  const live = { request: "launch", program: "${workspaceFolder}/main.exe" };
+  assert.equal(provider.resolveDebugConfiguration(undefined, live), live);
+  assert.equal(provider.resolveDebugConfiguration(undefined, { request: "attach", program: "/tmp/a.exe" }), undefined);
   const descriptor = await registrations.get("factory").createDebugAdapterDescriptor();
   assert.equal(descriptor.command, "/test/.moon_dev/bin/moondbg");
   assert.equal(descriptor.args.join(" "), "--dap");

@@ -3,6 +3,15 @@ import {
   "moonbitlang/async",
   "moonbitlang/async/io",
   "moonbitlang/core/json",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/env",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/process",
+  "Kaida-Amethyst/moondbg/name_mangle",
 }
 
 supported_targets = "+native"
+
+import {
+  "Kaida-Amethyst/moondbg/testkit/dap" @dap_testkit,
+} for "wbtest"

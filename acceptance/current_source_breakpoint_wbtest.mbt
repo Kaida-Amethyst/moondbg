@@ -33,7 +33,9 @@ async test "bare line breakpoints use the selected source across real caller fra
     "Breakpoint 3 verified at function @stack_support.enter_stack",
   ])
   breakpoint_command(process, "c", [
-    "Stopped (breakpoint) in $Kaida-Amethyst/moondbg-dwarf-probe/stack_support.enter_stack",
+    // Toolchain versions use either $ or @ in the DWARF display name.
+    // This test verifies the selected function/source, not that decoration.
+    "Stopped (breakpoint) in ", "Kaida-Amethyst/moondbg-dwarf-probe/stack_support.enter_stack",
   ])
   breakpoint_command(process, "break \{support_line}", [
     "Breakpoint 4 verified at",
@@ -56,7 +58,8 @@ async test "bare line breakpoints use the selected source across real caller fra
     "Selected frame #0:", "stack_support.enter_stack",
   ])
   breakpoint_command(process, "c", [
-    "Stopped (breakpoint) in $Kaida-Amethyst/moondbg-dwarf-probe/stack_support.enter_stack",
+    "Stopped (breakpoint) in ",
+    "Kaida-Amethyst/moondbg-dwarf-probe/stack_support.enter_stack",
     "stack_support/stack_support.mbt:\{support_line}",
   ])
   breakpoint_command(process, "c", [

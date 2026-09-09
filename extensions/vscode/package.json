@@ -1,7 +1,7 @@
 {
   "name": "moondbg-dev",
   "displayName": "moondbg (Development)",
-  "description": "moondbg 的本地 DAP 连接验证；尚不运行用户程序。",
+  "description": "通过 moondbg 调试预编译的 MoonBit native 程序。",
   "version": "0.0.1",
   "publisher": "moondbg-local",
   "private": true,
@@ -13,6 +13,7 @@
   "main": "./extension.js",
   "activationEvents": ["onCommand:moondbg.showStatus", "onDebugResolve:moondbg"],
   "contributes": {
+    "breakpoints": [{ "language": "moonbit" }],
     "commands": [
       {
         "command": "moondbg.showStatus",
@@ -23,21 +24,37 @@
     "debuggers": [
       {
         "type": "moondbg",
-        "label": "moondbg（连接验证）",
+        "label": "moondbg",
+        "languages": ["moonbit"],
         "configurationAttributes": {
           "launch": {
-            "required": ["connectionTest"],
+            "required": [],
             "properties": {
               "connectionTest": {
                 "type": "boolean",
-                "enum": [true],
-                "default": true,
+                "default": false,
                 "description": "仅验证 DAP 初始化和会话结束，不启动用户程序。"
+              },
+              "program": {
+                "type": "string",
+                "description": "已使用 -g -O0 编译的可执行文件绝对路径；本扩展不自动构建。"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "程序工作目录，默认使用可执行文件所在目录。"
               }
             }
           }
         },
         "initialConfigurations": [
+          {
+            "type": "moondbg",
+            "request": "launch",
+            "name": "moondbg：调试预编译程序",
+            "program": "${workspaceFolder}/_build/native/debug/build/main/main.exe",
+            "cwd": "${workspaceFolder}",
+            "internalConsoleOptions": "openOnSessionStart"
+          },
           {
             "type": "moondbg",
             "request": "launch",

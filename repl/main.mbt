@@ -11,7 +11,7 @@ priv suberror CliError {
 fn command() -> @argparse.Command {
   @argparse.Command(
     "moondbg",
-    about="Debug a native executable with lldb-dap. Use moondbg --dap for the DAP connection test (no executable).",
+    about="Debug a native executable with lldb-dap. Use moondbg --dap for the VS Code protocol frontend.",
     arg_required_else_help=true,
     positionals=[
       @argparse.PositionArg(

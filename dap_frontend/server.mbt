@@ -1,6 +1,6 @@
 ///|
-/// Serve a connection-only DAP session. EOF closes it without inventing a
-/// successful handshake. After terminated, allow a bounded disconnect exchange.
+/// A launch selects either the connection test or one live, event-driven
+/// execution. Human CLI and readline are never involved.
 pub async fn serve(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
   let session = ConnectionSession::new()
   for deadline = (None : Int64?); !session.closed; {
@@ -19,7 +19,16 @@ pub async fn serve(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
       raise HandshakeTimeout
     }
     guard body is Some(body) else { break }
-    let messages = session.handle(@json.parse(body))
+    let (seq, command, arguments) = session.read_request(@json.parse(body))
+    if command == "launch" &&
+      session.initialized &&
+      session.launch_seq is None &&
+      !session.finished &&
+      !(arguments is { "connectionTest": True, .. }) {
+      serve_live(reader, writer, session, seq, arguments)
+      return
+    }
+    let messages = session.handle_request(seq, command, arguments)
     for message in messages {
       writer.write(@dap.frame_message(message.stringify()))
     }

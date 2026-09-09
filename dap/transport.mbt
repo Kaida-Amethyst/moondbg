@@ -11,6 +11,16 @@ pub(open) trait DapTransport {
 }
 
 ///|
+/// Open an adapter transport for event-driven protocol frontends. The caller
+/// owns message routing and must close it before leaving the task group.
+pub async fn[X] open_transport(
+  group : @async.TaskGroup[X],
+  adapter : String,
+) -> &DapTransport {
+  ProcessDapTransport::start(group, adapter)
+}
+
+///|
 priv struct ProcessDapTransport {
   reader : @process.ReadFromProcess
   writer : @process.WriteToProcess
