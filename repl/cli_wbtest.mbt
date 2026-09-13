@@ -1,14 +1,14 @@
 ///|
-test "CLI help names its required executable" {
+test "CLI help names its required target" {
   let help = command().render_help()
   assert_true(help.contains("moondbg"))
-  assert_true(help.contains("executable"))
+  assert_true(help.contains("<target>"))
 }
 
 ///|
 test "CLI accepts exactly one executable" {
   let matches = command().parse(argv=["hello.exe"], env={})
-  assert_eq(executable_argument(matches), "hello.exe")
+  assert_eq(target_argument(matches), "hello.exe")
   assert_true(
     try {
       debug_context_argument(matches).current_package() |> ignore

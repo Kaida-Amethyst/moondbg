@@ -1,86 +1,10 @@
 ///|
-priv suberror CliError {
-  MissingExecutable
-  ExecutableNotFound(String)
-  ExecutableNotAFile(String)
-  InvalidPackageAliasArgument(String)
-  PackageAliasWithoutCurrentPackage
-} derive(Debug)
-
-///|
-fn command() -> @argparse.Command {
-  @argparse.Command(
-    "moondbg",
-    about="Debug a native executable with lldb-dap. Use moondbg --dap for the VS Code protocol frontend.",
-    arg_required_else_help=true,
-    positionals=[
-      @argparse.PositionArg(
-        "executable",
-        about="path to the executable to debug",
-        num_args=@argparse.ValueRange::single(),
-        allow_hyphen_values=true,
-      ),
-    ],
-    options=[
-      @argparse.OptionArg(
-        "current-package",
-        about="canonical MoonBit package containing the debug target",
-      ),
-      @argparse.OptionArg(
-        "package-alias",
-        about="source import alias mapping in ALIAS=PACKAGE form",
-        action=Append,
-      ),
-    ],
-  )
-}
-
-///|
-fn executable_argument(matches : @argparse.Matches) -> String raise CliError {
-  guard matches.values.get("executable") is Some([executable]) else {
-    raise MissingExecutable
-  }
-  executable
-}
-
-///|
-fn parse_package_alias_argument(
-  argument : StringView,
-) -> (String, String) raise CliError {
-  guard argument.split_once("=") is Some((alias_name, package_name)) &&
-    alias_name != "" &&
-    package_name != "" else {
-    raise InvalidPackageAliasArgument(argument.to_owned())
-  }
-  (alias_name.to_owned(), package_name.to_owned())
-}
-
-///|
-fn debug_context_argument(
-  matches : @argparse.Matches,
-) -> @moondbg.DebugContext raise {
-  let aliases : Array[(String, String)] = match
-    matches.values.get("package-alias") {
-    Some(arguments) =>
-      arguments.map(argument => parse_package_alias_argument(argument))
-    None => []
-  }
-  match matches.values.get("current-package") {
-    Some([current_package]) =>
-      @moondbg.DebugContext::new(current_package, aliases)
-    _ => {
-      guard aliases.length() == 0 else {
-        raise PackageAliasWithoutCurrentPackage
-      }
-      @moondbg.DebugContext::empty()
-    }
-  }
-}
-
-///|
 async fn validate_executable(path : String) -> String {
   guard @fs.exists(path) else { raise ExecutableNotFound(path) }
   guard @fs.kind(path) is Regular else { raise ExecutableNotAFile(path) }
+  guard @fs.can_execute(path) else {
+    raise LaunchError("file is not executable: \{path}")
+  }
   @fs.realpath(path)
 }
 
@@ -175,13 +99,28 @@ async fn main {
   }
   try {
     let matches = command().parse()
-    let executable = executable_argument(matches)
-    let debug_context = debug_context_argument(matches)
+    let target = target_argument(matches)
+    let explicit_context = debug_context_argument(matches)
+    let (executable, debug_context) = prepare_target(target)
+    let debug_context = if matches.values.contains("current-package") {
+      explicit_context
+    } else {
+      debug_context
+    }
     run(executable, debug_context)
   } catch {
-    @moondbg.AdapterFailure(message) =>
-      println("moondbg: debugger adapter failed: \{message}")
-    error => println("moondbg: \{@debug.to_string(error)}")
+    error => {
+      let message = match error {
+        @moondbg.AdapterFailure(message) =>
+          "debugger adapter failed: \{message}"
+        LaunchError(message) => message
+        _ => @debug.to_string(error)
+      }
+      @stdio.stderr.write("moondbg: \{message}\n") catch {
+        _ => ()
+      }
+      exit_process(1)
+    }
   }
 }
 

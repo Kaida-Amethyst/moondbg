@@ -7,35 +7,64 @@ VS Code 调试及逐步操作说明见 [扩展 README](extensions/vscode/README.
 支持预编译 native 程序的行断点、调用栈、继续、输出和停止；暂不支持自动构建、变量树、表达式求值或 DAP 单步。
 当前支持 `moondbg --dap` 的初始化与会话结束，不启动用户程序或 lldb-dap。
 
+## 命令行使用
+
+在 MoonBit 项目目录中运行 `moondbg <包目录>`，例如 `moondbg main`。
+也支持包的项目内相对名称和完整包名。目标必须是支持 native 的可执行包；library 包会被拒绝。
+启动时调用当前环境中的 `moon check` 获取包信息，再调用
+`moon run --build-only --target native -g` 构建目标，自动传入包名和 import alias。
+调试构建及元数据保存在项目 `_build/moondbg` 下。
+当前元数据获取需要完整项目检查，其他包或测试的检查错误也会阻止启动。
+
+进入提示符后可执行：
+
+```text
+b main
+run
+next
+locals
+bt
+continue
+quit
+```
+
+`help` 显示完整命令。REPL 内 `run` 会重新运行已构建的程序；修改源码后重新启动 moondbg
+以重新构建。
+
+已有可执行文件仍可通过 `moondbg ./program.exe` 调试；需要函数断点时，传入
+`--current-package <完整包名>` 及可重复的 `--package-alias alias=package`。
+显式指定 `--current-package` 时，整套显式包名和 alias 会替代自动上下文，不会合并。
+
 ## 开发与验证
 
-开发工具链要求见 [AGENTS.md](AGENTS.md)。先切换到本地开发环境并构建 moondbg：
+开发工具链要求见 [AGENTS.md](AGENTS.md)。先选择工具链并构建 moondbg：
 
 ```sh
 source ~/.zshrc
-set_moon_dev
+set_moon_stable
 moon info && moon fmt
 moon check
 moon test
-moon build
+moon build --target native -g repl
+alias moondbg="$PWD/_build/native/debug/build/repl/repl.exe"
 ```
 
-默认测试不启动真实工具链验收。显式开启后，通过真实 PTY 执行 `moon debug`：
+默认测试不启动真实工具链验收。显式开启后，通过真实 PTY 执行 `moondbg`：
 
 ```sh
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/breakpoint_management_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance --no-parallelize
 ```
 
-第二条包含历史功能验收；本地工具链的已知基线差异及本轮实际通过数记录在
-[T-07](docs/discussion/T-07-breakpoint-management.md)，不能把新增断点管理测试通过视为全部
-历史验收通过。
+第二条包含包启动、断点管理、调用栈、变量及 DAP 验收。2026-09-14 本机 stable
+完整验收 20/20 通过，环境和复现说明见[测试文档](docs/testing.md)。
+[T-07](docs/discussion/T-07-breakpoint-management.md) 保留此前开发工具链的历史记录。
 
 ## 手动体验断点管理
 
 ```sh
 cd testdata/dwarf_probe
-moon debug breakpoint_management
+moondbg breakpoint_management
 ```
 
 停止后可使用 `b 18` 或 `break 18`，在**当前选中 frame 的源码文件**设置第 18 行断点。

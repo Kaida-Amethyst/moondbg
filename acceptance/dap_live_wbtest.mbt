@@ -13,14 +13,14 @@ async fn[G] LivePeer::start(
   group : @async.TaskGroup[G],
   extra_env? : Map[String, String] = {},
 ) -> LivePeer {
-  let (_, moon_home) = require_development_toolchain()
+  let (_, moondbg) = require_toolchain()
   let (input, writer) = @process.write_to_process()
   errdefer writer.close()
   let (reader, output) = @process.read_from_process()
   errdefer reader.close()
   let process = @process.spawn(
     group,
-    "\{moon_home}/bin/moondbg",
+    moondbg,
     ["--dap"],
     stdin=input,
     stdout=output,
@@ -155,7 +155,9 @@ async fn assert_target_gone(pid : Int) -> Unit {
 ///|
 async test "live DAP configures source breakpoints displays a stack and continues to exit" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (moon, _) = require_toolchain()
   let fixture = "\{@fs.realpath(".")}/testdata/dwarf_probe"
   let (code, _, stderr) = @process.collect_output(
     moon,
@@ -274,6 +276,8 @@ async test "live DAP configures source breakpoints displays a stack and continue
 ///|
 async test "live DAP streams output and handles disconnect or EOF while the target runs" {
   guard toolchain_acceptance_enabled() else { return }
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
   let repository = @fs.realpath(".")
   let temporary = @fs.tmpdir(prefix="moondbg-dap-running-")
   defer @fs.rmdir(temporary, recursive=true)
@@ -324,6 +328,8 @@ async test "live DAP streams output and handles disconnect or EOF while the targ
 ///|
 async test "live DAP reports an invalid program without claiming a launch" {
   guard toolchain_acceptance_enabled() else { return }
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
   @async.with_task_group(group => {
     let peer = LivePeer::start(group)
     defer peer.close()
@@ -348,6 +354,8 @@ async test "live DAP reports an invalid program without claiming a launch" {
 ///|
 async test "live DAP reports a missing adapter and a rejected executable as failed launches" {
   guard toolchain_acceptance_enabled() else { return }
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
   let temporary = @fs.tmpdir(prefix="moondbg-dap-invalid-")
   defer @fs.rmdir(temporary, recursive=true)
   let invalid = "\{temporary}/not-an-object.exe"

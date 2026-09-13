@@ -454,7 +454,7 @@ fn render_breakpoint_error(error : BreakpointCommandError) -> Unit {
       )
     BreakpointFunctionContextMissing =>
       println(
-        "Cannot set function breakpoint: package context is missing; launch moondbg through moon debug.",
+        "Cannot set function breakpoint: package context is missing; launch moondbg with a package directory or provide --current-package.",
       )
     BreakpointUnknownPackageAlias(package_alias) =>
       println(

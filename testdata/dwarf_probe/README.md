@@ -2,7 +2,7 @@
 
 这个 fixture 提供一条稳定的 native 调试路径，覆盖：
 
-- `main/main.mbt` 的源码行断点；
+- `pkg_scope/main.mbt` 的源码行断点；
 - 当前包入口 `main` 和普通函数 `sum`；
 - 跨包普通函数 `@probe.increment`；
 - 分别单态化为 `Int`、`String` 的泛型函数 `@probe.identity`；
@@ -20,7 +20,7 @@
 
 ## 断点管理 fixture
 
-运行 `moon debug breakpoint_management` 后，可以用 `b main`、`run`、`b ordinary`、
+运行 `moondbg breakpoint_management` 后，可以用 `b main`、`run`、`b ordinary`、
 `b identity`、`continue` 观察普通函数与两个 generic locations。已支持 `breakpoints`、
 `delete <id>`、`disable <id>`、`enable <id>`；ID 是稳定逻辑编号，设置跨 `run` 保持。
 完整手动命令序列及 MoonBit 门控验收入口见[仓库 README](../../README.md#手动体验断点管理)。
@@ -35,7 +35,8 @@ second: 21, 2.5
 third: 31, 3.5
 ```
 
-从 moondbg 仓库根目录运行诊断（先用 `moon debug breakpoint_management` 构建并退出）：
+从 moondbg 仓库根目录运行诊断（先在 fixture 目录用
+`moon build --target native -g breakpoint_management` 构建）：
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 tools/breakpoint_management_probe.py \
@@ -47,14 +48,14 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/breakpoint_management_probe.py \
 
 ## 使用完整调试信息构建
 
-必须使用开发工具链。`moon debug` 会在相关 moonc 阶段传入 `-g -O0`，随后把构建
-产物和当前包/alias 上下文传给 moondbg：
+工具链要求见仓库 `AGENTS.md`。`moondbg <包>` 调用所选工具链生成包元数据，并通过 `moon run --build-only --target native -g`
+构建程序，再进入 REPL。相关 moonc 阶段使用 `-g -O0`：
 
 ```sh
 source ~/.zshrc
-set_moon_dev
+set_moon_stable
 cd testdata/dwarf_probe
-moon debug main
+moondbg pkg_scope
 ```
 
 可以在 REPL 中运行 Q-02 的完整闭环：
@@ -62,7 +63,7 @@ moon debug main
 ```text
 (moondbg) b main
 (moondbg) run
-(moondbg) b main/main.mbt:13
+(moondbg) b pkg_scope/main.mbt:13
 (moondbg) b sum
 (moondbg) continue
 (moondbg) continue
@@ -82,16 +83,19 @@ moon debug main
 生成的程序位于：
 
 ```text
-testdata/dwarf_probe/_build/native/debug/build/main/main.exe
+testdata/dwarf_probe/_build/moondbg/native/debug/build/pkg_scope/pkg_scope.exe
 ```
 
 可以通过以下命令检查实际编译命令；`build-package` 和 `link-core` 都应包含 `-g -O0`：
 
 ```sh
-moon debug --dry-run main
+moon run --build-only --target native -g --dry-run pkg_scope
 ```
 
 ## 运行原始 DAP 探针
+
+这些工具默认读取普通 `_build/native/debug/build` 目录；先在 fixture 根目录执行
+`moon build --target native -g`，再运行探针。
 
 回到 moondbg 仓库根目录后，可以用四个互补的探针直接连接真实 lldb-dap：
 
@@ -120,7 +124,7 @@ PYTHONDONTWRITEBYTECODE=1 \
 struct REPL 闭环可以通过以下命令人工验证：
 
 ```text
-moon debug point
+moondbg point
 (moondbg) b distance
 (moondbg) b is_parallel
 (moondbg) run
@@ -142,7 +146,7 @@ moon debug point
 FixedArray REPL 闭环可以通过以下命令人工验证：
 
 ```text
-moon debug fixed_array_int
+moondbg fixed_array_int
 (moondbg) b sum
 (moondbg) run
 (moondbg) p arr
@@ -153,7 +157,7 @@ moon debug fixed_array_int
 boxed enum REPL 闭环可以通过以下命令人工验证：
 
 ```text
-moon debug list
+moondbg list
 (moondbg) b list/main.mbt:34
 (moondbg) run
 (moondbg) p list
@@ -162,7 +166,7 @@ moon debug list
 Array REPL 闭环可以通过以下命令人工验证：
 
 ```text
-moon debug array_double
+moondbg array_double
 (moondbg) b sum
 (moondbg) run
 (moondbg) p arr
@@ -173,7 +177,7 @@ moon debug array_double
 Array struct 元素路径闭环可以通过以下命令人工验证：
 
 ```text
-moon debug array_points
+moondbg array_points
 (moondbg) b array_points/main.mbt:25
 (moondbg) run
 (moondbg) p arr[0]
@@ -207,7 +211,7 @@ moon run stack_frames
 调试时执行：
 
 ```sh
-moon debug stack_frames
+moondbg stack_frames
 ```
 
 建议的叶子停点是 `stack_support/stack_support.mbt` 中带有
@@ -256,7 +260,7 @@ frame 持有 Array，递归 frame 持有不同 depth，泛型叶子持有泛型 
 
 ```sh
 source ~/.zshrc
-set_moon_dev
+set_moon_stable
 python3 tools/repl_e2e.py
 ```
 

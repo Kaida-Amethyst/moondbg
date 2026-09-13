@@ -1,4 +1,12 @@
 ///|
+// Moon's native async test driver runs up to ten tests concurrently in one
+// event loop, even with --no-parallelize. The PTY helper waits in synchronous
+// C poll calls, which would block DAP I/O and expire other tests' deadlines.
+// Hold this mutex for each enabled acceptance test's complete lifetime,
+// including child-process cleanup. Disabled tests never acquire it.
+let toolchain_acceptance_mutex : @async.Mutex = @async.Mutex()
+
+///|
 fn toolchain_acceptance_enabled() -> Bool {
   @env.get_env_var("MOONDBG_TOOLCHAIN_ACCEPTANCE") == Some("1")
 }
@@ -15,35 +23,36 @@ async fn collect_text(executable : String, arguments : Array[String]) -> String 
 }
 
 ///|
-async fn require_development_tool(moon_home : String, name : String) -> String {
+async fn require_tool(moon_home : String, name : String) -> String {
   let path = "\{moon_home}/bin/\{name}"
-  assert_true(@fs.kind(path, follow_symlink=false) is @fs.SymLink)
   assert_true(@fs.exists(path))
   assert_true(@fs.can_execute(path))
   path
 }
 
 ///|
-async fn require_development_toolchain() -> (String, String) {
-  guard @env.get_env_var("MOON_HOME") is Some(moon_home) &&
-    @env.get_env_var("HOME") is Some(home) else {
-    fail("MOON_HOME and HOME must be set")
+async fn require_toolchain() -> (String, String) {
+  guard @env.get_env_var("MOON_HOME") is Some(moon_home) else {
+    fail("MOON_HOME must select the toolchain used to build debug targets")
   }
-  assert_eq(moon_home, "\{home}/.moon_dev")
-  let moonc = require_development_tool(moon_home, "moonc")
-  let moon = require_development_tool(moon_home, "moon")
-  require_development_tool(moon_home, "moondbg") |> ignore
-  // Full debug builds now require both debug information and disabled
-  // optimization; the removed `-debug-info full` option is not accepted.
+  let moonc = require_tool(moon_home, "moonc")
+  let moon = require_tool(moon_home, "moon")
+  let moondbg = match @env.get_env_var("MOONDBG_ACCEPTANCE_EXECUTABLE") {
+    Some(path) => @fs.realpath(path)
+    None => @fs.realpath("_build/native/debug/build/repl/repl.exe")
+  }
+  assert_true(@fs.can_execute(moondbg))
   let build_package_help = collect_text(moonc, ["build-package", "-help"])
   assert_true(build_package_help.contains("-g save debugging information"))
   assert_true(build_package_help.contains("-O0  turn off optimization"))
   let link_core_help = collect_text(moonc, ["link-core", "-help"])
   assert_true(link_core_help.contains("-g save debugging information"))
   assert_true(link_core_help.contains("-O0  turn off optimization"))
-  let debug_help = collect_text(moon, ["debug", "--help"])
-  assert_true(debug_help.contains("moon debug [OPTIONS] <PACKAGE>"))
-  (moon, moon_home)
+  let run_help = collect_text(moon, ["run", "--help"])
+  assert_true(run_help.contains("--build-only"))
+  assert_true(run_help.contains("--target"))
+  assert_true(run_help.contains("--debug"))
+  (moon, moondbg)
 }
 
 ///|
@@ -64,10 +73,12 @@ async fn unique_source_line(source_path : String, statement : String) -> Int {
 }
 
 ///|
-async test "development toolchain drives the MoonBit DWARF REPL closure" {
+async test "selected toolchain drives the MoonBit DWARF REPL closure" {
   // The default test suite returns before reading paths or starting processes.
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   let main_source = "\{fixture}/pkg_scope/main.mbt"
@@ -77,7 +88,7 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   )
   let source_breakpoint = "pkg_scope/main.mbt:\{source_breakpoint_line}"
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="pkg_scope",
   )
@@ -85,7 +96,7 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
   assert_eq(process.status(), 0)
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
-    fail("moon debug did not open a prompt (PTY status \{process.status()})")
+    fail("moondbg did not open a prompt (PTY status \{process.status()})")
   }
   assert_true(process.write(b"b main\r"))
   assert_true(process.expect(b"Breakpoint 1 pending at function main"))
@@ -163,12 +174,14 @@ async test "development toolchain drives the MoonBit DWARF REPL closure" {
 ///|
 async test "development toolchain recursively prints MoonBit structs" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   assert_true(@fs.exists("\{fixture}/point/main.mbt"))
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="point",
   )
@@ -176,9 +189,7 @@ async test "development toolchain recursively prints MoonBit structs" {
   assert_eq(process.status(), 0)
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
-    fail(
-      "moon debug point did not open a prompt (PTY status \{process.status()})",
-    )
+    fail("moondbg point did not open a prompt (PTY status \{process.status()})")
   }
   assert_true(process.write(b"b distance\r"))
   assert_true(process.expect(b"Breakpoint 1 pending at function distance"))
@@ -267,12 +278,14 @@ async test "development toolchain recursively prints MoonBit structs" {
 ///|
 async test "development toolchain prints bounded FixedArray values across stops" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   assert_true(@fs.exists("\{fixture}/fixed_array_int/main.mbt"))
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="fixed_array_int",
   )
@@ -281,7 +294,7 @@ async test "development toolchain prints bounded FixedArray values across stops"
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
     fail(
-      "moon debug fixed_array_int did not open a prompt (PTY status \{process.status()})",
+      "moondbg fixed_array_int did not open a prompt (PTY status \{process.status()})",
     )
   }
   assert_true(process.write(b"b sum\r"))
@@ -319,12 +332,14 @@ async test "development toolchain prints bounded FixedArray values across stops"
 ///|
 async test "development toolchain prints bounded Array values across stops" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   assert_true(@fs.exists("\{fixture}/array_double/main.mbt"))
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="array_double",
   )
@@ -333,7 +348,7 @@ async test "development toolchain prints bounded Array values across stops" {
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
     fail(
-      "moon debug array_double did not open a prompt (PTY status \{process.status()})",
+      "moondbg array_double did not open a prompt (PTY status \{process.status()})",
     )
   }
   assert_true(process.write(b"b sum\r"))
@@ -371,12 +386,14 @@ async test "development toolchain prints bounded Array values across stops" {
 ///|
 async test "development toolchain shallowly prints an active boxed enum" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   assert_true(@fs.exists("\{fixture}/list/main.mbt"))
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="list",
   )
@@ -384,9 +401,7 @@ async test "development toolchain shallowly prints an active boxed enum" {
   assert_eq(process.status(), 0)
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
-    fail(
-      "moon debug list did not open a prompt (PTY status \{process.status()})",
-    )
+    fail("moondbg list did not open a prompt (PTY status \{process.status()})")
   }
   assert_true(process.write(b"b list/main.mbt:34\r"))
   assert_true(process.expect(b"Breakpoint 1 pending at list/main.mbt:34"))
@@ -409,12 +424,14 @@ async test "development toolchain shallowly prints an active boxed enum" {
 ///|
 async test "development toolchain precisely inspects Array struct elements" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   assert_true(@fs.exists("\{fixture}/array_points/main.mbt"))
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="array_points",
   )
@@ -423,7 +440,7 @@ async test "development toolchain precisely inspects Array struct elements" {
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
     fail(
-      "moon debug array_points did not open a prompt (PTY status \{process.status()})",
+      "moondbg array_points did not open a prompt (PTY status \{process.status()})",
     )
   }
   assert_true(process.write(b"b array_points/main.mbt:25\r"))
@@ -458,7 +475,9 @@ async test "development toolchain precisely inspects Array struct elements" {
 ///|
 async test "development toolchain navigates stack frames and caller locals" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let repository = @fs.realpath(".")
   let fixture = "\{repository}/testdata/dwarf_probe"
   let support_source = "\{fixture}/stack_support/stack_support.mbt"
@@ -473,7 +492,7 @@ async test "development toolchain navigates stack frames and caller locals" {
     main_source, "let main_after_call = stack_result + main_seed",
   )
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="stack_frames",
   )
@@ -482,7 +501,7 @@ async test "development toolchain navigates stack frames and caller locals" {
   guard process.expect(b"(moondbg) ", timeout_ms=20000) else {
     process.wait(timeout_ms=100) |> ignore
     fail(
-      "moon debug stack_frames did not open a prompt (PTY status \{process.status()})",
+      "moondbg stack_frames did not open a prompt (PTY status \{process.status()})",
     )
   }
   assert_true(

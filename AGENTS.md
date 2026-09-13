@@ -26,42 +26,29 @@ You can browse and install extra skills here:
 
 ## 开发工具链环境
 
-本项目必须使用 MoonBit 的本地开发工具链。凡是需要构建、测试、运行或调试 moondbg，
-开始任务前都必须完成以下检查，不能直接使用系统中偶然出现在 `PATH` 里的稳定版工具链。
+moondbg 直接调用当前环境中的 `moon` 构建目标，不依赖 `moon debug`。
+构建、测试、运行前确认所选工具链，并保证 `moon`、`moonc` 来自同一 `MOON_HOME`。
+用户明确指定的工具链优先；本机可用以下命令选择 stable：
 
-1. 确认 `MOON_HOME` 展开后的路径是 `~/.moon_dev`。工具执行环境不一定自动加载交互式
-   zsh 配置；如果 `MOON_HOME` 未设置或不是该路径，必须先运行：
+```sh
+source ~/.zshrc
+set_moon_stable
+```
 
-   ```sh
-   source ~/.zshrc
-   set_moon_dev
-   ```
+选择后检查 `MOON_HOME`、`command -v moon`、`command -v moonc` 和 `moon version --all`。
+`moon`、`moonc` 必须存在且可执行，不要求 stable 安装使用软链接。
+需要排查编译器开发版本时，可按用户指示使用 `set_moon_dev`，并重新检查路径。
 
-   `set_moon_dev` 的定义位于 `~/.zshrc`。运行后需要重新检查 `MOON_HOME`，不能只假定
-   函数调用成功。
+包调试要求 `moon run --help` 支持 `--build-only`、`--target` 和 `-g`，
+`moon check` 能生成 `native/debug/check/packages.json` 包元数据。
+完整调试构建使用 `-g -O0`；`moonc build-package -help` 与 `moonc link-core -help`
+都必须支持这两个参数，不使用已取消的 `-debug-info full`。
+如果所选工具链缺少所需能力，应报告实际版本和失败项，不能静默切换工具链、重建工具链
+或修改工具链软链接。
 
-2. 确认 `$MOON_HOME/bin/moonc`、`$MOON_HOME/bin/moon` 和
-   `$MOON_HOME/bin/moondbg` 都是有效的软链接，链接目标存在且可以执行。同时确认
-   `command -v moonc`、`command -v moon`、`command -v moondbg` 分别解析到这三个路径，
-   避免实际运行到其他工具链。
-
-3. 确认开发版 `moonc` 的 `build-package` 和 `link-core` 子命令同时支持 `-g` 和 `-O0`。
-   当前工具链已经取消 `-debug-info full`；完整的调试构建改为同时传入 `-g -O0`，分别生成
-   调试信息并关闭优化。可以使用以下命令检查：
-
-   ```sh
-   moonc build-package -help 2>&1 | rg -- '-g .*debugging information'
-   moonc build-package -help 2>&1 | rg -- '-O0 .*optimization'
-   moonc link-core -help 2>&1 | rg -- '-g .*debugging information'
-   moonc link-core -help 2>&1 | rg -- '-O0 .*optimization'
-   ```
-
-4. 确认开发版 `moon` 提供 `moon debug` 子命令，并检查 `moon debug --help` 能正常显示
-   `moon debug [OPTIONS] <PACKAGE>`。
-
-如果以上任一条件不满足，说明本地开发环境出现问题。必须立即暂停当前任务并向用户汇报
-具体失败项、实际路径和检查输出；不得静默退回稳定版 `moon`/`moonc`、绕过检查继续实现，
-也不得在没有用户指示时自行重建工具链或修改这些软链接。
+真实验收前先构建 `repl`。默认验收启动仓库内
+`_build/native/debug/build/repl/repl.exe`，也可用 `MOONDBG_ACCEPTANCE_EXECUTABLE`
+指定本次构建的绝对路径，避免误测旧的已安装版本。
 
 ## Tooling
 

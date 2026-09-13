@@ -66,7 +66,9 @@ fn breakpoint_quit(process : @pty_testkit.PtyProcess) -> Unit raise {
 ///|
 async test "T07 exact and source duplicate management preserves stable ids across runs" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let fixture = "\{@fs.realpath(".")}/testdata/dwarf_probe"
   let ordinary_line = breakpoint_marker_line(
     fixture, "MOONDBG_BREAKPOINT_ORDINARY",
@@ -77,7 +79,7 @@ async test "T07 exact and source duplicate management preserves stable ids acros
   let ordinary = "breakpoint_management/main.mbt:\{ordinary_line}"
   let checkpoint = "breakpoint_management/main.mbt:\{checkpoint_line}"
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="breakpoint_management",
   )
@@ -111,7 +113,7 @@ async test "T07 exact and source duplicate management preserves stable ids acros
   breakpoint_stopped(
     process,
     "continue",
-    "$Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.ordinary",
+    "@Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.ordinary",
     source_line=Some(ordinary_line),
   )
   breakpoint_command(process, "p value", ["value: int = 10"])
@@ -148,7 +150,9 @@ async test "T07 exact and source duplicate management preserves stable ids acros
 ///|
 async test "T07 family all locations zero handles and selected frame survive management" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let fixture = "\{@fs.realpath(".")}/testdata/dwarf_probe"
   let checkpoint_line = breakpoint_marker_line(
     fixture, "MOONDBG_BREAKPOINT_CHECKPOINT",
@@ -160,7 +164,7 @@ async test "T07 family all locations zero handles and selected frame survive man
     fixture, "MOONDBG_BREAKPOINT_GENERIC",
   )
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="breakpoint_management",
   )
@@ -216,7 +220,7 @@ async test "T07 family all locations zero handles and selected frame survive man
   breakpoint_stopped(
     process,
     "continue",
-    "$Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.identity|[Int]|",
+    "@Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.identity[Int]",
     source_line=Some(generic_line),
   )
   breakpoint_command(process, "p value", ["value: int = 21"])
@@ -246,7 +250,7 @@ async test "T07 family all locations zero handles and selected frame survive man
   breakpoint_stopped(
     process,
     "continue",
-    "$Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.identity|[Double]|",
+    "@Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.identity[Double]",
     source_line=Some(generic_line),
   )
   breakpoint_command(process, "p value", ["value: Double = 2.5"])

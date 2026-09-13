@@ -70,15 +70,15 @@ pub fn PtyProcess::spawn_self(filter : String) -> PtyProcess {
 }
 
 ///|
-/// Runs `moon debug <package>` in a selected fixture directory under a fresh PTY.
+/// Runs `moondbg <package>` in a selected fixture directory under a fresh PTY.
 pub fn PtyProcess::spawn_debug(
-  moon : String,
+  moondbg : String,
   working_directory : String,
   package_name? : String = "main",
 ) -> PtyProcess {
   {
     native: native_spawn_debug(
-      @utf8.encode(moon),
+      @utf8.encode(moondbg),
       @utf8.encode(working_directory),
       @utf8.encode(package_name),
     ),

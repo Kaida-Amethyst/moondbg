@@ -1,7 +1,9 @@
 ///|
 async test "bare line breakpoints use the selected source across real caller frames" {
   guard toolchain_acceptance_enabled() else { return }
-  let (moon, _) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let fixture = "\{@fs.realpath(".")}/testdata/dwarf_probe"
   let main_line = unique_source_line(
     "\{fixture}/stack_frames/main.mbt",
@@ -12,7 +14,7 @@ async test "bare line breakpoints use the selected source across real caller fra
     "let cross_after_call = cross_result + cross_total",
   )
   let process = @pty_testkit.PtyProcess::spawn_debug(
-    moon,
+    moondbg,
     fixture,
     package_name="stack_frames",
   )

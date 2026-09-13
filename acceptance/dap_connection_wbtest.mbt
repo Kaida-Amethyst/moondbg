@@ -43,12 +43,14 @@ async fn connection_transcript(
 ///|
 async test "DAP adapter exits after termination even if the client never disconnects" {
   guard toolchain_acceptance_enabled() else { return }
-  let (_, moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let transcript = connection_request(1, "initialize") +
     connection_request(2, "launch", arguments={ "connectionTest": true }) +
     connection_request(3, "configurationDone")
   let (code, stdout, stderr) = connection_transcript(
-    "\{moon_home}/bin/moondbg",
+    moondbg,
     transcript,
     close_input=false,
   )
@@ -74,16 +76,15 @@ async fn connection_messages(text : String) -> Array[Json] {
 ///|
 async test "real moondbg DAP handshake uses protocol-only stdout and exits cleanly" {
   guard toolchain_acceptance_enabled() else { return }
-  let (_, moon_home) = require_development_toolchain()
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
   let transcript = connection_request(1, "initialize") +
     connection_request(2, "launch", arguments={ "connectionTest": true }) +
     connection_request(3, "setExceptionBreakpoints", arguments={ "filters": [] }) +
     connection_request(4, "configurationDone") +
     connection_request(5, "disconnect")
-  let (code, stdout, stderr) = connection_transcript(
-    "\{moon_home}/bin/moondbg",
-    transcript,
-  )
+  let (code, stdout, stderr) = connection_transcript(moondbg, transcript)
   assert_eq(code, 0)
   assert_eq(stderr, "")
   let messages = connection_messages(stdout)
@@ -114,8 +115,10 @@ async test "real moondbg DAP handshake uses protocol-only stdout and exits clean
 ///|
 async test "real DAP frontend handles cancellation EOF and malformed input without a REPL" {
   guard toolchain_acceptance_enabled() else { return }
-  let (_, moon_home) = require_development_toolchain()
-  let executable = "\{moon_home}/bin/moondbg"
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
+  let executable = moondbg
   let (code, stdout, stderr) = @process.collect_output(
     executable,
     ["--dap", "unexpected.exe"],

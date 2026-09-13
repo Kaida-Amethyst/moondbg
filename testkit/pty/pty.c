@@ -89,10 +89,10 @@ static void moondbg_test_debug_wrapper_role(void)
     __attribute__((constructor));
 
 static void moondbg_test_debug_wrapper_role(void) {
-  const char *moon = getenv("MOONDBG_PTY_DEBUG_MOON");
+  const char *executable = getenv("MOONDBG_PTY_DEBUG_EXECUTABLE");
   const char *working_directory = getenv("MOONDBG_PTY_DEBUG_CWD");
   const char *package_name = getenv("MOONDBG_PTY_DEBUG_PACKAGE");
-  if (moon == NULL || working_directory == NULL || package_name == NULL ||
+  if (executable == NULL || working_directory == NULL || package_name == NULL ||
       !isatty(STDIN_FILENO)) {
     return;
   }
@@ -100,14 +100,10 @@ static void moondbg_test_debug_wrapper_role(void) {
       tcsetpgrp(STDIN_FILENO, getpgrp()) < 0) {
     _exit(127);
   }
-  execl(
-      moon,
-      moon,
-      "-C",
-      working_directory,
-      "debug",
-      package_name,
-      (char *)NULL);
+  if (chdir(working_directory) != 0) {
+    _exit(127);
+  }
+  execl(executable, executable, package_name, (char *)NULL);
   _exit(127);
 }
 
@@ -346,8 +342,8 @@ void *moondbg_test_pty_spawn_debug(
   for (size_t index = 0; index < environment_count; index++) {
     if (strncmp(
             environ[index],
-            "MOONDBG_PTY_DEBUG_MOON=",
-            sizeof("MOONDBG_PTY_DEBUG_MOON=") - 1) != 0 &&
+            "MOONDBG_PTY_DEBUG_EXECUTABLE=",
+            sizeof("MOONDBG_PTY_DEBUG_EXECUTABLE=") - 1) != 0 &&
         strncmp(
             environ[index],
             "MOONDBG_PTY_DEBUG_CWD=",
@@ -359,25 +355,26 @@ void *moondbg_test_pty_spawn_debug(
       environment[copied++] = environ[index];
     }
   }
-  const char *moon_prefix = "MOONDBG_PTY_DEBUG_MOON=";
+  const char *executable_prefix = "MOONDBG_PTY_DEBUG_EXECUTABLE=";
   const char *cwd_prefix = "MOONDBG_PTY_DEBUG_CWD=";
   const char *package_prefix = "MOONDBG_PTY_DEBUG_PACKAGE=";
-  const size_t moon_entry_length = strlen(moon_prefix) + strlen(executable) + 1;
+  const size_t executable_entry_length =
+      strlen(executable_prefix) + strlen(executable) + 1;
   const size_t cwd_entry_length =
       strlen(cwd_prefix) + strlen(working_directory) + 1;
   const size_t package_entry_length =
       strlen(package_prefix) + strlen(package_name) + 1;
-  char *moon_entry = malloc(moon_entry_length);
+  char *executable_entry = malloc(executable_entry_length);
   char *cwd_entry = malloc(cwd_entry_length);
   char *package_entry = malloc(package_entry_length);
-  if (moon_entry == NULL || cwd_entry == NULL || package_entry == NULL) {
+  if (executable_entry == NULL || cwd_entry == NULL || package_entry == NULL) {
     abort();
   }
   (void)snprintf(
-      moon_entry,
-      moon_entry_length,
+      executable_entry,
+      executable_entry_length,
       "%s%s",
-      moon_prefix,
+      executable_prefix,
       executable);
   (void)snprintf(
       cwd_entry,
@@ -391,7 +388,7 @@ void *moondbg_test_pty_spawn_debug(
       "%s%s",
       package_prefix,
       package_name);
-  environment[copied] = moon_entry;
+  environment[copied] = executable_entry;
   environment[copied + 1] = cwd_entry;
   environment[copied + 2] = package_entry;
   environment[copied + 3] = NULL;
@@ -403,7 +400,7 @@ void *moondbg_test_pty_spawn_debug(
   }
   (void)posix_spawn_file_actions_destroy(&actions);
   close(slave_fd);
-  free(moon_entry);
+  free(executable_entry);
   free(cwd_entry);
   free(package_entry);
   free(environment);
