@@ -409,12 +409,12 @@ async test "function break command reports missing and unknown package context" 
 ///|
 async test "P6 break and b call the session and return pending events" {
   let (backend, context) = execution_command_test_context()
-  let first = execute_framework_command(context, "break repl/main.mbt:4")
+  let first = execute_framework_command(context, "break main/main.mbt:4")
   guard first.events is [BreakpointPendingPresentation(1, source, 4)] else {
     fail("break should return its pending breakpoint event")
   }
-  assert_eq(source, "repl/main.mbt")
-  let second = execute_framework_command(context, "b repl/main.mbt:7")
+  assert_eq(source, "main/main.mbt")
+  let second = execute_framework_command(context, "b main/main.mbt:7")
   guard second.events is [BreakpointPendingPresentation(2, _, 7)] else {
     fail("b should use the same breakpoint command factory")
   }
@@ -430,20 +430,20 @@ async test "P6 break and b call the session and return pending events" {
 async test "break paths stay structured and stopped additions update immediately" {
   let (backend, context) = execution_command_test_context()
   let missing = execute_framework_command(
-    context, "break repl/no-such-source.mbt:4",
+    context, "break main/no-such-source.mbt:4",
   )
   assert_true(
     missing.events
     is [
       BreakpointErrorPresentation(
-        BreakpointSourceNotFound("repl/no-such-source.mbt")
+        BreakpointSourceNotFound("main/no-such-source.mbt")
       ),
     ],
   )
-  let directory = execute_framework_command(context, "break repl:4")
+  let directory = execute_framework_command(context, "break main:4")
   assert_true(
     directory.events
-    is [BreakpointErrorPresentation(BreakpointSourceNotAFile("repl"))],
+    is [BreakpointErrorPresentation(BreakpointSourceNotAFile("main"))],
   )
   let final_colon = execute_framework_command(
     context, "b C:/project/main.mbt:12",
@@ -457,7 +457,7 @@ async test "break paths stay structured and stopped additions update immediately
     ],
   )
   context.session.run() |> ignore
-  let stopped = execute_framework_command(context, "break repl/main.mbt:4")
+  let stopped = execute_framework_command(context, "break main/main.mbt:4")
   guard stopped.events is [BreakpointUpdatePresentation(breakpoint)] else {
     fail("stopped breakpoint should return its immediate adapter result")
   }
@@ -487,7 +487,7 @@ async test "dynamic breakpoint adapter failure is presented and invalidates the 
   let (backend, context) = execution_command_test_context()
   context.session.run() |> ignore
   backend.fail_installs = true
-  let result = execute_framework_command(context, "b repl/main.mbt:4")
+  let result = execute_framework_command(context, "b main/main.mbt:4")
   assert_true(
     result.events
     is [
@@ -510,7 +510,7 @@ async test "stopped rejected breakpoint is immediate and keeps the current stop"
   context.session.run() |> ignore
   let stop_epoch = context.session.stop_epoch()
   backend.reject_installs = true
-  let result = execute_framework_command(context, "b repl/main.mbt:4")
+  let result = execute_framework_command(context, "b main/main.mbt:4")
   guard result.events is [BreakpointUpdatePresentation(breakpoint)] else {
     fail("semantic rejection should be an immediate breakpoint update")
   }

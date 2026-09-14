@@ -46,9 +46,14 @@ set_moon_stable
 如果所选工具链缺少所需能力，应报告实际版本和失败项，不能静默切换工具链、重建工具链
 或修改工具链软链接。
 
-真实验收前先构建 `repl`。默认验收启动仓库内
-`_build/native/debug/build/repl/repl.exe`，也可用 `MOONDBG_ACCEPTANCE_EXECUTABLE`
+真实验收前先构建 `main`（`moon build --target native -g main`）。默认验收启动仓库内
+`_build/native/debug/build/main/main.exe`，也可用 `MOONDBG_ACCEPTANCE_EXECUTABLE`
 指定本次构建的绝对路径，避免误测旧的已安装版本。
+
+VS Code 扩展只启动 `$MOON_HOME/bin/moondbg --dap`，允许普通可执行文件或有效软链接，
+不搜索 PATH 或自动安装。仓库的扩展开发窗口默认设置 `MOON_HOME=~/.moon`，并将其
+`bin` 放在 PATH 最前面；修改启动配置后需重新启动开发窗口。若缺少 moondbg，应报告
+实际路径，由用户安装或配置链接，不静默修改用户工具链。
 
 ## Tooling
 

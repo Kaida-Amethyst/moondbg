@@ -5,28 +5,43 @@ const path = require("node:path");
 const test = require("node:test");
 const { resolveDebugger } = require("./launcher");
 
-test("missing, relative and stable MOON_HOME are rejected without a PATH fallback", async () => {
-  for (const value of [undefined, "~/.moon_dev", ".moon_dev", "/test/.moon"]) {
-    await assert.rejects(resolveDebugger({ MOON_HOME: value }, "/test"), /MOON_HOME 必须为/);
+test("missing and relative MOON_HOME are rejected without a PATH fallback", async () => {
+  for (const value of [undefined, "", "~/.moon", ".moon"]) {
+    await assert.rejects(resolveDebugger({ MOON_HOME: value }), /MOON_HOME 必须为/);
   }
 });
 
-test("only an executable development symlink is accepted", async (t) => {
+test("stable and custom toolchains accept regular executables without searching PATH", async (t) => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "moondbg-launcher-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
-  const moonHome = path.join(home, ".moon_dev");
+  for (const directory of [".moon", "custom toolchain"]) {
+    const moonHome = path.join(home, directory);
+    const executable = path.join(moonHome, "bin", "moondbg");
+    const environment = { MOON_HOME: moonHome, PATH: process.env.PATH };
+    await fs.mkdir(path.dirname(executable), { recursive: true });
+    await assert.rejects(resolveDebugger(environment), /无法启动/);
+    await fs.mkdir(executable);
+    await assert.rejects(resolveDebugger(environment), /不是普通文件/);
+    await fs.rmdir(executable);
+    await fs.writeFile(executable, "test fixture", { mode: 0o600 });
+    await assert.rejects(resolveDebugger(environment), /无法启动/);
+    await fs.chmod(executable, 0o700);
+    assert.equal(await resolveDebugger(environment), executable);
+  }
+});
+
+test("valid executable symlinks are accepted, broken and non-executable targets are rejected", async (t) => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "moondbg-launcher-"));
+  t.after(() => fs.rm(home, { recursive: true, force: true }));
+  const moonHome = path.join(home, ".moon");
   const executable = path.join(moonHome, "bin", "moondbg");
   const environment = { MOON_HOME: moonHome };
   await fs.mkdir(path.dirname(executable), { recursive: true });
-  await assert.rejects(resolveDebugger(environment, home), /无法启动/);
-  await fs.writeFile(executable, "not a symlink");
-  await assert.rejects(resolveDebugger(environment, home), /必须是.*软链接/);
-  await fs.unlink(executable);
   const target = path.join(home, "adapter");
   await fs.symlink(target, executable);
-  await assert.rejects(resolveDebugger(environment, home), /无法启动/);
+  await assert.rejects(resolveDebugger(environment), /无法启动/);
   await fs.writeFile(target, "test fixture", { mode: 0o600 });
-  await assert.rejects(resolveDebugger(environment, home), /无法启动/);
+  await assert.rejects(resolveDebugger(environment), /无法启动/);
   await fs.chmod(target, 0o700);
-  assert.equal(await resolveDebugger(environment, home), executable);
+  assert.equal(await resolveDebugger(environment), executable);
 });

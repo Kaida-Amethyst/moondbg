@@ -30,7 +30,7 @@ PTY 测试会重新执行当前 MoonBit 测试二进制，并让同一个二进�
 `lldb-dap`。单独运行该层可以使用：
 
 ```sh
-moon test repl/pty_wbtest.mbt --no-parallelize
+moon test main/pty_wbtest.mbt --no-parallelize
 ```
 
 ## 真实工具链 acceptance
@@ -46,12 +46,12 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 \
 先构建本次待测的 CLI：
 
 ```sh
-moon build --target native -g repl
+moon build --target native -g main
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance --no-parallelize
 ```
 
-默认待测程序为仓库 `_build/native/debug/build/repl/repl.exe`；使用其他构建目录时，设置
-`MOONDBG_ACCEPTANCE_EXECUTABLE=/绝对路径/repl.exe`。验收检查 `MOON_HOME` 中的
+默认待测程序为仓库 `_build/native/debug/build/main/main.exe`；使用其他构建目录时，设置
+`MOONDBG_ACCEPTANCE_EXECUTABLE=/绝对路径/main.exe`。验收检查 `MOON_HOME` 中的
 `moon`、`moonc` 存在且可执行、编译器支持 `-g -O0`，以及 `moon run` 支持
 `--build-only --target --debug`。不要求安装 `moondbg` 或提供 `moon debug` 子命令。
 
@@ -83,7 +83,7 @@ lldb-dap 映射和 moondbg 对 `moon` 的构建调用和包上下文装配，不
 moonc `v0.10.12+2583f1173-nightly`，macOS Apple Silicon / 本机 LLDB。
 
 - 默认测试：291/291 通过（真实工具链用例按默认 gate 返回）。
-- 完整真实验收：20/20 通过，启动本仓库本次构建的 `repl.exe`。
+- 完整真实验收：20/20 通过，启动当时构建的 `repl.exe`（后续入口已重命名为 `main.exe`）。
 - 独立手动验证：直接可执行文件 + `--current-package`，函数断点、结构体字段打印、
   `next`、变量打印和正常退出均通过。
 - `moon info && moon fmt`、构建及 `git diff --check` 通过，生成接口无变更；

@@ -17,7 +17,8 @@ test("launch configuration loads this extension and opens the existing fixture",
   assert.ok(configuration);
   assert.equal(configuration.request, "launch");
   assert.equal(configuration.runtimeExecutable, "${execPath}");
-  assert.equal(configuration.env.MOON_HOME, "${env:HOME}/.moon_dev");
+  assert.equal(configuration.env.MOON_HOME, "${env:HOME}/.moon");
+  assert.equal(configuration.env.PATH, "${env:HOME}/.moon/bin:${env:PATH}");
   const args = configuration.args.map((arg) =>
     arg.replaceAll("${workspaceFolder}", repository),
   );
@@ -70,7 +71,7 @@ test("activation registers the declared status command and disposes with the hos
     module: { exports: {} },
     require(id) {
       if (id === "./launcher") {
-        return { resolveDebugger: async () => "/test/.moon_dev/bin/moondbg" };
+        return { resolveDebugger: async () => "/test/.moon/bin/moondbg" };
       }
       assert.equal(id, "vscode");
       return vscode;
@@ -103,7 +104,7 @@ test("activation registers the declared status command and disposes with the hos
   assert.equal(provider.resolveDebugConfiguration(undefined, live), live);
   assert.equal(provider.resolveDebugConfiguration(undefined, { request: "attach", program: "/tmp/a.exe" }), undefined);
   const descriptor = await registrations.get("factory").createDebugAdapterDescriptor();
-  assert.equal(descriptor.command, "/test/.moon_dev/bin/moondbg");
+  assert.equal(descriptor.command, "/test/.moon/bin/moondbg");
   assert.equal(descriptor.args.join(" "), "--dap");
   for (const disposable of context.subscriptions) {
     disposable.dispose();

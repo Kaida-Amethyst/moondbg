@@ -24,8 +24,8 @@ test "bare breakpoint lines are positive absolute decimal lines and preserve oth
 
 ///|
 async fn current_source_breakpoint_context() -> (ReplContext, String, String) {
-  let source_a = @fs.realpath("repl/break.mbt")
-  let source_b = @fs.realpath("repl/run.mbt")
+  let source_a = @fs.realpath("main/break.mbt")
+  let source_b = @fs.realpath("main/run.mbt")
   let backend = StackCommandTestBackend::new()
   backend.stack_responses.push(
     @moondbg.StackSnapshot::new(

@@ -1,30 +1,25 @@
 const fs = require("node:fs/promises");
 const { constants } = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 
-// Resolve only the explicitly configured development toolchain. Never search
+// Resolve only the explicitly selected toolchain. Never search
 // PATH, invoke a shell, rewrite a symlink, or build the debugger automatically.
-async function resolveDebugger(environment = process.env, home = os.homedir()) {
+async function resolveDebugger(environment = process.env) {
   const moonHome = environment.MOON_HOME;
-  const expected = path.join(home, ".moon_dev");
-  if (!moonHome || !path.isAbsolute(moonHome) || path.normalize(moonHome) !== expected) {
+  if (typeof moonHome !== "string" || !path.isAbsolute(moonHome)) {
     throw new Error(
-      `moondbg: MOON_HOME 必须为 ${expected}，实际为 ${moonHome || "未设置"}。` +
-        "请使用仓库的扩展开发启动配置，或先执行 source ~/.zshrc 和 set_moon_dev，再从该环境启动 VS Code。",
+      `moondbg: MOON_HOME 必须为工具链的绝对目录路径，实际为 ${moonHome || "未设置"}。` +
+        "请使用仓库的 stable 扩展开发启动配置，或先执行 source ~/.zshrc 和 set_moon_stable，再从该环境启动 VS Code。",
     );
   }
   const executable = path.join(moonHome, "bin", "moondbg");
   try {
-    if (!(await fs.lstat(executable)).isSymbolicLink()) {
-      throw new Error("必须是开发版 moondbg 的软链接");
-    }
     if (!(await fs.stat(executable)).isFile()) {
-      throw new Error("链接目标不是文件");
+      throw new Error("路径目标不是普通文件");
     }
     await fs.access(executable, constants.X_OK);
   } catch (error) {
-    throw new Error(`moondbg: 无法启动 ${executable}：${error.message}。请检查开发环境和构建产物。`);
+    throw new Error(`moondbg: 无法启动 ${executable}：${error.message}。请在所选 MOON_HOME/bin 下安装 moondbg 或配置有效软链接，并确认它可执行且支持 --dap。`);
   }
   return executable;
 }

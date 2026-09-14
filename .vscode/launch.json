@@ -7,7 +7,8 @@
       "request": "launch",
       "runtimeExecutable": "${execPath}",
       "env": {
-        "MOON_HOME": "${env:HOME}/.moon_dev"
+        "MOON_HOME": "${env:HOME}/.moon",
+        "PATH": "${env:HOME}/.moon/bin:${env:PATH}"
       },
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/extensions/vscode",

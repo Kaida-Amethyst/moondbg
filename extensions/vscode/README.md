@@ -12,17 +12,17 @@ DAP 单步、变量树或表达式求值。变量面板为空是预期行为；�
 
 1. **关闭旧的扩展开发窗口**，在仓库根目录的原窗口重新选择
    **运行 moondbg 扩展（开发窗口）**并启动，让新窗口加载更新后的扩展。
-2. 确认目标已使用当前工具链编译。主会话会为本轮验收准备好 `main.exe`。
-   以后改过源码或执行过 clean，需要手动重新构建：
+2. 确认 moondbg 已按下面“更新到本阶段”一节构建并配置启动路径。
+   目标程序也需要手动构建；以后改过源码或执行过 clean，需重新执行：
 
    ```sh
    source ~/.zshrc
-   set_moon_dev
+   set_moon_stable
    cd /Users/karlliu/Projects/Moonbit/moondbg/testdata/dwarf_probe
    moon run main --build-only --target native -g
    ```
 
-   当前开发版 moon 的此构建模式使用 `-g -O0`，不会运行用户程序。
+   此调试构建模式生成调试信息并关闭优化（`-g -O0`），不会运行用户程序。
    不要修改源码后直接调试旧 `.exe`；源码行号和 DWARF 必须对应。
 3. 在**新窗口**打开 `main/main.mbt`（不是其它包的 `main.mbt`）。
    在 `let len = p.length()` 这一行（当前第 16 行）的行号左侧单击，出现红点。
@@ -48,17 +48,31 @@ DAP 单步、变量树或表达式求值。变量面板为空是预期行为；�
 如果上一阶段的开发窗口仍然开着，请先关闭它，再从原窗口重新启动。仅重载旧开发窗口
 不会获得新启动配置里的环境变量。
 
-主会话会构建最新的 moondbg。以后手动更新时，先按根目录 AGENTS.md 检查开发环境，再执行：
+在仓库根目录按 AGENTS.md 检查 stable 环境，并构建最新的 moondbg：
 
 ```sh
 source ~/.zshrc
-set_moon_dev
-moon build
+set_moon_stable
+moon build --target native -g main
+ls -l "$MOON_HOME/bin/moondbg"
 ```
 
-根目录的扩展开发配置显式将新窗口的 `MOON_HOME` 设置为 `${env:HOME}/.moon_dev`，
-不修改系统设置。扩展仍然检查该环境变量及其 `bin/moondbg` 软链接，不从 PATH 查找、
-不执行 shell、不自动修复链接或构建。若在其他环境运行扩展，必须给扩展宿主提供相同环境。
+产物为 `_build/native/debug/build/main/main.exe`。扩展只启动
+`$MOON_HOME/bin/moondbg --dap`，不会使用终端里的 `alias moondbg`。
+如果该路径尚不存在，可在仓库根目录手动建立链接：
+
+```sh
+ln -s "$PWD/_build/native/debug/build/main/main.exe" "$MOON_HOME/bin/moondbg"
+```
+
+如果已有文件或链接，先检查其来源和目标，不要直接覆盖。普通可执行文件和有效软链接都可用；
+复制安装的文件需要在重新构建后另行更新，链接则直接使用仓库本次构建的产物。
+
+根目录的扩展开发配置显式将新窗口的 `MOON_HOME` 设置为 `${env:HOME}/.moon`，
+同时将 `${env:HOME}/.moon/bin` 放在 PATH 最前面，不修改系统设置。
+扩展接受显式指定的其他绝对 MOON_HOME 路径，不限定安装目录或要求软链接；它不从 PATH
+查找 moondbg、不执行 shell、不自动修复链接或构建。若使用自定义工具链，应同步调整开发
+启动配置的 MOON_HOME 和 PATH，并重新启动扩展宿主。
 
 ## 第一次打开（macOS）
 
@@ -144,11 +158,11 @@ moon build
 - **启动失败**：在原窗口打开 **View → Debug Console（视图 → 调试控制台）**，
   查看扩展宿主错误；DAP 会话的输出看新窗口的调试控制台。将具体错误消息发给主会话。
 - **MOON_HOME 未设置或不正确**：关闭旧开发窗口，从根目录的新启动配置重新打开。
-  仅在 VS Code 内置终端里运行 `set_moon_dev`，不能改变已经运行的扩展宿主环境。
-- **moondbg 路径无效**：检查 `$MOON_HOME/bin/moondbg` 是否仍是存在且可执行的软链接。
+  仅在 VS Code 内置终端里运行 `set_moon_stable`，不能改变已经运行的扩展宿主环境。
+- **moondbg 路径无效**：检查 `$MOON_HOME/bin/moondbg` 是否为可执行文件或有效的可执行文件软链接。
   `moon clean` 可能删除链接指向的构建产物；按 AGENTS.md 的环境问题处理规则向主会话反馈。
-- **出现 REPL 提示或协议解析错误**：可能是软链接指向旧的 moondbg，旧版本不支持 `--dap`。
-  请反馈实际链接目标与错误，不要将 REPL 输出当成 DAP。
+- **出现 REPL 提示或协议解析错误**：可能启动了不支持 `--dap` 的旧 moondbg。
+  请反馈实际文件路径（如果是链接，包含链接目标）与错误，不要将 REPL 输出当成 DAP。
 - **没有停住**：确认选的不是连接验证配置，断点在可执行语句上，且 `.exe` 对应最新源码。
 - **无法在行号旁打断点**：确认 `.mbt` 的语言模式是 MoonBit，开发窗口已加载 MoonBit 语言扩展。
 - **没有变量**：本阶段返回空 scopes，尚未实现变量树。
@@ -165,7 +179,7 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_connection_wbtest.mbt --
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_live_wbtest.mbt --no-parallelize
 ```
 
-Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动开发版 moondbg，
+Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
 验证握手、UTF-8 消息、EOF、非法输入、取消和退出。它们不代替真实扩展开发窗口验收。
 
 `test/host.js` 是无 npm 依赖的真实 VS Code 集成测试入口，可通过官方
