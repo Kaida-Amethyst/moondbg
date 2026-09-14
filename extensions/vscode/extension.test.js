@@ -94,7 +94,7 @@ test("activation registers the declared status command and disposes with the hos
     await handler();
   }
   assert.deepEqual(messages, [
-    "moondbg 扩展已加载。支持已编译程序的行断点、调用栈和继续运行。",
+    "moondbg 扩展已加载。支持已编译程序的行断点、调用栈、单步、继续和暂停。",
   ]);
   const provider = registrations.get("provider");
   assert.equal(provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);

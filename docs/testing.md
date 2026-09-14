@@ -66,6 +66,13 @@ lldb-dap 映射和 moondbg 对 `moon` 的构建调用和包上下文装配，不
 `package_launch_wbtest.mbt` 使用临时项目验证 `source` 目录、包相对名和完整名、包内 `.`、
 空格路径、自动 import alias 以及 library/非 native/缺失目标/编译失败的拒绝行为。
 
+VS Code DAP 的真实验收可分别运行 `acceptance/dap_connection_wbtest.mbt`、
+`acceptance/dap_live_wbtest.mbt` 和 `acceptance/dap_control_wbtest.mbt`（使用相同的
+`MOONDBG_TOOLCHAIN_ACCEPTANCE=1` 开关）。控制操作验收会构建 `dap_steps` 和 `dap_pause`，
+验证 next/stepIn/stepOut 的源码停点、运行中反复暂停、打断尚未结束的 step-out，
+以及运行/暂停时停止会话后目标 PID 消失。C 持续运行示例另覆盖没有初始断点时的暂停。
+默认进程内测试覆盖响应/事件顺序、失败回滚、过期响应、状态拒绝和主动暂停 SIGSTOP 的映射。
+
 真实验收在 capability gate 之后获取包内共享互斥锁，整个用例结束后释放。
 `moon test --no-parallelize` 不禁止同一测试进程中的异步用例并发；现有 C PTY 的同步
 `poll` 会阻塞同进程的 DAP IO 和超时处理，因此这些真实会话必须串行执行。

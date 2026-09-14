@@ -10,6 +10,7 @@ priv struct PendingRequest {
   client_seq : Int
   command : String
   deadline : Int64
+  execution_revision : Int
 }
 
 ///|
@@ -28,6 +29,9 @@ priv struct LiveSession {
   mut configured : Bool
   mut ready : Bool
   mut stopped : Bool
+  mut execution_revision : Int
+  mut pause_revision : Int?
+  mut exited : Bool
   mut ended : Bool
   mut closing : Bool
   mut deadline : Int64?
@@ -47,7 +51,12 @@ async fn LiveSession::request(
 ) -> Unit {
   let seq = self.next_seq
   self.next_seq += 1
-  self.pending.set(seq, { client_seq, command, deadline: @async.now() + 15000, })
+  self.pending.set(seq, {
+    client_seq,
+    command,
+    deadline: @async.now() + 15000,
+    execution_revision: self.execution_revision,
+  })
   self.transport.send_message({
     "seq": seq,
     "type": "request",

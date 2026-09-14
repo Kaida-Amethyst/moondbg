@@ -314,6 +314,18 @@ async test "live DAP streams output and handles disconnect or EOF while the targ
           message is { "event": String("stopped"), .. }
         }),
       )
+      if !eof {
+        let threads = peer.response(peer.send("threads"))
+        guard threads is { "threads": Array([{ "id": thread, .. }, ..]), .. } else {
+          fail(threads.stringify())
+        }
+        peer.response(peer.send("pause", arguments={ "threadId": thread }))
+        |> ignore
+        let stop = peer.event("stopped")
+        peer.top_frame(dap_thread_id(stop)) |> ignore
+        peer.response(peer.send("continue", arguments={ "threadId": thread }))
+        |> ignore
+      }
       if eof {
         peer.writer.close()
         assert_eq(@async.with_timeout(10000, () => peer.process.wait()), 0)

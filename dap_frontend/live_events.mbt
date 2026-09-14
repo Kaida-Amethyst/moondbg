@@ -3,6 +3,7 @@ fn LiveSession::finish(self : LiveSession) -> Json? {
   guard !self.ended else { return None }
   self.ended = true
   self.stopped = false
+  self.pause_revision = None
   self.deadline = Some(@async.now() + 3000)
   Some(self.client.event("terminated", {}))
 }
@@ -65,8 +66,19 @@ async fn LiveSession::on_adapter(
         }
         return
       }
-      if command == "continue" && error is Some(_) && !self.ended {
+      // A delayed rejection must not roll back a newer stop, resume or exit.
+      if resumes_execution(command) &&
+        error is Some(_) &&
+        !self.ended &&
+        !self.exited &&
+        !self.closing &&
+        pending.execution_revision == self.execution_revision {
         self.stopped = true
+      }
+      if command == "pause" &&
+        error is Some(_) &&
+        self.pause_revision == Some(pending.execution_revision) {
+        self.pause_revision = None
       }
       if command != "launch" || !self.launch_answered {
         send_client(
@@ -118,11 +130,16 @@ async fn LiveSession::on_adapter(
           self.ready = true
           send_client(writer, self.client.event(name, body))
         }
-        "stopped" if !self.ended && !self.closing => {
+        "stopped" if !self.ended && !self.exited && !self.closing => {
+          self.execution_revision += 1
           self.stopped = true
-          send_client(writer, self.client.event(name, body))
+          send_client(
+            writer,
+            self.client.event(name, self.pause_stop_body(body)),
+          )
         }
-        "continued" if !self.ended => {
+        "continued" if !self.ended && !self.exited => {
+          self.execution_revision += 1
           self.stopped = false
           send_client(writer, self.client.event(name, body))
         }
@@ -131,6 +148,9 @@ async fn LiveSession::on_adapter(
             send_client(writer, event)
           }
         "exited" => {
+          self.execution_revision += 1
+          self.exited = true
+          self.pause_revision = None
           self.stopped = false
           send_client(writer, self.client.event(name, body))
         }

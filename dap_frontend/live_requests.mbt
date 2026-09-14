@@ -113,24 +113,8 @@ async fn LiveSession::on_client(
         writer,
         self.client.response(seq, command, body={ "scopes": [] }),
       )
-    "continue" if self.stopped && !self.ended => {
-      guard arguments is { "threadId": Number(thread, ..), .. } &&
-        thread > 0 &&
-        thread <= 2147483647 &&
-        thread == thread.to_int().to_double() else {
-        send_client(
-          writer,
-          self.client.response(
-            seq,
-            command,
-            error=Some("continue requires a valid threadId."),
-          ),
-        )
-        return
-      }
-      self.stopped = false
-      self.request(seq, command, { "threadId": thread, "singleThread": false })
-    }
+    "continue" | "next" | "stepIn" | "stepOut" | "pause" =>
+      self.control(writer, seq, command, arguments)
     _ =>
       send_client(
         writer,

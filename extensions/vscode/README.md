@@ -1,11 +1,11 @@
 # moondbg 的 VS Code 调试
 
 这一版由 VS Code 启动 `$MOON_HOME/bin/moondbg --dap`，再由 moondbg 启动 lldb-dap。
-支持预编译 native 程序的行断点、调用栈、继续运行、实时输出和停止清理。
+支持预编译 native 程序的行断点、调用栈、三种单步、继续运行、暂停、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
 暂不支持自动构建、程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
-DAP 单步、变量树或表达式求值。变量面板为空是预期行为；调试控制台目前只显示输出，
+变量树或表达式求值。变量面板为空是预期行为；调试控制台目前只显示输出，
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
 ## 已完成连接验证后：开始真实调试
@@ -44,6 +44,37 @@ DAP 单步、变量树或表达式求值。变量面板为空是预期行为；�
 无需安装 VSIX、发布到 Marketplace，或卸载现有 MoonBit 扩展。
 
 ## 更新到本阶段
+
+### 单步和暂停试用
+
+构建下面两个示例（在 `testdata/dwarf_probe` 目录，使用 stable）：
+
+```sh
+moon run dap_steps --build-only --target native -g
+moon run dap_pause --build-only --target native -g
+```
+
+在扩展开发窗口选择 **moondbg：单步试用（dap_steps）**，打开 `dap_steps/main.mbt`，
+在 `let second = first + 2`（第 10 行）打断点，按 F5：
+
+1. 停住后按 F10（Step Over / 单步越过），移动到 `increment(second)`。
+2. 按 F11（Step Into / 单步进入），进入 `increment`，调用栈增加该函数。
+3. 按 Shift+F11（Step Out / 跳出），返回 main；再按 F5，打印 `13` 并结束。
+
+Mac 若拦截功能键，可直接点击调试工具栏中对应的按钮，或配合 Fn。
+单步的实际源码落点由 LLDB 和 DWARF 决定，跳出可能停在调用行或下一行。
+
+然后选择 **moondbg：暂停试用（dap_pause）**，按 F5。示例会持续运行，没有输出，
+点击工具栏 **Pause / 暂停**（两条竖线），应显示当前调用栈及可用的源码位置。
+按 F5 继续后可再次暂停；结束时点击红色方块 **Stop / 停止**。
+该示例是忙循环，会占用一个 CPU 核心，请在试用后停止。
+
+暂停不依赖终端 Ctrl-C 或 readline。停止位置取决于按下暂停时程序正在执行哪里；
+普通程序也可能停在 runtime 或系统函数中，可通过调用栈查看 MoonBit 调用者。
+这里不自动跳到用户 frame。Apple LLDB 在响应主动暂停时可能报告 `SIGSTOP` 异常，
+moondbg 仅将这类已请求的暂停标为 pause；实际断点、其他异常及外部 SIGSTOP 保留原始原因。
+
+### 构建和启动路径
 
 如果上一阶段的开发窗口仍然开着，请先关闭它，再从原窗口重新启动。仅重载旧开发窗口
 不会获得新启动配置里的环境变量。
@@ -112,7 +143,7 @@ ln -s "$PWD/_build/native/debug/build/main/main.exe" "$MOON_HOME/bin/moondbg"
 5. 应出现通知：
 
    ```text
-   moondbg 扩展已加载。支持已编译程序的行断点、调用栈和继续运行。
+   moondbg 扩展已加载。支持已编译程序的行断点、调用栈、单步、继续和暂停。
    ```
 
 这一步只确认扩展加载，可以跳过；开始 DAP 会话时扩展会自动激活。
@@ -166,7 +197,9 @@ ln -s "$PWD/_build/native/debug/build/main/main.exe" "$MOON_HOME/bin/moondbg"
 - **没有停住**：确认选的不是连接验证配置，断点在可执行语句上，且 `.exe` 对应最新源码。
 - **无法在行号旁打断点**：确认 `.mbt` 的语言模式是 MoonBit，开发窗口已加载 MoonBit 语言扩展。
 - **没有变量**：本阶段返回空 scopes，尚未实现变量树。
-- **点了单步或在调试控制台输入表达式时报错**：本阶段尚未开放这些 DAP 请求，请使用继续和停止。
+- **单步不可用**：单步只能在程序停住时使用；暂停只能在运行时使用。
+  不支持指令级单步、指定调用目标的 step-in 或只运行某一线程。
+- **在调试控制台输入表达式时报错**：本阶段尚未开放 evaluate；控制台仍仅用于显示输出。
 
 ## 本地静态与单元检查
 
@@ -177,6 +210,7 @@ node --check extensions/vscode/extension.js
 node --test extensions/vscode/extension.test.js extensions/vscode/launcher.test.js
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_connection_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_live_wbtest.mbt --no-parallelize
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_control_wbtest.mbt --no-parallelize
 ```
 
 Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
@@ -208,7 +242,10 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
 - `launch` 验证 `program`/`cwd` 后启动 adapter；收到 LLDB `initialized` 后才接受配置。
   `setBreakpoints` 对每个文件整批替换，空数组清空该文件。实际落点和 verified 状态来自 LLDB。
 - 客户端输入和 adapter 输入分别由后台任务读取，进入有界队列，由同一个循环分派状态和写消息。
-  启动/继续的响应与随后发生的 stopped、output、exited 事件独立，因此运行期间仍能处理 disconnect。
+  启动/继续/单步的响应与随后发生的 stopped、output、exited 事件独立，因此运行期间仍能处理 pause 和 disconnect。
+- `next`/`stepIn`/`stepOut` 使用 LLDB 默认源码单步；`pause` 只发送暂停请求，收到 stopped
+  后才开放栈查询。拒绝重复恢复执行、重复暂停及无效状态请求；请求失败时只恢复属于本次
+  请求的状态，不允许迟到的失败响应覆盖新停点或进程退出。
 - `threads`/`stackTrace` 复用 LLDB 的线程和帧信息；可识别的 MoonBit 符号名使用已有 demangler。
   对象句柄仅在本次执行内使用，不允许重启或跨会话复用。`scopes` 返回空数组，evaluate 等请求明确拒绝。
 - 一次会话只拥有一个启动的进程；disconnect 始终使用 `terminateDebuggee: true`，不支持 detach。
