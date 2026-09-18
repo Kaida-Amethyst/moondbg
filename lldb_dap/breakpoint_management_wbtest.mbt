@@ -23,14 +23,14 @@ async test "P4 family enable reuses its handle without changing stopped context"
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       backend,
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("identity"),
+      @debugger.FunctionBreakpointRequest::current("identity"),
     )
     |> ignore
     session.run() |> ignore
@@ -39,14 +39,14 @@ async test "P4 family enable reuses its handle without changing stopped context"
     let epoch_before = session.stop_epoch()
     for
       operation in [
-        @moondbg.DisableBreakpoint,
-        @moondbg.EnableBreakpoint,
-        @moondbg.DeleteBreakpoint,
+        @debugger.DisableBreakpoint,
+        @debugger.EnableBreakpoint,
+        @debugger.DeleteBreakpoint,
       ] {
       session.manage_breakpoint(1, operation) |> ignore
       assert_eq(session.selected_frame(), frame_before)
       assert_eq(session.stop_epoch(), epoch_before)
-      assert_true(session.state() is @moondbg.Stopped)
+      assert_true(session.state() is @debugger.Stopped)
     }
     assert_eq(transport.sent_messages().length(), sent_before + 4)
     assert_eq(lldb_session.function_breakpoints.length(), 0)
@@ -123,7 +123,7 @@ async test "source management replaces duplicate groups and clears the final ena
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let session = @moondbg.DebugSession::new("/tmp/program", LldbDapBackend::{
+    let session = @debugger.DebugSession::new("/tmp/program", LldbDapBackend::{
       session: lldb_session,
     })
     defer session.close()
@@ -135,7 +135,7 @@ async test "source management replaces duplicate groups and clears the final ena
     assert_eq(first.actual_line(), Some(5))
     assert_eq(first.locations()[0].source_path, Some("/tmp/actual.mbt"))
     session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
     guard lldb_session.execution is Some(execution) else {
       fail("stopped execution")
     }
@@ -144,18 +144,18 @@ async test "source management replaces duplicate groups and clears the final ena
       execution.breakpoint_state.outcomes.get(2).map(item => item.dap_id),
       Some(Some(10)),
     )
-    session.manage_breakpoint(2, @moondbg.DeleteBreakpoint) |> ignore
-    let rejected = session.manage_breakpoint(1, @moondbg.EnableBreakpoint)
+    session.manage_breakpoint(2, @debugger.DeleteBreakpoint) |> ignore
+    let rejected = session.manage_breakpoint(1, @debugger.EnableBreakpoint)
     assert_true(rejected.breakpoint.enabled)
     assert_true(
       rejected.breakpoint.installation
-      is @moondbg.CurrentInstallation(@moondbg.Rejected("no code")),
+      is @debugger.CurrentInstallation(@debugger.Rejected("no code")),
     )
-    session.manage_breakpoint(1, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DeleteBreakpoint) |> ignore
     let added = session.add_source_breakpoint("/tmp/main.mbt", 9)
     assert_eq(added.id(), 3)
-    session.manage_breakpoint(3, @moondbg.DisableBreakpoint) |> ignore
-    let enabled = session.manage_breakpoint(3, @moondbg.EnableBreakpoint)
+    session.manage_breakpoint(3, @debugger.DisableBreakpoint) |> ignore
+    let enabled = session.manage_breakpoint(3, @debugger.EnableBreakpoint)
     assert_eq(enabled.breakpoint.locations[0].line, Some(10))
     assert_eq(
       execution.breakpoint_state.outcomes.get(3).map(item => item.dap_id),
@@ -207,25 +207,25 @@ async test "exact management clears shared targets without disturbing source rep
       () => @dap.DapDispatcher::from_transport(transport.as_transport()),
       preparation_timeout_ms=10000,
     )
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       LldbDapBackend::{ session: lldb_session, },
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.run() |> ignore
     session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("main"),
+      @debugger.FunctionBreakpointRequest::current("main"),
     )
     |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("main"),
+      @debugger.FunctionBreakpointRequest::current("main"),
     )
     |> ignore
-    session.manage_breakpoint(2, @moondbg.DisableBreakpoint) |> ignore
-    session.manage_breakpoint(3, @moondbg.DeleteBreakpoint) |> ignore
-    let enabled = session.manage_breakpoint(2, @moondbg.EnableBreakpoint)
+    session.manage_breakpoint(2, @debugger.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(3, @debugger.DeleteBreakpoint) |> ignore
+    let enabled = session.manage_breakpoint(2, @debugger.EnableBreakpoint)
     assert_eq(
       enabled.breakpoint.locations[0].source_path,
       Some("/tmp/actual.mbt"),
@@ -278,7 +278,7 @@ test "replacement parsing rejects malformed records before updating any result" 
       )
       fail("malformed response")
     } catch {
-      @moondbg.BreakpointSyncError::BreakpointSyncUncertain(_) => ()
+      @debugger.BreakpointSyncError::BreakpointSyncUncertain(_) => ()
       error => raise error
     }
     assert_eq(state.outcomes.get(1).map(item => item.dap_id), Some(Some(99)))
@@ -343,10 +343,10 @@ async test "empty source and exact removal failures recover without committing d
           },
           preparation_timeout_ms=10000,
         )
-        let session = @moondbg.DebugSession::new(
+        let session = @debugger.DebugSession::new(
           "/tmp/program",
           LldbDapBackend::{ session: lldb_session, },
-          debug_context=@moondbg.DebugContext::new("example/main", []),
+          debug_context=@debugger.DebugContext::new("example/main", []),
         )
         defer session.close()
         session.run() |> ignore
@@ -354,25 +354,25 @@ async test "empty source and exact removal failures recover without committing d
           session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
         } else {
           session.add_function_breakpoint(
-            @moondbg.FunctionBreakpointRequest::current("main"),
+            @debugger.FunctionBreakpointRequest::current("main"),
           )
           |> ignore
         }
         try {
-          session.manage_breakpoint(1, @moondbg.DeleteBreakpoint) |> ignore
+          session.manage_breakpoint(1, @debugger.DeleteBreakpoint) |> ignore
           fail("cannot confirm deletion")
         } catch {
-          @moondbg.AdapterFailure(message) =>
+          @debugger.AdapterFailure(message) =>
             assert_true(message.contains("current execution was discarded"))
           error => raise error
         }
-        assert_true(session.state() is @moondbg.Ready)
+        assert_true(session.state() is @debugger.Ready)
         assert_true(lldb_session.execution is None)
         assert_true(failed_transport.is_closed())
         assert_eq(session.breakpoints().map(item => item.id), [1])
         assert_true(session.breakpoints()[0].enabled)
         session.run() |> ignore
-        assert_true(session.state() is @moondbg.Stopped)
+        assert_true(session.state() is @debugger.Stopped)
         guard lldb_session.execution is Some(execution) else {
           fail("restarted execution")
         }
@@ -413,7 +413,7 @@ async test "malformed initial breakpoint response closes the launch and permits 
       },
       preparation_timeout_ms=10000,
     )
-    let session = @moondbg.DebugSession::new("/tmp/program", LldbDapBackend::{
+    let session = @debugger.DebugSession::new("/tmp/program", LldbDapBackend::{
       session: lldb_session,
     })
     defer session.close()
@@ -422,14 +422,14 @@ async test "malformed initial breakpoint response closes the launch and permits 
       session.run() |> ignore
       fail("invalid launch breakpoint response")
     } catch {
-      @moondbg.AdapterFailure(_) => ()
+      @debugger.AdapterFailure(_) => ()
       error => raise error
     }
-    assert_true(session.state() is @moondbg.Ready)
+    assert_true(session.state() is @debugger.Ready)
     assert_true(lldb_session.execution is None)
     assert_true(failed_transport.is_closed())
     session.run() |> ignore
-    assert_true(session.state() is @moondbg.Stopped)
+    assert_true(session.state() is @debugger.Stopped)
     assert_eq(session.breakpoints().map(item => item.id), [1])
   })
 }
@@ -461,26 +461,26 @@ async test "exact rejected enable keeps intent and a disabled target is absent o
       },
       preparation_timeout_ms=10000,
     )
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       LldbDapBackend::{ session: lldb_session, },
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.run() |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("main"),
+      @debugger.FunctionBreakpointRequest::current("main"),
     )
     |> ignore
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
-    let rejected = session.manage_breakpoint(1, @moondbg.EnableBreakpoint)
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
+    let rejected = session.manage_breakpoint(1, @debugger.EnableBreakpoint)
     assert_true(rejected.breakpoint.enabled)
     assert_true(
       rejected.breakpoint.installation
-      is @moondbg.CurrentInstallation(@moondbg.Rejected("no exact location")),
+      is @debugger.CurrentInstallation(@debugger.Rejected("no exact location")),
     )
-    assert_true(session.state() is @moondbg.Stopped)
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+    assert_true(session.state() is @debugger.Stopped)
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
     session.run() |> ignore
     assert_eq(session.breakpoints().map(item => item.id), [1])
     assert_false(session.breakpoints()[0].enabled)

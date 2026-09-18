@@ -19,8 +19,8 @@ pub fn[X] LldbDapBackend::start(
 ///|
 fn LldbDapBackend::replace_launch_breakpoints(
   self : LldbDapBackend,
-  breakpoints : Array[@moondbg.SourceBreakpoint],
-  functions : Array[@moondbg.FunctionBreakpoint],
+  breakpoints : Array[@debugger.SourceBreakpoint],
+  functions : Array[@debugger.FunctionBreakpoint],
 ) -> Unit {
   self.session.source_breakpoints.clear()
   for breakpoint in breakpoints {
@@ -41,7 +41,7 @@ fn LldbDapBackend::replace_launch_breakpoints(
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
+impl @debugger.DebugBackend for LldbDapBackend with fn launch(
   self,
   executable,
   source_breakpoints,
@@ -50,13 +50,13 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn launch(
   self.replace_launch_breakpoints(source_breakpoints, function_breakpoints)
   self.session.run(executable) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
+impl @debugger.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
   self,
   configuration,
 ) {
@@ -71,72 +71,72 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn synchronize_breakpoints(
     .map(LogicalFunctionBreakpoint::from_domain),
     families=configuration
       .functions()
-      .filter(item => item.selector() is @moondbg.MoonBitFunctionFamily(_))
+      .filter(item => item.selector() is @debugger.MoonBitFunctionFamily(_))
       .map(FamilyConfiguration::from_domain),
   )
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn abandon_execution(self) {
+impl @debugger.DebugBackend for LldbDapBackend with fn abandon_execution(self) {
   if self.session.execution is Some(execution) {
     self.session.recover_failed_execution(execution, try_disconnect=true)
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn continue_execution(
+impl @debugger.DebugBackend for LldbDapBackend with fn continue_execution(
   self,
   thread,
 ) {
   self.session.continue_execution(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn next(self, thread) {
+impl @debugger.DebugBackend for LldbDapBackend with fn next(self, thread) {
   self.session.next(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn step(self, thread) {
+impl @debugger.DebugBackend for LldbDapBackend with fn step(self, thread) {
   self.session.step(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn finish(self, thread) {
+impl @debugger.DebugBackend for LldbDapBackend with fn finish(self, thread) {
   self.session.finish(thread) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn stack_snapshot(
+impl @debugger.DebugBackend for LldbDapBackend with fn stack_snapshot(
   self,
   thread,
   window,
 ) {
   self.session.stack_snapshot(thread, window) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
+impl @debugger.DebugBackend for LldbDapBackend with fn find_variable(
   self,
   thread,
   frame,
@@ -144,52 +144,54 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn find_variable(
 ) {
   self.session.find_variable(thread, frame, path) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn local_variables(
+impl @debugger.DebugBackend for LldbDapBackend with fn local_variables(
   self,
   thread,
   frame,
 ) {
   self.session.local_variables(thread, frame) catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn breakpoint_snapshots(self) {
+impl @debugger.DebugBackend for LldbDapBackend with fn breakpoint_snapshots(
+  self,
+) {
   self.session.source_breakpoints()
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn function_breakpoint_snapshots(
+impl @debugger.DebugBackend for LldbDapBackend with fn function_breakpoint_snapshots(
   self,
 ) {
   self.session.function_breakpoints()
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn take_output(self) {
+impl @debugger.DebugBackend for LldbDapBackend with fn take_output(self) {
   self.session.take_output()
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn disconnect(self) {
+impl @debugger.DebugBackend for LldbDapBackend with fn disconnect(self) {
   self.session.disconnect() catch {
     LldbDapBackendError::AdapterFailure(message) =>
-      raise @moondbg.DebugBackendError::failure(message)
-    error => raise @moondbg.DebugBackendError::failure(@debug.to_string(error))
+      raise @debugger.DebugBackendError::failure(message)
+    error => raise @debugger.DebugBackendError::failure(@debug.to_string(error))
   }
 }
 
 ///|
-impl @moondbg.DebugBackend for LldbDapBackend with fn close(self) {
+impl @debugger.DebugBackend for LldbDapBackend with fn close(self) {
   self.session.close()
 }
 
@@ -197,6 +199,6 @@ impl @moondbg.DebugBackend for LldbDapBackend with fn close(self) {
 /// Erases the concrete adapter behind the application backend port.
 pub fn LldbDapBackend::as_debug_backend(
   self : LldbDapBackend,
-) -> &@moondbg.DebugBackend {
+) -> &@debugger.DebugBackend {
   self
 }

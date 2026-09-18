@@ -1,324 +1,205 @@
 ///|
-impl DebugBackend for RecordingBackend with fn synchronize_breakpoints(
-  self,
-  configuration,
-) {
-  self.syncs += 1
-  if self.reject_sync {
-    raise BreakpointSyncError::BreakpointSyncRejected(
-      "management rejected without changes",
-    )
-  }
-  if self.uncertain_sync {
-    raise BreakpointSyncError::BreakpointSyncUncertain(
-      "partial synchronization",
-    )
-  }
-  if self.malformed_sync {
-    return BreakpointSyncResult::new([], [])
-  }
-  let sources : Array[BreakpointSnapshot] = []
-  let functions : Array[FunctionBreakpointSnapshot] = []
-  let old_sources = self.breakpoints.copy()
-  let old_functions = self.function_breakpoints.copy()
-  for breakpoint in configuration.sources() {
-    if breakpoint.enabled() {
-      if old_sources
-        .iter()
-        .find_first(item => item.id() == breakpoint.id() && item.enabled())
-        is Some(_) {
-        sources.push(
-          BreakpointSnapshot::verified(
-            breakpoint.id(),
-            breakpoint.source_path(),
-            breakpoint.requested_line(),
-            Some(breakpoint.requested_line()),
-          ),
-        )
-      } else {
-        sources.push(self.install_source_breakpoint(breakpoint))
-      }
-    }
-  }
-  for breakpoint in configuration.functions() {
-    if breakpoint.enabled() {
-      if old_functions
-        .iter()
-        .find_first(item => item.id() == breakpoint.id() && item.enabled())
-        is Some(_) {
-        functions.push(
-          FunctionBreakpointSnapshot::verified(
-            breakpoint.id(),
-            breakpoint.display_name(),
-          ),
-        )
-      } else {
-        functions.push(self.install_function_breakpoint(breakpoint))
-      }
-    }
-  }
-  self.breakpoints.clear()
-  self.breakpoints.append(configuration.sources())
-  self.function_breakpoints.clear()
-  self.function_breakpoints.append(configuration.functions())
-  BreakpointSyncResult::new(sources, functions)
-}
-
-///|
-impl DebugBackend for RecordingBackend with fn abandon_execution(self) {
-  self.abandons += 1
-  self.closed = true
-}
-
-///|
-async test "management keeps monotonic mixed ids and desired state across launches" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new(
+fn breakpoint_command_test_context() -> (
+  ExecutionCommandTestBackend,
+  ReplContext,
+) raise {
+  let backend = ExecutionCommandTestBackend::new()
+  let session = @debugger.DebugSession::new(
     "/tmp/program",
     backend,
-    debug_context=DebugContext::new("example/main", []),
+    debug_context=@debugger.DebugContext::new("example/main", []),
   )
-  session.add_source_breakpoint("/tmp/main.mbt", 4, display_path="main.mbt")
-  |> ignore
-  session.add_function_breakpoint(FunctionBreakpointRequest::current("main"))
-  |> ignore
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.manage_breakpoint(2, DeleteBreakpoint) |> ignore
-  session.manage_breakpoint(1, DisableBreakpoint) |> ignore
-  let added = session.add_function_breakpoint(
-    FunctionBreakpointRequest::current("foo"),
+  (
+    backend,
+    ReplContext::new(session, default_command_registry(), HumanRenderer::new()),
   )
-  assert_eq(added.id(), 4)
-  assert_eq(session.breakpoints().map(item => item.id), [1, 3, 4])
-  assert_eq(session.breakpoints()[0].enabled, false)
-  assert_true(
-    session.breakpoints()[0].target is SourceTarget(display_path="main.mbt", ..),
-  )
-  assert_eq(backend.syncs, 0)
-  let copied = session.breakpoint_configuration().sources()
-  copied.clear()
-  assert_eq(session.breakpoint_configuration().sources().length(), 2)
-  session.run() |> ignore
-  assert_eq(backend.breakpoint_launches[0], [3])
-  assert_eq(backend.function_breakpoint_launches[0], [4])
-  assert_true(session.breakpoints()[0].installation is NotInstalled)
-  session.continue_execution() |> ignore
-  assert_true(
-    session.breakpoints()[1].installation is PreviousInstallation(Verified),
-  )
-  session.run() |> ignore
-  assert_eq(backend.breakpoint_launches[1], [3])
-  assert_eq(backend.function_breakpoint_launches[1], [4])
 }
 
 ///|
-async test "management is idempotent and preserves stopped selections and observations" {
-  let backend = RecordingBackend::new()
-  backend.stack = Some(
-    StackSnapshot::new(
-      ThreadSelection::initial(),
-      [
-        StackFrameSnapshot::new(
-          0,
-          "leaf",
-          "leaf",
-          None,
-          Some("/tmp/main.mbt"),
-          Some(4),
-          Some(1),
-          MoonBitUserFrame,
-        ),
-        StackFrameSnapshot::new(
-          1,
-          "caller",
-          "caller",
-          None,
-          Some("/tmp/main.mbt"),
-          Some(8),
-          Some(1),
-          MoonBitUserFrame,
-        ),
-      ],
-      0,
-      2,
-      Some(2),
-      true,
+test "breakpoint management parsers accept exactly one positive decimal ID" {
+  let registry = default_command_registry()
+  assert_true(registry.parse_line("breakpoints") is RegistryCommand(_))
+  assert_true(
+    registry.parse_line("breakpoints 1")
+    is RegistryInvalid("breakpoints does not accept arguments"),
+  )
+  for name in ["delete", "disable", "enable"] {
+    for id in ["1", "001", "2147483647"] {
+      assert_true(
+        registry.parse_line("  \{name}\t\{id}  ") is RegistryCommand(_),
+      )
+    }
+    for
+      id in [
+        "", "0", "00", "-1", "+1", "1.0", "1e2", "0x10", "1_000", "2147483648", "999999999999999999999999999",
+        "1 2", "1\t2", "1-3", "all", "*", "１", "1\n",
+      ] {
+      assert_true(
+        registry.parse_line("\{name} \{id}") is RegistryInvalid(_),
+        msg="\{name} \{id}",
+      )
+    }
+    guard registry.lookup(name) is Some(spec) else {
+      fail("registered management command")
+    }
+    assert_eq(spec.aliases, [])
+    assert_eq(spec.usage, "\{name} <id>")
+  }
+  for name in ["del", "dis", "en", "bp", "breakpoint", "DELETE", "disable1"] {
+    assert_true(registry.parse_line(name) is RegistryUnknown)
+  }
+}
+
+///|
+async test "Ready breakpoint commands are local and return structured idempotent results" {
+  let (backend, context) = breakpoint_command_test_context()
+  defer context.session.close()
+  guard execute_framework_command(context, "breakpoints").events
+    is [BreakpointsPresentation(empty)] else {
+    fail("list presentation")
+  }
+  assert_eq(breakpoint_list_lines(empty), ["No breakpoints."])
+  execute_framework_command(context, "b main") |> ignore
+  guard execute_framework_command(context, "disable 1").events
+    is [BreakpointManagedPresentation(disabled)] else {
+    fail("disable result")
+  }
+  assert_eq(breakpoint_managed_line(disabled), "Breakpoint 1 disabled.")
+  guard execute_framework_command(context, "disable 1").events
+    is [BreakpointManagedPresentation(unchanged)] else {
+    fail("idempotent disable")
+  }
+  assert_eq(
+    breakpoint_managed_line(unchanged),
+    "Breakpoint 1 is already disabled.",
+  )
+  guard execute_framework_command(context, "enable 001").events
+    is [BreakpointManagedPresentation(enabled)] else {
+    fail("enable result")
+  }
+  assert_eq(
+    breakpoint_managed_line(enabled),
+    "Breakpoint 1 enabled (not installed).",
+  )
+  guard execute_framework_command(context, "enable 1").events
+    is [BreakpointManagedPresentation(unchanged)] else {
+    fail("idempotent enable")
+  }
+  assert_eq(
+    breakpoint_managed_line(unchanged),
+    "Breakpoint 1 is already enabled.",
+  )
+  guard execute_framework_command(context, "delete 1").events
+    is [BreakpointManagedPresentation(deleted)] else {
+    fail("delete result")
+  }
+  assert_eq(breakpoint_managed_line(deleted), "Breakpoint 1 deleted.")
+  guard execute_framework_command(context, "delete 1").events
+    is [BreakpointManagementFailurePresentation(failure)] else {
+    fail("unknown id")
+  }
+  assert_true(failure is BreakpointIdNotFound(1))
+  assert_eq(
+    breakpoint_management_failure_line(failure),
+    "Breakpoint 1 was not found.",
+  )
+  assert_eq(backend.syncs, 0)
+  assert_eq(backend.launches, 0)
+}
+
+///|
+async test "Stopped management synchronizes and presents rejected enable without losing intent" {
+  let (backend, context) = breakpoint_command_test_context()
+  defer context.session.close()
+  execute_framework_command(context, "b identity") |> ignore
+  execute_framework_command(context, "run") |> ignore
+  execute_framework_command(context, "disable 1") |> ignore
+  backend.function_snapshot_overrides.push(
+    @debugger.FunctionBreakpointSnapshot::rejected(
+      1,
+      "identity",
+      "no matching functions",
+      location_count=Some(0),
     ),
   )
-  let session = DebugSession::new("/tmp/program", backend)
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.run() |> ignore
-  session.select_frame(1) |> ignore
-  let epoch = session.stop_epoch()
-  let frame = session.selected_frame()
-  let stack_requests = backend.stack_requests
-  session.find_variable(VariablePath::root("x")) |> ignore
-  assert_eq(session.manage_breakpoint(1, EnableBreakpoint).changed, false)
-  assert_eq(backend.syncs, 0)
-  assert_eq(session.manage_breakpoint(1, DisableBreakpoint).changed, true)
-  assert_eq(backend.syncs, 1)
-  assert_eq(session.manage_breakpoint(1, DisableBreakpoint).changed, false)
-  assert_eq(backend.syncs, 1)
+  guard execute_framework_command(context, "enable 1").events
+    is [BreakpointManagedPresentation(result)] else {
+    fail("enable result")
+  }
+  assert_true(result.breakpoint.enabled)
+  assert_true(
+    result.breakpoint.installation
+    is @debugger.CurrentInstallation(
+      @debugger.Rejected("no matching functions")
+    ),
+  )
   assert_eq(
-    backend.breakpoints.filter(item => item.enabled()).map(item => item.id()),
-    [2],
+    breakpoint_managed_line(result),
+    "Breakpoint 1 enabled (current: rejected: no matching functions).",
   )
-  session.manage_breakpoint(1, EnableBreakpoint) |> ignore
-  session.manage_breakpoint(2, DeleteBreakpoint) |> ignore
-  assert_eq(session.stop_epoch(), epoch)
-  assert_eq(session.selected_frame(), frame)
-  assert_eq(backend.stack_requests, stack_requests)
-  assert_eq(backend.abandons, 0)
-  session.find_variable(VariablePath::root("x")) |> ignore
-  assert_eq(backend.frame_selections, [1, 1])
+  assert_eq(backend.syncs, 2)
+  let before = backend.syncs
+  execute_framework_command(context, "breakpoints") |> ignore
+  assert_eq(backend.syncs, before)
+  assert_true(context.session.state() is @debugger.Stopped)
 }
 
 ///|
-async test "enabling unresolved targets retains enabled configuration and rejected result" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new(
-    "/tmp/program",
-    backend,
-    debug_context=DebugContext::new("example/main", []),
-  )
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.add_function_breakpoint(FunctionBreakpointRequest::current("missing"))
-  |> ignore
-  session.manage_breakpoint(1, DisableBreakpoint) |> ignore
-  session.manage_breakpoint(2, DisableBreakpoint) |> ignore
-  session.run() |> ignore
-  backend.reject_installs = true
-  let source = session.manage_breakpoint(1, EnableBreakpoint)
-  assert_true(source.breakpoint.enabled)
-  assert_true(
-    source.breakpoint.installation is CurrentInstallation(Rejected(_)),
-  )
-  let function = session.manage_breakpoint(2, EnableBreakpoint)
-  assert_true(function.breakpoint.enabled)
-  assert_true(
-    function.breakpoint.installation is CurrentInstallation(Rejected(_)),
-  )
-  assert_true(session.state() is Stopped)
-  assert_eq(backend.abandons, 0)
-  session.run() |> ignore
-  assert_eq(backend.breakpoint_launches[1], [1])
-  assert_eq(backend.function_breakpoint_launches[1], [2])
-}
-
-///|
-async test "uncertain enable retains desired enabled state for a new execution" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new("/tmp/program", backend)
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.manage_breakpoint(1, DisableBreakpoint) |> ignore
-  session.run() |> ignore
-  backend.uncertain_sync = true
-  try {
-    session.manage_breakpoint(1, EnableBreakpoint) |> ignore
-    fail("expected uncertain enable")
-  } catch {
-    AdapterFailure(_) => ()
-    error => raise error
-  }
-  assert_true(session.breakpoints()[0].enabled)
-  assert_true(session.state() is Ready)
-  assert_eq(backend.abandons, 1)
-  backend.uncertain_sync = false
-  session.run() |> ignore
-  assert_eq(backend.breakpoint_launches[1], [1])
-}
-
-///|
-async test "management failures preserve delete disable configuration and recover uncertainty" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new("/tmp/program", backend)
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.run() |> ignore
-  backend.reject_sync = true
-  try {
-    session.manage_breakpoint(1, DisableBreakpoint) |> ignore
-    fail("expected confirmed rejection")
-  } catch {
-    BreakpointManagementRejected(_) => ()
-    error => raise error
-  }
-  assert_true(session.state() is Stopped)
-  assert_true(session.breakpoints()[0].enabled)
-  assert_eq(backend.abandons, 0)
-  backend.reject_sync = false
-  backend.uncertain_sync = true
-  try {
-    session.manage_breakpoint(1, DeleteBreakpoint) |> ignore
-    fail("expected uncertain failure")
-  } catch {
-    AdapterFailure(message) =>
-      assert_true(message.contains("current execution was discarded"))
-    error => raise error
-  }
-  assert_true(session.state() is Ready)
-  assert_eq(backend.abandons, 1)
-  assert_eq(session.breakpoints().map(item => item.id), [1])
-  assert_true(session.breakpoints()[0].enabled)
-  backend.uncertain_sync = false
-  session.run() |> ignore
-  assert_eq(backend.breakpoint_launches[1], [1])
-}
-
-///|
-async test "incomplete domain synchronization result cannot confirm disable success" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new("/tmp/program", backend)
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  session.add_source_breakpoint("/tmp/main.mbt", 5) |> ignore
-  session.run() |> ignore
-  backend.malformed_sync = true
-  try {
-    session.manage_breakpoint(1, DisableBreakpoint) |> ignore
-    fail("incomplete reply")
-  } catch {
-    AdapterFailure(message) =>
-      assert_eq(
-        message, "incomplete breakpoint synchronization result; current execution was discarded",
+async test "management presents refusal recovery and state errors with domain distinctions" {
+  for uncertain in [false, true] {
+    let (backend, context) = breakpoint_command_test_context()
+    defer context.session.close()
+    execute_framework_command(context, "b main") |> ignore
+    execute_framework_command(context, "run") |> ignore
+    backend.fail_sync = uncertain
+    backend.refuse_sync = !uncertain
+    let result = execute_framework_command(context, "delete 1")
+    if uncertain {
+      assert_true(
+        result.events is [AdapterFailurePresentation(message)] &&
+        message.contains("current execution was discarded"),
       )
-    error => raise error
+      assert_true(context.session.state() is @debugger.Ready)
+    } else {
+      guard result.events is [BreakpointManagementFailurePresentation(failure)] else {
+        fail("refusal event")
+      }
+      assert_eq(
+        breakpoint_management_failure_line(failure),
+        "Cannot manage breakpoint: test rejected without changes",
+      )
+      assert_true(context.session.state() is @debugger.Stopped)
+    }
+    assert_true(context.session.breakpoints()[0].enabled)
+    context.session.close()
+    assert_true(
+      execute_framework_command(context, "disable 1").events
+      is [
+        OperationNotAllowedPresentation(@debugger.Exited, "manage breakpoints"),
+      ],
+    )
   }
-  assert_true(session.state() is Ready)
-  assert_eq(session.breakpoints().map(item => item.enabled), [true, true])
-  assert_eq(backend.abandons, 1)
 }
 
 ///|
-async test "management rejects invalid ids and forbidden phases without synchronization" {
-  let backend = RecordingBackend::new()
-  let session = DebugSession::new("/tmp/program", backend)
-  session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
-  for id in [-1, 0, 2] {
-    try {
-      session.manage_breakpoint(id, DeleteBreakpoint) |> ignore
-      fail("invalid id")
-    } catch {
-      BreakpointNotFound(actual) => assert_eq(actual, id)
-      error => raise error
+async test "run reports only enabled source and function breakpoints" {
+  let (backend, context) = breakpoint_command_test_context()
+  defer context.session.close()
+  context.session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
+  execute_framework_command(context, "b identity") |> ignore
+  context.session.add_source_breakpoint("/tmp/main.mbt", 8) |> ignore
+  execute_framework_command(context, "b main") |> ignore
+  execute_framework_command(context, "disable 1") |> ignore
+  execute_framework_command(context, "disable 2") |> ignore
+  let result = execute_framework_command(context, "run")
+  let ids = result.events.filter_map(event => {
+    match event {
+      BreakpointUpdatePresentation(item) => Some(item.id())
+      FunctionBreakpointUpdatePresentation(item) => Some(item.id())
+      _ => None
     }
-  }
-  session.manage_breakpoint(1, DeleteBreakpoint) |> ignore
-  try {
-    session.manage_breakpoint(1, DeleteBreakpoint) |> ignore
-    fail("deleted id")
-  } catch {
-    BreakpointNotFound(1) => ()
-    error => raise error
-  }
-  for phase in [Running, Failed, Exited] {
-    session.application.transition_without_stop(phase)
-    try {
-      session.manage_breakpoint(1, EnableBreakpoint) |> ignore
-      fail("invalid phase")
-    } catch {
-      OperationNotAllowed(state~, ..) => assert_eq(state, phase)
-      error => raise error
-    }
-  }
-  assert_eq(backend.syncs, 0)
+  })
+  assert_eq(ids, [3, 4])
+  assert_eq(backend.breakpoints.map(item => item.id()), [3])
+  assert_eq(backend.function_breakpoints.map(item => item.id()), [4])
 }

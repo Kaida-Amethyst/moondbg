@@ -9,12 +9,12 @@ priv struct LldbDapSession {
   preparation_timeout_ms : Int
   mut execution : DebugExecution?
   mut detached_state : DapSessionState
-  last_source_breakpoint_snapshots : Map[Int, @moondbg.BreakpointSnapshot]
+  last_source_breakpoint_snapshots : Map[Int, @debugger.BreakpointSnapshot]
   last_function_breakpoint_snapshots : Map[
     Int,
-    @moondbg.FunctionBreakpointSnapshot,
+    @debugger.FunctionBreakpointSnapshot,
   ]
-  pending_output : Array[@moondbg.DebugOutput]
+  pending_output : Array[@debugger.DebugOutput]
 }
 
 ///|
@@ -35,9 +35,9 @@ fn LldbDapSession::state(self : LldbDapSession) -> DapSessionState {
 ///|
 async fn LldbDapSession::stack_snapshot(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-  window : @moondbg.StackWindow,
-) -> @moondbg.StackSnapshot raise LldbDapBackendError {
+  thread : @debugger.ThreadSelection,
+  window : @debugger.StackWindow,
+) -> @debugger.StackSnapshot raise LldbDapBackendError {
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.detached_state,
@@ -168,7 +168,7 @@ async fn LldbDapSession::restart_stopped_execution(
 async fn LldbDapSession::run(
   self : LldbDapSession,
   executable : String,
-) -> @moondbg.RunOutcome {
+) -> @debugger.RunOutcome {
   if self.execution is Some(execution) && execution.state() is Stopped {
     self.restart_stopped_execution(execution)
   }
@@ -186,7 +186,7 @@ async fn LldbDapSession::run(
     }
     error => raise error
   }
-  if outcome is @moondbg.Exited(_) {
+  if outcome is @debugger.Exited(_) {
     self.complete_finished_execution(execution)
   }
   outcome
@@ -196,8 +196,8 @@ async fn LldbDapSession::run(
 async fn LldbDapSession::resume_execution(
   self : LldbDapSession,
   kind : ExecutionResumeKind,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.detached_state,
@@ -213,7 +213,7 @@ async fn LldbDapSession::resume_execution(
     }
     error => raise error
   }
-  if outcome is @moondbg.Exited(_) {
+  if outcome is @debugger.Exited(_) {
     self.complete_finished_execution(execution)
   }
   outcome
@@ -222,32 +222,32 @@ async fn LldbDapSession::resume_execution(
 ///|
 async fn LldbDapSession::continue_execution(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   self.resume_execution(ContinueExecution, thread)
 }
 
 ///|
 async fn LldbDapSession::next(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   self.resume_execution(StepExecution(@dap.DapNext), thread)
 }
 
 ///|
 async fn LldbDapSession::step(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   self.resume_execution(StepExecution(@dap.DapStepIn), thread)
 }
 
 ///|
 async fn LldbDapSession::finish(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   self.resume_execution(StepExecution(@dap.DapStepOut), thread)
 }
 

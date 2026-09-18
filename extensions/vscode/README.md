@@ -109,16 +109,16 @@ Watch、悬停求值和调试控制台表达式仍未接入。
 ```sh
 source ~/.zshrc
 set_moon_stable
-moon build --target native -g main
+moon build --target native -g .
 ls -l "$MOON_HOME/bin/moondbg"
 ```
 
-产物为 `_build/native/debug/build/main/main.exe`。扩展只启动
+产物为 `_build/native/debug/build/moondbg.exe`。扩展只启动
 `$MOON_HOME/bin/moondbg --dap`，不会使用终端里的 `alias moondbg`。
 如果该路径尚不存在，可在仓库根目录手动建立链接：
 
 ```sh
-ln -s "$PWD/_build/native/debug/build/main/main.exe" "$MOON_HOME/bin/moondbg"
+ln -s "$PWD/_build/native/debug/build/moondbg.exe" "$MOON_HOME/bin/moondbg"
 ```
 
 如果已有文件或链接，先检查其来源和目标，不要直接覆盖。普通可执行文件和有效软链接都可用；

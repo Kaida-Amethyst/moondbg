@@ -16,7 +16,9 @@ fn LogicalFunctionBreakpoint::new(
   {
     id,
     display_name,
-    selector: @moondbg.FunctionBreakpointSelector::exact_physical(physical_name),
+    selector: @debugger.FunctionBreakpointSelector::exact_physical(
+      physical_name,
+    ),
   }
 }
 
@@ -29,7 +31,7 @@ fn LogicalFunctionBreakpoint::family(
   {
     id,
     display_name,
-    selector: @moondbg.FunctionBreakpointSelector::family(base),
+    selector: @debugger.FunctionBreakpointSelector::family(base),
   }
 }
 
@@ -1696,34 +1698,34 @@ async test "P3 scripted stack pagination keeps a cumulative physical prefix" {
     execution.accept_event(
       test_event("stopped", { "reason": "breakpoint", "threadId": 7 }),
     )
-    let thread = @moondbg.ThreadSelection::initial()
+    let thread = @debugger.ThreadSelection::initial()
     let first = execution.load_stack_window(
       thread,
-      @moondbg.StackWindow::new(0, 3),
+      @debugger.StackWindow::new(0, 3),
     )
     assert_eq(first.loaded_count(), 3)
     assert_eq(first.total_frames_hint(), Some(99))
     assert_false(first.is_complete())
     assert_true(
-      first.frame(0).map(frame => frame.kind()) is Some(@moondbg.NativeFrame),
+      first.frame(0).map(frame => frame.kind()) is Some(@debugger.NativeFrame),
     )
     assert_true(
-      first.frame(1).map(frame => frame.kind()) is Some(@moondbg.UnknownFrame),
+      first.frame(1).map(frame => frame.kind()) is Some(@debugger.UnknownFrame),
     )
     assert_true(
       first.frame(2).map(frame => frame.kind())
-      is Some(@moondbg.MoonBitUserFrame),
+      is Some(@debugger.MoonBitUserFrame),
     )
     let second = execution.load_stack_window(
       thread,
-      @moondbg.StackWindow::new(3, 3),
+      @debugger.StackWindow::new(3, 3),
     )
     assert_eq(second.loaded_count(), 6)
     assert_eq(second.total_frames_hint(), Some(6))
     assert_false(second.is_complete())
     let complete_stack = execution.load_stack_window(
       thread,
-      @moondbg.StackWindow::new(6, 3),
+      @debugger.StackWindow::new(6, 3),
     )
     assert_eq(complete_stack.loaded_count(), 7)
     assert_eq(complete_stack.total_frames_hint(), Some(7))
@@ -1811,18 +1813,18 @@ async test "P3 an exact page multiple requires a confirming empty page" {
     execution.accept_event(
       test_event("stopped", { "reason": "entry", "threadId": 1 }),
     )
-    let thread = @moondbg.ThreadSelection::initial()
-    execution.load_stack_window(thread, @moondbg.StackWindow::new(0, 3))
+    let thread = @debugger.ThreadSelection::initial()
+    execution.load_stack_window(thread, @debugger.StackWindow::new(0, 3))
     |> ignore
     let full_page = execution.load_stack_window(
       thread,
-      @moondbg.StackWindow::new(3, 3),
+      @debugger.StackWindow::new(3, 3),
     )
     assert_eq(full_page.loaded_count(), 6)
     assert_false(full_page.is_complete())
     let confirmed = execution.load_stack_window(
       thread,
-      @moondbg.StackWindow::new(6, 3),
+      @debugger.StackWindow::new(6, 3),
     )
     assert_eq(confirmed.loaded_count(), 6)
     assert_true(confirmed.is_complete())
@@ -1886,9 +1888,9 @@ async test "P3 initial selection pages past native frames without renumbering" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/paged-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/paged-program", backend)
     defer session.close()
-    guard session.run() is @moondbg.Stopped(initial_stop) else {
+    guard session.run() is @debugger.Stopped(initial_stop) else {
       fail("the paged execution should stop")
     }
     assert_eq(initial_stop.function_name(), "user.frame.20")
@@ -1927,8 +1929,8 @@ async test "P3 initial selection pages past native frames without renumbering" {
     }
     assert_eq(selected_native.physical_index(), 0)
     assert_eq(selected_native.source_path(), Some("/tmp/frame_0.c"))
-    guard session.find_variable(@moondbg.VariablePath::root("native_answer"))
-      is @moondbg.VariableFound(native_answer) else {
+    guard session.find_variable(@debugger.VariablePath::root("native_answer"))
+      is @debugger.VariableFound(native_answer) else {
       fail("variable lookup should use the explicitly selected native frame")
     }
     assert_eq(native_answer.value(), "300")
@@ -1995,8 +1997,8 @@ async test "P3 stack pagination rejects oversized duplicate and invalid windows"
     assert_true(
       try {
         oversized.load_stack_window(
-          @moondbg.ThreadSelection::initial(),
-          @moondbg.StackWindow::new(0, 2),
+          @debugger.ThreadSelection::initial(),
+          @debugger.StackWindow::new(0, 2),
         )
         |> ignore
         false
@@ -2031,8 +2033,8 @@ async test "P3 stack pagination rejects oversized duplicate and invalid windows"
     assert_true(
       try {
         duplicate.load_stack_window(
-          @moondbg.ThreadSelection::initial(),
-          @moondbg.StackWindow::new(0, 2),
+          @debugger.ThreadSelection::initial(),
+          @debugger.StackWindow::new(0, 2),
         )
         |> ignore
         false
@@ -2061,15 +2063,15 @@ async test "P3 stack pagination rejects oversized duplicate and invalid windows"
       test_event("stopped", { "reason": "entry", "threadId": 1 }),
     )
     windowed.load_stack_window(
-      @moondbg.ThreadSelection::initial(),
-      @moondbg.StackWindow::new(0, 1),
+      @debugger.ThreadSelection::initial(),
+      @debugger.StackWindow::new(0, 1),
     )
     |> ignore
     assert_true(
       try {
         windowed.load_stack_window(
-          @moondbg.ThreadSelection::initial(),
-          @moondbg.StackWindow::new(2, 1),
+          @debugger.ThreadSelection::initial(),
+          @debugger.StackWindow::new(2, 1),
         )
         |> ignore
         false
@@ -2081,8 +2083,8 @@ async test "P3 stack pagination rejects oversized duplicate and invalid windows"
     assert_true(
       try {
         windowed.load_stack_window(
-          @moondbg.ThreadSelection::initial(),
-          @moondbg.StackWindow::new(0, 2),
+          @debugger.ThreadSelection::initial(),
+          @debugger.StackWindow::new(0, 2),
         )
         |> ignore
         false
@@ -2122,15 +2124,15 @@ async test "P3 duplicate frame ids across pages are rejected before cache mutati
       test_event("stopped", { "reason": "entry", "threadId": 1 }),
     )
     execution.load_stack_window(
-      @moondbg.ThreadSelection::initial(),
-      @moondbg.StackWindow::new(0, 1),
+      @debugger.ThreadSelection::initial(),
+      @debugger.StackWindow::new(0, 1),
     )
     |> ignore
     assert_true(
       try {
         execution.load_stack_window(
-          @moondbg.ThreadSelection::initial(),
-          @moondbg.StackWindow::new(1, 1),
+          @debugger.ThreadSelection::initial(),
+          @debugger.StackWindow::new(1, 1),
         )
         |> ignore
         false
@@ -2212,23 +2214,23 @@ async test "P3 frame-scoped raw caches coexist with reusable domain snapshots" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/frame-cache-program", backend,
     )
     defer session.close()
     session.run() |> ignore
-    let answer = @moondbg.VariablePath::root("answer")
-    guard session.find_variable(answer) is @moondbg.VariableFound(top) else {
+    let answer = @debugger.VariablePath::root("answer")
+    guard session.find_variable(answer) is @debugger.VariableFound(top) else {
       fail("the top frame should expose answer")
     }
     assert_eq(top.value(), "10")
     session.select_frame(1) |> ignore
-    guard session.find_variable(answer) is @moondbg.VariableFound(caller) else {
+    guard session.find_variable(answer) is @debugger.VariableFound(caller) else {
       fail("the caller frame should expose its own answer")
     }
     assert_eq(caller.value(), "20")
     session.select_frame(0) |> ignore
-    guard session.find_variable(answer) is @moondbg.VariableFound(cached_top) else {
+    guard session.find_variable(answer) is @debugger.VariableFound(cached_top) else {
       fail("the materialized top-frame answer should remain reusable")
     }
     assert_eq(cached_top.value(), "10")
@@ -2366,7 +2368,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/locals-cache", backend)
+    let session = @debugger.DebugSession::new("/tmp/locals-cache", backend)
     defer session.close()
     session.run() |> ignore
     let first_locals = session.local_variables()
@@ -2378,21 +2380,21 @@ async test "P5 locals isolate reused references by frame and cache materialized 
     assert_eq(answer.name(), "answer")
     assert_eq(
       answer.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("10")),
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar("10")),
     )
-    assert_true(future.availability() is @moondbg.LocalVariableUnavailable)
+    assert_true(future.availability() is @debugger.LocalVariableUnavailable)
     assert_eq(shadowed.name(), "shadowed_value")
     assert_eq(
       shadowed.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("340")),
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar("340")),
     )
-    guard session.find_variable(@moondbg.VariablePath::root("answer"))
-      is @moondbg.VariableFound(first_print) else {
+    guard session.find_variable(@debugger.VariablePath::root("answer"))
+      is @debugger.VariableFound(first_print) else {
       fail("print should reuse raw locals for the selected frame")
     }
     assert_eq(first_print.value(), "10")
-    guard session.find_variable(@moondbg.VariablePath::root("shadowed_value"))
-      is @moondbg.VariableFound(shadowed_print) else {
+    guard session.find_variable(@debugger.VariablePath::root("shadowed_value"))
+      is @debugger.VariableFound(shadowed_print) else {
       fail("print should reuse the exact evaluated shadow binding")
     }
     assert_eq(shadowed_print.value(), "340")
@@ -2406,10 +2408,10 @@ async test "P5 locals isolate reused references by frame and cache materialized 
     }
     assert_eq(
       caller.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("20")),
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar("20")),
     )
-    guard session.find_variable(@moondbg.VariablePath::root("answer"))
-      is @moondbg.VariableFound(caller_print) else {
+    guard session.find_variable(@debugger.VariablePath::root("answer"))
+      is @debugger.VariableFound(caller_print) else {
       fail("caller print should share only caller-scoped raw variables")
     }
     assert_eq(caller_print.value(), "20")
@@ -2421,8 +2423,8 @@ async test "P5 locals isolate reused references by frame and cache materialized 
       fail("switching back should reuse the materialized frame summary")
     }
     assert_eq(cached.availability(), answer.availability())
-    guard session.find_variable(@moondbg.VariablePath::root("answer"))
-      is @moondbg.VariableFound(cached_print) else {
+    guard session.find_variable(@debugger.VariablePath::root("answer"))
+      is @debugger.VariableFound(cached_print) else {
       fail("switching back should retain the materialized print snapshot")
     }
     assert_eq(cached_print.value(), "10")
@@ -2435,7 +2437,7 @@ async test "P5 locals isolate reused references by frame and cache materialized 
     }
     assert_eq(
       after_resume.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("30")),
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar("30")),
     )
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
@@ -2474,11 +2476,13 @@ async test "P5 locals reports a missing Locals scope without loading globals" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/no-locals", backend)
+    let session = @debugger.DebugSession::new("/tmp/no-locals", backend)
     defer session.close()
     session.run() |> ignore
     let snapshot = session.local_variables()
-    assert_true(snapshot.scope_availability() is @moondbg.LocalScopeUnavailable)
+    assert_true(
+      snapshot.scope_availability() is @debugger.LocalScopeUnavailable,
+    )
     assert_eq(snapshot.variables().length(), 0)
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
@@ -2627,7 +2631,7 @@ async test "P5 locals summarize collections structs and enums without recursive 
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/compact-locals", backend)
+    let session = @debugger.DebugSession::new("/tmp/compact-locals", backend)
     defer session.close()
     session.run() |> ignore
     guard session.local_variables().variables()
@@ -2637,36 +2641,36 @@ async test "P5 locals summarize collections structs and enums without recursive 
     assert_eq(count.type_name(), Some("Int"))
     assert_eq(
       count.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalScalar("3")),
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar("3")),
     )
     assert_eq(fixed.type_name(), Some("FixedArray[Int]"))
     assert_eq(
       fixed.availability(),
-      @moondbg.LocalVariableAvailable(
-        @moondbg.LocalCollection(@moondbg.FixedArrayCollection, 10),
+      @debugger.LocalVariableAvailable(
+        @debugger.LocalCollection(@debugger.FixedArrayCollection, 10),
       ),
     )
     assert_eq(broken.type_name(), Some("FixedArray[Int]"))
     assert_eq(
       broken.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+      @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
     )
     assert_eq(point.type_name(), Some("Point"))
     assert_eq(
       point.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalStructure),
+      @debugger.LocalVariableAvailable(@debugger.LocalStructure),
     )
     assert_eq(items.type_name(), Some("Array[Double]"))
     assert_eq(
       items.availability(),
-      @moondbg.LocalVariableAvailable(
-        @moondbg.LocalCollection(@moondbg.ArrayCollection, 4),
+      @debugger.LocalVariableAvailable(
+        @debugger.LocalCollection(@debugger.ArrayCollection, 4),
       ),
     )
     assert_eq(list.type_name(), Some("List"))
     assert_eq(
       list.availability(),
-      @moondbg.LocalVariableAvailable(@moondbg.LocalEnumConstructor("Cons")),
+      @debugger.LocalVariableAvailable(@debugger.LocalEnumConstructor("Cons")),
     )
     assert_eq(transport.remaining_inputs(), 0)
     let sent = transport.sent_messages()
@@ -2704,7 +2708,7 @@ async test "P5 compact aggregate summaries do not hide adapter request failures"
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/failed-local-layout", backend,
     )
     defer session.close()
@@ -2780,20 +2784,20 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(executable, backend)
+    let session = @debugger.DebugSession::new(executable, backend)
     defer session.close()
     let rejected = try {
       session.next() |> ignore
       false
     } catch {
-      @moondbg.OperationNotAllowed(state~, action~) =>
-        state is @moondbg.Ready && action == "step over"
+      @debugger.OperationNotAllowed(state~, action~) =>
+        state is @debugger.Ready && action == "step over"
       _ => false
     }
     assert_true(rejected)
     let pending = session.add_source_breakpoint("/tmp/main.mbt", 4)
     assert_eq(pending.id(), 1)
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted execution should stop after launch")
     }
     guard backend.session.source_breakpoints is [logical] else {
@@ -2820,10 +2824,10 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     guard session.take_output() is [output] else {
       fail("only user-visible debuggee output should be retained")
     }
-    assert_true(output.kind() is @moondbg.StandardOutput)
+    assert_true(output.kind() is @debugger.StandardOutput)
     assert_eq(output.text(), "hello from debuggee\n")
-    guard session.find_variable(@moondbg.VariablePath::root("answer"))
-      is @moondbg.VariableFound(variable) else {
+    guard session.find_variable(@debugger.VariablePath::root("answer"))
+      is @debugger.VariableFound(variable) else {
       fail("scripted execution should expose answer")
     }
     assert_eq(variable.value(), "42")
@@ -2834,7 +2838,7 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     assert_true(
       execution.variable_cache.cached_scopes(first_frame_identity) is Some(_),
     )
-    guard session.next() is @moondbg.Stopped(after_next) else {
+    guard session.next() is @debugger.Stopped(after_next) else {
       fail("next should stop again")
     }
     assert_eq(after_next.reason(), "step")
@@ -2844,12 +2848,12 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     assert_true(
       execution.variable_cache.cached_scopes(first_frame_identity) is None,
     )
-    guard session.step() is @moondbg.Stopped(after_step) else {
+    guard session.step() is @debugger.Stopped(after_step) else {
       fail("step should stop again")
     }
     assert_eq(after_step.reason(), "step")
     assert_eq(execution.machine.stop_epoch, 3)
-    guard session.finish() is @moondbg.Stopped(after_finish) else {
+    guard session.finish() is @debugger.Stopped(after_finish) else {
       fail("finish should stop again")
     }
     assert_eq(after_finish.reason(), "step")
@@ -2860,9 +2864,9 @@ async test "scripted lldb-dap lifecycle preserves mappings epochs output and cac
     }
     assert_eq(verified.id(), pending.id())
     assert_eq(verified.actual_line(), Some(4))
-    assert_true(verified.status() is @moondbg.Verified)
+    assert_true(verified.status() is @debugger.Verified)
     session.disconnect()
-    assert_true(session.state() is @moondbg.Exited)
+    assert_true(session.state() is @debugger.Exited)
     assert_true(transport.is_closed())
     assert_eq(transport.remaining_inputs(), 0)
     assert_eq(transport.sent_messages().filter_map(sent_command), [
@@ -2885,19 +2889,19 @@ async test "scripted function family breakpoint uses LLDB command and one logica
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let debug_context = @moondbg.DebugContext::new("example/app/main", [
+    let debug_context = @debugger.DebugContext::new("example/app/main", [
       ("util", "example/lib/util"),
     ])
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/moondbg-function-family-program",
       backend,
       debug_context~,
     )
     defer session.close()
     let pending = session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::imported("util", "identity"),
+      @debugger.FunctionBreakpointRequest::imported("util", "identity"),
     )
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted family breakpoint should stop the execution")
     }
     guard session.function_breakpoints() is [verified] else {
@@ -2905,7 +2909,7 @@ async test "scripted function family breakpoint uses LLDB command and one logica
     }
     assert_eq(verified.id(), pending.id())
     assert_eq(verified.location_count(), Some(2))
-    assert_true(verified.status() is @moondbg.Verified)
+    assert_true(verified.status() is @debugger.Verified)
     guard backend.session.execution is Some(execution) &&
       execution.breakpoint_state.outcomes.get(pending.id()) is Some(outcome) else {
       fail("LLDB breakpoint id should be retained for the active execution")
@@ -2949,50 +2953,50 @@ async test "stopped execution dynamically synchronizes complete sets and one fam
       preparation_timeout_ms=10000,
     )
     defer session.close()
-    guard session.run("/tmp/dynamic-program") is @moondbg.Stopped(_) else {
+    guard session.run("/tmp/dynamic-program") is @debugger.Stopped(_) else {
       fail("scripted execution should stop before dynamic synchronization")
     }
 
     let first_source = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
     let first_source_snapshot = session.install_source_breakpoint(first_source)
-    assert_true(first_source_snapshot.status() is @moondbg.Verified)
+    assert_true(first_source_snapshot.status() is @debugger.Verified)
     let second_source = LogicalSourceBreakpoint::new(2, "/tmp/main.mbt", 9)
     let second_source_snapshot = session.install_source_breakpoint(
       second_source,
     )
-    assert_true(second_source_snapshot.status() is @moondbg.Verified)
+    assert_true(second_source_snapshot.status() is @debugger.Verified)
 
     let first_exact = LogicalFunctionBreakpoint::new(3, "main", "moonbit_main")
     assert_true(
       session.install_function_breakpoint(first_exact).status()
-      is @moondbg.Verified,
+      is @debugger.Verified,
     )
     let second_exact = LogicalFunctionBreakpoint::new(
       4, "sum", "_M0FP34demo4main3sum",
     )
     assert_true(
       session.install_function_breakpoint(second_exact).status()
-      is @moondbg.Verified,
+      is @debugger.Verified,
     )
 
     let family = LogicalFunctionBreakpoint::family(
       5, "identity", "_M0FP34demo3lib8identity",
     )
     let family_snapshot = session.install_function_breakpoint(family)
-    assert_true(family_snapshot.status() is @moondbg.Verified)
+    assert_true(family_snapshot.status() is @debugger.Verified)
     assert_eq(family_snapshot.location_count(), Some(2))
     let missing_family = LogicalFunctionBreakpoint::family(
       6, "missing", "_M0FP34demo4main7missing",
     )
     assert_true(
       session.install_function_breakpoint(missing_family).status()
-      is @moondbg.Rejected("no matching function instances were found"),
+      is @debugger.Rejected("no matching function instances were found"),
     )
 
     let rejected_source = LogicalSourceBreakpoint::new(7, "/tmp/missing.mbt", 1)
     assert_true(
       session.install_source_breakpoint(rejected_source).status()
-      is @moondbg.Rejected("source is unavailable"),
+      is @debugger.Rejected("source is unavailable"),
     )
 
     guard session.execution is Some(execution) else {
@@ -3055,7 +3059,7 @@ async test "dynamic transport failure archives configuration and prepares recove
       preparation_timeout_ms=10000,
     )
     defer session.close()
-    guard session.run("/tmp/dynamic-failure-program") is @moondbg.Stopped(_) else {
+    guard session.run("/tmp/dynamic-failure-program") is @debugger.Stopped(_) else {
       fail("scripted execution should stop before the adapter failure")
     }
     let breakpoint = LogicalSourceBreakpoint::new(1, "/tmp/main.mbt", 4)
@@ -3107,7 +3111,7 @@ async test "scripted launch failure is recovered by a fresh prepared execution" 
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/moondbg-recovery-program", backend,
     )
     defer session.close()
@@ -3115,13 +3119,13 @@ async test "scripted launch failure is recovered by a fresh prepared execution" 
       session.run() |> ignore
       false
     } catch {
-      @moondbg.AdapterFailure(message) => message.contains("launch rejected")
+      @debugger.AdapterFailure(message) => message.contains("launch rejected")
       _ => false
     }
     assert_true(failed)
-    assert_true(session.state() is @moondbg.Ready)
+    assert_true(session.state() is @debugger.Ready)
     assert_true(failed_transport.is_closed())
-    guard session.run() is @moondbg.Stopped(snapshot) else {
+    guard session.run() is @debugger.Stopped(snapshot) else {
       fail("replacement scripted execution should stop")
     }
     assert_eq(snapshot.line(), Some(4))
@@ -3157,7 +3161,7 @@ async test "scripted preparation failure is recovered before the next run" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/moondbg-preparation-recovery-program", backend,
     )
     defer session.close()
@@ -3165,14 +3169,14 @@ async test "scripted preparation failure is recovered before the next run" {
       session.run() |> ignore
       false
     } catch {
-      @moondbg.AdapterFailure(message) =>
+      @debugger.AdapterFailure(message) =>
         message.contains("initialize unavailable")
       _ => false
     }
     assert_true(failed)
-    assert_true(session.state() is @moondbg.Ready)
+    assert_true(session.state() is @debugger.Ready)
     assert_true(failed_transport.is_closed())
-    guard session.run() is @moondbg.Stopped(snapshot) else {
+    guard session.run() is @debugger.Stopped(snapshot) else {
       fail("replacement preparation should produce a stopped execution")
     }
     assert_eq(snapshot.line(), Some(4))
@@ -3306,12 +3310,12 @@ test "breakpoint responses preserve moondbg ids and adapter outcomes" {
   assert_eq(first_snapshot.id(), 1)
   assert_eq(first_snapshot.requested_line(), 4)
   assert_eq(first_snapshot.actual_line(), Some(5))
-  assert_true(first_snapshot.status() is @moondbg.Verified)
+  assert_true(first_snapshot.status() is @debugger.Verified)
   let second_snapshot = state.source_snapshot(second)
   assert_eq(second_snapshot.id(), 2)
   assert_true(
     second_snapshot.status()
-    is @moondbg.Rejected("no executable code at this location"),
+    is @debugger.Rejected("no executable code at this location"),
   )
 }
 
@@ -3328,13 +3332,13 @@ test "a failed setBreakpoints response is uncertain and cannot replace outcomes"
     )
     fail("request failure is not an ordinary rejected location")
   } catch {
-    @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "source is unavailable"
     ) => ()
     error => raise error
   }
-  assert_true(state.source_snapshot(first).status() is @moondbg.Pending)
-  assert_true(state.source_snapshot(second).status() is @moondbg.Pending)
+  assert_true(state.source_snapshot(first).status() is @debugger.Pending)
+  assert_true(state.source_snapshot(second).status() is @debugger.Pending)
 }
 
 ///|
@@ -3343,8 +3347,8 @@ test "adapter breakpoint outcomes are isolated per execution" {
   let first = ExecutionBreakpointState::new()
   let second = ExecutionBreakpointState::new()
   first.verify(breakpoint.id, Some(5), Some(17))
-  assert_true(first.source_snapshot(breakpoint).status() is @moondbg.Verified)
-  assert_true(second.source_snapshot(breakpoint).status() is @moondbg.Pending)
+  assert_true(first.source_snapshot(breakpoint).status() is @debugger.Verified)
+  assert_true(second.source_snapshot(breakpoint).status() is @debugger.Pending)
   assert_eq(second.source_snapshot(breakpoint).actual_line(), None)
 }
 
@@ -3414,10 +3418,10 @@ test "function breakpoint responses preserve stable ids and verification" {
   let verified = state.function_snapshot(local_breakpoint)
   assert_eq(verified.id(), 1)
   assert_eq(verified.display_name(), "helper")
-  assert_true(verified.status() is @moondbg.Verified)
+  assert_true(verified.status() is @debugger.Verified)
   let rejected = state.function_snapshot(missing)
   assert_eq(rejected.id(), 2)
-  assert_true(rejected.status() is @moondbg.Rejected("no locations found"))
+  assert_true(rejected.status() is @debugger.Rejected("no locations found"))
 }
 
 ///|
@@ -3779,18 +3783,18 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/struct-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/struct-program", backend)
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted struct execution should stop")
     }
-    guard session.find_variable(@moondbg.VariablePath::root("line1"))
-      is @moondbg.VariableFound(line) &&
-      line.content() is @moondbg.VariableStructure(line_structure) &&
+    guard session.find_variable(@debugger.VariablePath::root("line1"))
+      is @debugger.VariableFound(line) &&
+      line.content() is @debugger.VariableStructure(line_structure) &&
       line_structure.children() is [start, end] &&
-      start.content() is @moondbg.VariableStructure(start_structure) &&
+      start.content() is @debugger.VariableStructure(start_structure) &&
       start_structure.children() is [start_x, start_y] &&
-      end.content() is @moondbg.VariableStructure(end_structure) &&
+      end.content() is @debugger.VariableStructure(end_structure) &&
       end_structure.children() is [end_x, end_y] else {
       fail("line1 should be materialized through both nested points")
     }
@@ -3800,20 +3804,20 @@ async test "lldb-dap materializes nested structs and leaves other aggregates opa
     assert_eq(end.name(), "end")
     assert_eq(end_x.value(), "4")
     assert_eq(end_y.value(), "6")
-    guard session.find_variable(@moondbg.VariablePath::root("line1"))
-      is @moondbg.VariableFound(cached) else {
+    guard session.find_variable(@debugger.VariablePath::root("line1"))
+      is @debugger.VariableFound(cached) else {
       fail("line1 should remain available from the stop cache")
     }
     assert_eq(cached, line)
-    guard session.find_variable(@moondbg.VariablePath::root("arr"))
-      is @moondbg.VariableFound(array) else {
+    guard session.find_variable(@debugger.VariablePath::root("arr"))
+      is @debugger.VariableFound(array) else {
       fail("array root should remain printable")
     }
-    assert_true(array.content() is @moondbg.VariableLeaf)
+    assert_true(array.content() is @debugger.VariableLeaf)
     assert_eq(array.value(), "moonbit.array_i32 @ 0x2000")
-    guard session.find_variable(@moondbg.VariablePath::root("choice"))
-      is @moondbg.VariableFound(choice) &&
-      choice.content() is @moondbg.VariableEnum(enum_value) &&
+    guard session.find_variable(@debugger.VariablePath::root("choice"))
+      is @debugger.VariableFound(choice) &&
+      choice.content() is @debugger.VariableEnum(enum_value) &&
       enum_value.payload() is [payload] else {
       fail("boxed enum root should expose its active shallow constructor")
     }
@@ -3843,28 +3847,30 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/field-path-program", backend)
+    let session = @debugger.DebugSession::new(
+      "/tmp/field-path-program", backend,
+    )
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted field-path execution should stop")
     }
-    let x_path = @moondbg.VariablePath::with_fields("line1", ["start", "x"])
-    guard session.find_variable(x_path) is @moondbg.VariableFound(x) else {
+    let x_path = @debugger.VariablePath::with_fields("line1", ["start", "x"])
+    guard session.find_variable(x_path) is @debugger.VariableFound(x) else {
       fail("line1.start.x should resolve to a scalar")
     }
     assert_eq(x.name(), "line1.start.x")
     assert_eq(x.type_name(), Some("double"))
     assert_eq(x.value(), "1")
-    assert_true(x.content() is @moondbg.VariableLeaf)
-    guard session.find_variable(x_path) is @moondbg.VariableFound(cached_x) else {
+    assert_true(x.content() is @debugger.VariableLeaf)
+    guard session.find_variable(x_path) is @debugger.VariableFound(cached_x) else {
       fail("the repeated path should remain cached")
     }
     assert_eq(cached_x, x)
     guard session.find_variable(
-        @moondbg.VariablePath::with_fields("line1", ["start"]),
+        @debugger.VariablePath::with_fields("line1", ["start"]),
       )
-      is @moondbg.VariableFound(start) &&
-      start.content() is @moondbg.VariableStructure(structure) &&
+      is @debugger.VariableFound(start) &&
+      start.content() is @debugger.VariableStructure(structure) &&
       structure.children() is [start_x, start_y] else {
       fail("a final struct field should retain structured materialization")
     }
@@ -3872,10 +3878,10 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
     assert_eq(start_x.name(), "x")
     assert_eq(start_y.name(), "y")
     guard session.find_variable(
-        @moondbg.VariablePath::with_fields("line1", ["values"]),
+        @debugger.VariablePath::with_fields("line1", ["values"]),
       )
-      is @moondbg.VariableFound(values) &&
-      values.content() is @moondbg.VariableIndexedCollection(collection) &&
+      is @debugger.VariableFound(values) &&
+      values.content() is @debugger.VariableIndexedCollection(collection) &&
       collection.preview_elements() is [first, _, third] &&
       first.value() is Some(first_value) &&
       third.value() is Some(third_value) else {
@@ -3887,18 +3893,18 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
     assert_eq(third_value.value(), "3")
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::with_fields("line1", ["missing"]),
+        @debugger.VariablePath::with_fields("line1", ["missing"]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableFieldNotFound("line1", "missing")
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableFieldNotFound("line1", "missing")
       ),
     )
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::with_fields("line1", ["start", "x", "more"]),
+        @debugger.VariablePath::with_fields("line1", ["start", "x", "more"]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableFieldAccessOnNonStruct(
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableFieldAccessOnNonStruct(
           "line1.start.x",
           "more",
           Some("double")
@@ -3907,20 +3913,22 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
     )
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::with_fields("line1", ["end", "x"]),
+        @debugger.VariablePath::with_fields("line1", ["end", "x"]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableUnavailable("line1.end")
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableUnavailable("line1.end")
       ),
     )
     assert_true(
-      session.find_variable(@moondbg.VariablePath::root("missing"))
-      is @moondbg.VariableLookupFailed(@moondbg.VariableRootNotFound("missing")),
+      session.find_variable(@debugger.VariablePath::root("missing"))
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableRootNotFound("missing")
+      ),
     )
-    guard session.next() is @moondbg.Stopped(_) else {
+    guard session.next() is @debugger.Stopped(_) else {
       fail("next should establish a new stop epoch")
     }
-    guard session.find_variable(x_path) is @moondbg.VariableFound(next_x) else {
+    guard session.find_variable(x_path) is @debugger.VariableFound(next_x) else {
       fail("the same path should be resolved again after resume")
     }
     assert_eq(next_x, x)
@@ -3945,36 +3953,36 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/fixed-array-program", backend,
     )
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted FixedArray execution should stop")
     }
-    guard session.find_variable(@moondbg.VariablePath::root("short"))
-      is @moondbg.VariableFound(short) &&
-      short.content() is @moondbg.VariableIndexedCollection(short_collection) &&
+    guard session.find_variable(@debugger.VariablePath::root("short"))
+      is @debugger.VariableFound(short) &&
+      short.content() is @debugger.VariableIndexedCollection(short_collection) &&
       short_collection.preview_elements() is [first, second, third] &&
       first.value() is Some(first_value) &&
       third.value() is Some(third_value) else {
       fail("short FixedArray should be materialized completely")
     }
-    assert_eq(short_collection.kind(), @moondbg.FixedArrayCollection)
+    assert_eq(short_collection.kind(), @debugger.FixedArrayCollection)
     assert_eq(short_collection.total_length(), 3)
     assert_true(short_collection.is_complete())
     assert_eq(first_value.value(), "1")
     assert_eq(second.index(), 1)
     assert_eq(third_value.value(), "3")
-    guard session.find_variable(@moondbg.VariablePath::root("long"))
-      is @moondbg.VariableFound(long) &&
-      long.content() is @moondbg.VariableIndexedCollection(long_collection) &&
+    guard session.find_variable(@debugger.VariablePath::root("long"))
+      is @debugger.VariableFound(long) &&
+      long.content() is @debugger.VariableIndexedCollection(long_collection) &&
       long_collection.preview_elements() is [first, .., last] &&
       first.value() is Some(first_value) &&
       last.value() is Some(last_value) else {
       fail("long FixedArray should retain its bounded head and true tail")
     }
-    assert_eq(long_collection.kind(), @moondbg.FixedArrayCollection)
+    assert_eq(long_collection.kind(), @debugger.FixedArrayCollection)
     assert_eq(long_collection.total_length(), 100)
     assert_eq(long_collection.preview_elements().length(), 16)
     assert_eq(long_collection.omitted_count(), 84)
@@ -3982,14 +3990,14 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     assert_eq(first_value.value(), "1")
     assert_eq(last.index(), 99)
     assert_eq(last_value.value(), "100")
-    guard session.find_variable(@moondbg.VariablePath::root("long"))
-      is @moondbg.VariableFound(cached) else {
+    guard session.find_variable(@debugger.VariablePath::root("long"))
+      is @debugger.VariableFound(cached) else {
       fail("same-stop FixedArray lookup should use its snapshot cache")
     }
     assert_eq(cached, long)
-    guard session.find_variable(@moondbg.VariablePath::root("points"))
-      is @moondbg.VariableFound(points) &&
-      points.content() is @moondbg.VariableIndexedCollection(point_collection) &&
+    guard session.find_variable(@debugger.VariablePath::root("points"))
+      is @debugger.VariableFound(points) &&
+      points.content() is @debugger.VariableIndexedCollection(point_collection) &&
       point_collection.preview_elements() is [point_first, .., point_last] else {
       fail("opaque FixedArray should retain only bounded type placeholders")
     }
@@ -3999,9 +4007,9 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
     assert_true(point_first.value() is None)
     assert_eq(point_last.index(), 99)
     assert_true(point_last.value() is None)
-    guard session.find_variable(@moondbg.VariablePath::root("empty"))
-      is @moondbg.VariableFound(empty) &&
-      empty.content() is @moondbg.VariableIndexedCollection(empty_collection) else {
+    guard session.find_variable(@debugger.VariablePath::root("empty"))
+      is @debugger.VariableFound(empty) &&
+      empty.content() is @debugger.VariableIndexedCollection(empty_collection) else {
       fail("null FixedArray payload should represent an empty collection")
     }
     assert_eq(empty_collection.total_length(), 0)
@@ -4072,20 +4080,20 @@ async test "lldb-dap materializes Array logical values within bounded storage re
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/array-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/array-program", backend)
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted Array execution should stop")
     }
-    guard session.find_variable(@moondbg.VariablePath::root("arr"))
-      is @moondbg.VariableFound(short) &&
-      short.content() is @moondbg.VariableIndexedCollection(short_collection) &&
+    guard session.find_variable(@debugger.VariablePath::root("arr"))
+      is @debugger.VariableFound(short) &&
+      short.content() is @debugger.VariableIndexedCollection(short_collection) &&
       short_collection.preview_elements() is [first, .., last] &&
       first.value() is Some(first_value) &&
       last.value() is Some(last_value) else {
       fail("short Array should be materialized completely")
     }
-    assert_eq(short_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(short_collection.kind(), @debugger.ArrayCollection)
     assert_eq(short_collection.element_type_name(), "Double")
     assert_eq(short_collection.total_length(), 10)
     assert_true(short_collection.is_complete())
@@ -4093,32 +4101,32 @@ async test "lldb-dap materializes Array logical values within bounded storage re
     assert_eq(first_value.value(), "1")
     assert_eq(last.index(), 9)
     assert_eq(last_value.value(), "10")
-    guard session.find_variable(@moondbg.VariablePath::root("arr"))
-      is @moondbg.VariableFound(cached_short) else {
+    guard session.find_variable(@debugger.VariablePath::root("arr"))
+      is @debugger.VariableFound(cached_short) else {
       fail("same-stop Array lookup should use its snapshot cache")
     }
     assert_eq(cached_short, short)
-    guard session.find_variable(@moondbg.VariablePath::root("empty"))
-      is @moondbg.VariableFound(empty) &&
-      empty.content() is @moondbg.VariableIndexedCollection(empty_collection) else {
+    guard session.find_variable(@debugger.VariablePath::root("empty"))
+      is @debugger.VariableFound(empty) &&
+      empty.content() is @debugger.VariableIndexedCollection(empty_collection) else {
       fail("a null zero-length Array should be materialized safely")
     }
-    assert_eq(empty_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(empty_collection.kind(), @debugger.ArrayCollection)
     assert_eq(empty_collection.total_length(), 0)
     assert_true(empty_collection.preview_elements() is [])
 
-    guard session.next() is @moondbg.Stopped(_) else {
+    guard session.next() is @debugger.Stopped(_) else {
       fail("next should establish a second Array stop epoch")
     }
-    guard session.find_variable(@moondbg.VariablePath::root("arr"))
-      is @moondbg.VariableFound(long) &&
-      long.content() is @moondbg.VariableIndexedCollection(long_collection) &&
+    guard session.find_variable(@debugger.VariablePath::root("arr"))
+      is @debugger.VariableFound(long) &&
+      long.content() is @debugger.VariableIndexedCollection(long_collection) &&
       long_collection.preview_elements() is [long_first, .., long_last] &&
       long_first.value() is Some(long_first_value) &&
       long_last.value() is Some(long_last_value) else {
       fail("long Array should retain its bounded head and logical tail")
     }
-    assert_eq(long_collection.kind(), @moondbg.ArrayCollection)
+    assert_eq(long_collection.kind(), @debugger.ArrayCollection)
     assert_eq(long_collection.total_length(), 100)
     assert_eq(long_collection.preview_elements().length(), 16)
     assert_eq(long_collection.omitted_count(), 84)
@@ -4126,8 +4134,8 @@ async test "lldb-dap materializes Array logical values within bounded storage re
     assert_eq(long_first_value.value(), "1")
     assert_eq(long_last.index(), 99)
     assert_eq(long_last_value.value(), "100")
-    guard session.find_variable(@moondbg.VariablePath::root("arr"))
-      is @moondbg.VariableFound(cached_long) else {
+    guard session.find_variable(@debugger.VariablePath::root("arr"))
+      is @debugger.VariableFound(cached_long) else {
       fail("second-stop Array lookup should also be cached")
     }
     assert_eq(cached_long, long)
@@ -4142,7 +4150,7 @@ async test "lldb-dap materializes Array logical values within bounded storage re
       .find_variable_inner(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         121,
-        @moondbg.VariablePath::root("invalid"),
+        @debugger.VariablePath::root("invalid"),
       )
       |> ignore
       false
@@ -4239,17 +4247,19 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/indexed-path-program", backend,
     )
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted indexed-path execution should stop")
     }
-    let arr_element_path = @moondbg.VariablePath::new("arr", [@moondbg.Index(0)])
+    let arr_element_path = @debugger.VariablePath::new("arr", [
+      @debugger.Index(0),
+    ])
     guard session.find_variable(arr_element_path)
-      is @moondbg.VariableFound(point) &&
-      point.content() is @moondbg.VariableStructure(point_structure) &&
+      is @debugger.VariableFound(point) &&
+      point.content() is @debugger.VariableStructure(point_structure) &&
       point_structure.children() is [x, y] else {
       fail("arr[0] should materialize one complete Point")
     }
@@ -4260,73 +4270,73 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     assert_eq(y.name(), "y")
     assert_eq(y.value(), "2")
     guard session.find_variable(arr_element_path)
-      is @moondbg.VariableFound(cached_point) else {
+      is @debugger.VariableFound(cached_point) else {
       fail("the exact indexed path should use its snapshot cache")
     }
     assert_eq(cached_point, point)
     guard session.find_variable(
-        @moondbg.VariablePath::new("arr", [
-          @moondbg.Index(0),
-          @moondbg.Field("x"),
+        @debugger.VariablePath::new("arr", [
+          @debugger.Index(0),
+          @debugger.Field("x"),
         ]),
       )
-      is @moondbg.VariableFound(arr_x) else {
+      is @debugger.VariableFound(arr_x) else {
       fail("arr[0].x should continue through variablesReference")
     }
     assert_eq(arr_x.name(), "arr[0].x")
     assert_eq(arr_x.value(), "1")
 
     guard session.find_variable(
-        @moondbg.VariablePath::new("lines", [
-          @moondbg.Index(0),
-          @moondbg.Field("start"),
-          @moondbg.Field("x"),
+        @debugger.VariablePath::new("lines", [
+          @debugger.Index(0),
+          @debugger.Field("start"),
+          @debugger.Field("x"),
         ]),
       )
-      is @moondbg.VariableFound(line_x) else {
+      is @debugger.VariableFound(line_x) else {
       fail("lines[0].start.x should resolve an Index/Field chain")
     }
     assert_eq(line_x.name(), "lines[0].start.x")
     assert_eq(line_x.value(), "1")
 
     guard session.find_variable(
-        @moondbg.VariablePath::new("box", [
-          @moondbg.Field("points"),
-          @moondbg.Index(0),
-          @moondbg.Field("x"),
+        @debugger.VariablePath::new("box", [
+          @debugger.Field("points"),
+          @debugger.Index(0),
+          @debugger.Field("x"),
         ]),
       )
-      is @moondbg.VariableFound(box_x) else {
+      is @debugger.VariableFound(box_x) else {
       fail("box.points[0].x should resolve a Field/Index/Field chain")
     }
     assert_eq(box_x.name(), "box.points[0].x")
     assert_eq(box_x.value(), "1")
 
     guard session.find_variable(
-        @moondbg.VariablePath::new("ints", [@moondbg.Index(2)]),
+        @debugger.VariablePath::new("ints", [@debugger.Index(2)]),
       )
-      is @moondbg.VariableFound(integer) else {
+      is @debugger.VariableFound(integer) else {
       fail("FixedArray scalar indexing should share the exact path resolver")
     }
     assert_eq(integer.name(), "ints[2]")
     assert_eq(integer.type_name(), Some("int"))
     assert_eq(integer.value(), "30")
-    assert_true(integer.content() is @moondbg.VariableLeaf)
+    assert_true(integer.content() is @debugger.VariableLeaf)
 
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::new("arr", [@moondbg.Index(3)]),
+        @debugger.VariablePath::new("arr", [@debugger.Index(3)]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableIndexOutOfBounds("arr", 3, 3)
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableIndexOutOfBounds("arr", 3, 3)
       ),
     )
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::new("point", [@moondbg.Index(0)]),
+        @debugger.VariablePath::new("point", [@debugger.Index(0)]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableIndexAccessOnNonCollection(
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableIndexAccessOnNonCollection(
           "point",
           0,
           Some("example/geometry/Point &")
@@ -4335,18 +4345,18 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     )
     assert_true(
       session.find_variable(
-        @moondbg.VariablePath::new("empty", [@moondbg.Index(0)]),
+        @debugger.VariablePath::new("empty", [@debugger.Index(0)]),
       )
-      is @moondbg.VariableLookupFailed(
-        @moondbg.VariableIndexOutOfBounds("empty", 0, 0)
+      is @debugger.VariableLookupFailed(
+        @debugger.VariableIndexOutOfBounds("empty", 0, 0)
       ),
     )
 
-    guard session.next() is @moondbg.Stopped(_) else {
+    guard session.next() is @debugger.Stopped(_) else {
       fail("next should establish a new indexed-path stop epoch")
     }
     guard session.find_variable(arr_element_path)
-      is @moondbg.VariableFound(next_point) else {
+      is @debugger.VariableFound(next_point) else {
       fail("the indexed element should be evaluated again after resume")
     }
     assert_eq(next_point, point)
@@ -4395,7 +4405,7 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/index-failure-program", backend,
     )
     defer session.close()
@@ -4411,7 +4421,7 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
       .find_variable_inner(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         150,
-        @moondbg.VariablePath::new("arr", [@moondbg.Index(0)]),
+        @debugger.VariablePath::new("arr", [@debugger.Index(0)]),
       )
       |> ignore
       fail("indexed path failure script should reject its element")
@@ -4466,23 +4476,23 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/enum-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/enum-program", backend)
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) else {
+    guard session.run() is @debugger.Stopped(_) else {
       fail("scripted enum execution should stop")
     }
-    guard session.find_variable(@moondbg.VariablePath::root("empty"))
-      is @moondbg.VariableFound(empty) &&
-      empty.content() is @moondbg.VariableEnum(empty_value) else {
+    guard session.find_variable(@debugger.VariablePath::root("empty"))
+      is @debugger.VariableFound(empty) &&
+      empty.content() is @debugger.VariableEnum(empty_value) else {
       fail("payloadless enum should expose its active constructor")
     }
     assert_eq(empty.value(), "")
     assert_eq(empty_value.constructor_name(), "Empty")
     assert_true(empty_value.payload() is [])
 
-    guard session.find_variable(@moondbg.VariablePath::root("scalar"))
-      is @moondbg.VariableFound(scalar) &&
-      scalar.content() is @moondbg.VariableEnum(scalar_value) &&
+    guard session.find_variable(@debugger.VariablePath::root("scalar"))
+      is @debugger.VariableFound(scalar) &&
+      scalar.content() is @debugger.VariableEnum(scalar_value) &&
       scalar_value.payload() is [scalar_payload] else {
       fail("scalar enum payload should retain its DAP scalar value")
     }
@@ -4491,9 +4501,9 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
     assert_eq(scalar_payload.type_name(), "Int")
     assert_eq(scalar_payload.scalar_value(), Some("7"))
 
-    guard session.find_variable(@moondbg.VariablePath::root("list"))
-      is @moondbg.VariableFound(list) &&
-      list.content() is @moondbg.VariableEnum(list_value) &&
+    guard session.find_variable(@debugger.VariablePath::root("list"))
+      is @debugger.VariableFound(list) &&
+      list.content() is @debugger.VariableEnum(list_value) &&
       list_value.payload() is [head, tail] else {
       fail("Cons should expose only its direct payload")
     }
@@ -4503,15 +4513,15 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
     assert_eq(tail.position(), 1)
     assert_eq(tail.type_name(), "List")
     assert_eq(tail.scalar_value(), None)
-    guard session.find_variable(@moondbg.VariablePath::root("list"))
-      is @moondbg.VariableFound(cached_list) else {
+    guard session.find_variable(@debugger.VariablePath::root("list"))
+      is @debugger.VariableFound(cached_list) else {
       fail("same-stop enum lookup should use its snapshot cache")
     }
     assert_eq(cached_list, list)
 
-    guard session.find_variable(@moondbg.VariablePath::root("pair"))
-      is @moondbg.VariableFound(pair) &&
-      pair.content() is @moondbg.VariableEnum(pair_value) &&
+    guard session.find_variable(@debugger.VariablePath::root("pair"))
+      is @debugger.VariableFound(pair) &&
+      pair.content() is @debugger.VariableEnum(pair_value) &&
       pair_value.payload() is [left, right] else {
       fail("C(Double, Int) should retain both scalar payloads")
     }
@@ -4521,11 +4531,11 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
     assert_eq(right.type_name(), "Int")
     assert_eq(right.scalar_value(), Some("2"))
 
-    guard session.find_variable(@moondbg.VariablePath::root("unknown"))
-      is @moondbg.VariableFound(unknown) else {
+    guard session.find_variable(@debugger.VariablePath::root("unknown"))
+      is @debugger.VariableFound(unknown) else {
       fail("unknown non-enum aggregate should remain printable")
     }
-    assert_true(unknown.content() is @moondbg.VariableLeaf)
+    assert_true(unknown.content() is @debugger.VariableLeaf)
     assert_eq(unknown.value(), "opaque")
 
     assert_eq(transport.remaining_inputs(), 0)
@@ -4570,11 +4580,11 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/malformed-enum-program", backend,
     )
     defer session.close()
-    guard session.run() is @moondbg.Stopped(_) &&
+    guard session.run() is @debugger.Stopped(_) &&
       backend.session.execution is Some(execution) &&
       execution.machine.current_stop_epoch() is Some(epoch) else {
       fail("malformed enum fixture should retain one stopped execution")
@@ -4596,7 +4606,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
         .find_variable_inner(
           VariableCacheIdentity::{ epoch, frame_index: 0, },
           140,
-          @moondbg.VariablePath::root(name),
+          @debugger.VariablePath::root(name),
         )
         |> ignore
         false
@@ -4641,7 +4651,7 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/truncated-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/truncated-program", backend)
     defer session.close()
     session.run() |> ignore
     guard backend.session.execution is Some(execution) &&
@@ -4664,10 +4674,10 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
         8,
         2,
       )
-    guard snapshot.content() is @moondbg.VariableStructure(line_structure) &&
+    guard snapshot.content() is @debugger.VariableStructure(line_structure) &&
       line_structure.is_truncated() &&
       line_structure.children() is [start] &&
-      start.content() is @moondbg.VariableStructure(start_structure) &&
+      start.content() is @debugger.VariableStructure(start_structure) &&
       start_structure.is_truncated() &&
       start_structure.children() is [] else {
       fail(
@@ -4684,7 +4694,7 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
         10,
       )
     assert_true(
-      depth_limited.content() is @moondbg.VariableStructure(structure) &&
+      depth_limited.content() is @debugger.VariableStructure(structure) &&
       structure.is_truncated() &&
       structure.children() is [],
     )
@@ -4705,7 +4715,7 @@ async test "lldb-dap variable materialization truncates recursive references" {
       preparation_timeout_ms=10000,
     )
     let backend = LldbDapBackend::{ session: lldb_session, }
-    let session = @moondbg.DebugSession::new("/tmp/cyclic-program", backend)
+    let session = @debugger.DebugSession::new("/tmp/cyclic-program", backend)
     defer session.close()
     session.run() |> ignore
     guard backend.session.execution is Some(execution) &&
@@ -4728,10 +4738,10 @@ async test "lldb-dap variable materialization truncates recursive references" {
         8,
         10,
       )
-    guard snapshot.content() is @moondbg.VariableStructure(node_structure) &&
+    guard snapshot.content() is @debugger.VariableStructure(node_structure) &&
       !node_structure.is_truncated() &&
       node_structure.children() is [next] &&
-      next.content() is @moondbg.VariableStructure(next_structure) &&
+      next.content() is @debugger.VariableStructure(next_structure) &&
       next_structure.is_truncated() &&
       next_structure.children() is [] else {
       fail("recursive reference should stop at the active DAP reference")
@@ -4751,7 +4761,7 @@ test "lldb-dap output events preserve user text and discard adapter-only output"
     is Some(output) else {
     fail("expected stdout output")
   }
-  assert_true(output.kind() is @moondbg.StandardOutput)
+  assert_true(output.kind() is @debugger.StandardOutput)
   assert_eq(output.text(), "42\n")
   assert_true(
     output_from_event(

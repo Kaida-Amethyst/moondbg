@@ -39,7 +39,7 @@ async test "breakpoint stop reasons hide LLDB ids while other descriptions stay 
         preparation_timeout_ms=10000,
       )
       defer session.close()
-      guard session.run("/tmp/program") is @moondbg.Stopped(snapshot) else {
+      guard session.run("/tmp/program") is @debugger.Stopped(snapshot) else {
         fail("stopped snapshot")
       }
       assert_eq(snapshot.reason(), expected)

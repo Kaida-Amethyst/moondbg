@@ -39,7 +39,7 @@ async fn require_toolchain() -> (String, String) {
   let moon = require_tool(moon_home, "moon")
   let moondbg = match @env.get_env_var("MOONDBG_ACCEPTANCE_EXECUTABLE") {
     Some(path) => @fs.realpath(path)
-    None => @fs.realpath("_build/native/debug/build/main/main.exe")
+    None => @fs.realpath("_build/native/debug/build/moondbg.exe")
   }
   assert_true(@fs.can_execute(moondbg))
   let build_package_help = collect_text(moonc, ["build-package", "-help"])

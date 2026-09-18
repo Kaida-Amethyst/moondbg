@@ -1,0 +1,623 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/debugger"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+pub(all) suberror BreakpointSyncError {
+  BreakpointSyncRejected(String)
+  BreakpointSyncUncertain(String)
+} derive(@debug.Debug)
+pub fn BreakpointSyncError::to_repr(Self) -> @debug.Repr
+
+pub suberror DebugBackendError {
+  BackendFailure(String)
+} derive(@debug.Debug)
+pub fn DebugBackendError::failure(String) -> Self
+pub fn DebugBackendError::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror DebugContextError {
+  MissingCurrentPackage
+  InvalidCurrentPackage(String)
+  InvalidPackageAlias(String)
+  DuplicatePackageAlias(String)
+  UnknownPackageAlias(String)
+} derive(Eq, @debug.Debug)
+pub fn DebugContextError::equal(Self, Self) -> Bool
+pub fn DebugContextError::not_equal(Self, Self) -> Bool
+pub fn DebugContextError::to_repr(Self) -> @debug.Repr
+
+pub suberror DebugSessionError {
+  OperationNotAllowed(state~ : DebugSessionState, action~ : String)
+  FrameNotLoaded(Int)
+  FrameNotFound(Int)
+  NoFrameSelected
+  NoVisibleCaller(Int)
+  NoVisibleCallee(Int)
+  AdapterFailure(String)
+  BreakpointNotFound(Int)
+  BreakpointManagementRejected(String)
+} derive(@debug.Debug)
+pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror StackSnapshotError {
+  InvalidLogicalThreadIndex(Int)
+  InvalidPhysicalFrameIndex(Int)
+  InvalidStackWindow(start~ : Int, count~ : Int)
+  InvalidLoadedFrameRange(start~ : Int, count~ : Int)
+  LoadedFrameCountMismatch(expected~ : Int, actual~ : Int)
+  UnexpectedPhysicalFrameIndex(expected~ : Int, actual~ : Int)
+  CompleteStackStartsAfterZero(Int)
+  StackExtensionThreadMismatch(expected~ : Int, actual~ : Int)
+  StackExtensionMustStartAtZero(Int)
+  StackExtensionWentBackwards(previous~ : Int, next~ : Int)
+  StackExtensionChangedFrame(Int)
+  StackExtensionMadeNoProgress(Int)
+} derive(Eq, @debug.Debug)
+pub fn StackSnapshotError::equal(Self, Self) -> Bool
+pub fn StackSnapshotError::not_equal(Self, Self) -> Bool
+pub fn StackSnapshotError::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror VariableSnapshotError {
+  InvalidIndexedCollectionElementType(String)
+  InvalidIndexedCollectionLength(Int)
+  InvalidIndexedCollectionIndex(index~ : Int, total_length~ : Int)
+  UnorderedIndexedCollectionIndex(previous~ : Int, index~ : Int)
+  InvalidEnumConstructor(String)
+  InvalidEnumPayloadType(position~ : Int, type_name~ : String)
+  InvalidEnumPayloadPosition(expected~ : Int, actual~ : Int)
+} derive(Eq, @debug.Debug)
+pub fn VariableSnapshotError::equal(Self, Self) -> Bool
+pub fn VariableSnapshotError::not_equal(Self, Self) -> Bool
+pub fn VariableSnapshotError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct BreakpointConfiguration {
+  // private fields
+}
+pub fn BreakpointConfiguration::functions(Self) -> Array[FunctionBreakpoint]
+pub fn BreakpointConfiguration::sources(Self) -> Array[SourceBreakpoint]
+
+pub enum BreakpointInstallation {
+  NotInstalled
+  CurrentInstallation(BreakpointStatus)
+  PreviousInstallation(BreakpointStatus)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointInstallation::equal(Self, Self) -> Bool
+pub fn BreakpointInstallation::not_equal(Self, Self) -> Bool
+pub fn BreakpointInstallation::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointListEntry {
+  id : Int
+  target : BreakpointTarget
+  enabled : Bool
+  installation : BreakpointInstallation
+  actual_line : Int?
+  location_count : Int?
+  locations : Array[BreakpointLocation]
+} derive(@debug.Debug)
+pub fn BreakpointListEntry::to_repr(Self) -> @debug.Repr
+
+pub(all) struct BreakpointLocation {
+  source_path : String?
+  line : Int?
+  column : Int?
+  instruction_reference : String?
+} derive(Eq, @debug.Debug)
+pub fn BreakpointLocation::equal(Self, Self) -> Bool
+pub fn BreakpointLocation::not_equal(Self, Self) -> Bool
+pub fn BreakpointLocation::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointManagementResult {
+  operation : BreakpointOperation
+  breakpoint : BreakpointListEntry
+  changed : Bool
+} derive(@debug.Debug)
+pub fn BreakpointManagementResult::to_repr(Self) -> @debug.Repr
+
+pub(all) enum BreakpointOperation {
+  DeleteBreakpoint
+  DisableBreakpoint
+  EnableBreakpoint
+} derive(Eq, @debug.Debug)
+pub fn BreakpointOperation::equal(Self, Self) -> Bool
+pub fn BreakpointOperation::not_equal(Self, Self) -> Bool
+pub fn BreakpointOperation::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointSnapshot {
+  // private fields
+}
+pub fn BreakpointSnapshot::actual_line(Self) -> Int?
+pub fn BreakpointSnapshot::id(Self) -> Int
+pub fn BreakpointSnapshot::locations(Self) -> Array[BreakpointLocation]
+pub fn BreakpointSnapshot::pending(Int, String, Int) -> Self
+pub fn BreakpointSnapshot::rejected(Int, String, Int, String) -> Self
+pub fn BreakpointSnapshot::requested_line(Self) -> Int
+pub fn BreakpointSnapshot::source_path(Self) -> String
+pub fn BreakpointSnapshot::status(Self) -> BreakpointStatus
+pub fn BreakpointSnapshot::verified(Int, String, Int, Int?) -> Self
+pub fn BreakpointSnapshot::with_locations(Self, Array[BreakpointLocation]) -> Self
+
+pub enum BreakpointStatus {
+  Pending
+  Verified
+  Rejected(String)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointStatus::equal(Self, Self) -> Bool
+pub fn BreakpointStatus::not_equal(Self, Self) -> Bool
+pub fn BreakpointStatus::to_repr(Self) -> @debug.Repr
+
+pub struct BreakpointSyncResult {
+  // private fields
+}
+pub fn BreakpointSyncResult::functions(Self) -> Array[FunctionBreakpointSnapshot]
+pub fn BreakpointSyncResult::new(Array[BreakpointSnapshot], Array[FunctionBreakpointSnapshot]) -> Self
+pub fn BreakpointSyncResult::sources(Self) -> Array[BreakpointSnapshot]
+
+pub enum BreakpointTarget {
+  SourceTarget(display_path~ : String, source_path~ : String, line~ : Int)
+  FunctionTarget(display_name~ : String, selector~ : FunctionBreakpointSelector)
+} derive(Eq, @debug.Debug)
+pub fn BreakpointTarget::equal(Self, Self) -> Bool
+pub fn BreakpointTarget::not_equal(Self, Self) -> Bool
+pub fn BreakpointTarget::to_repr(Self) -> @debug.Repr
+
+pub struct DebugContext {
+  // private fields
+}
+pub fn DebugContext::current_package(Self) -> String raise DebugContextError
+pub fn DebugContext::empty() -> Self
+pub fn DebugContext::new(String, Array[(String, String)]) -> Self raise DebugContextError
+pub fn DebugContext::package_for_alias(Self, StringView) -> String raise DebugContextError
+
+pub struct DebugOutput {
+  // private fields
+}
+pub fn DebugOutput::kind(Self) -> DebugOutputKind
+pub fn DebugOutput::other(String) -> Self
+pub fn DebugOutput::standard_error(String) -> Self
+pub fn DebugOutput::standard_output(String) -> Self
+pub fn DebugOutput::text(Self) -> String
+
+pub enum DebugOutputKind {
+  StandardOutput
+  StandardError
+  OtherOutput
+} derive(Eq, @debug.Debug)
+pub fn DebugOutputKind::equal(Self, Self) -> Bool
+pub fn DebugOutputKind::not_equal(Self, Self) -> Bool
+pub fn DebugOutputKind::to_repr(Self) -> @debug.Repr
+
+pub struct DebugSession {
+  // private fields
+}
+pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
+pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String) -> BreakpointSnapshot
+pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
+pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
+pub fn DebugSession::close(Self) -> Unit
+pub async fn DebugSession::complete_stack_snapshot(Self) -> StackSnapshot raise DebugSessionError
+pub async fn DebugSession::continue_execution(Self) -> RunOutcome
+pub async fn DebugSession::disconnect(Self) -> Unit
+pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
+pub async fn DebugSession::find_variable(Self, VariablePath) -> VariableLookupResult
+pub async fn DebugSession::finish(Self) -> RunOutcome
+pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnapshot]
+pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
+pub async fn DebugSession::local_variables(Self) -> LocalVariablesSnapshot
+pub async fn DebugSession::manage_breakpoint(Self, Int, BreakpointOperation) -> BreakpointManagementResult
+pub fn DebugSession::new(String, &DebugBackend, debug_context? : DebugContext) -> Self
+pub async fn DebugSession::next(Self) -> RunOutcome
+pub async fn DebugSession::run(Self) -> RunOutcome
+pub async fn DebugSession::select_frame(Self, Int) -> StackFrameSnapshot raise DebugSessionError
+pub fn DebugSession::select_visible_callee_frame(Self) -> StackFrameSnapshot raise DebugSessionError
+pub async fn DebugSession::select_visible_caller_frame(Self) -> StackFrameSnapshot raise DebugSessionError
+pub fn DebugSession::selected_frame(Self) -> FrameSelection?
+pub fn DebugSession::selected_frame_snapshot(Self) -> StackFrameSnapshot?
+pub fn DebugSession::selected_thread(Self) -> ThreadSelection?
+pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
+pub fn DebugSession::stack_snapshot(Self) -> StackSnapshot?
+pub fn DebugSession::state(Self) -> DebugSessionState
+pub async fn DebugSession::step(Self) -> RunOutcome
+pub fn DebugSession::stop_epoch(Self) -> StopEpoch?
+pub fn DebugSession::take_output(Self) -> Array[DebugOutput]
+
+pub enum DebugSessionState {
+  Ready
+  Running
+  Stopped
+  Exited
+  Failed
+} derive(Eq, @debug.Debug)
+pub fn DebugSessionState::equal(Self, Self) -> Bool
+pub fn DebugSessionState::not_equal(Self, Self) -> Bool
+pub fn DebugSessionState::to_repr(Self) -> @debug.Repr
+
+pub struct ExecutionEpoch {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn ExecutionEpoch::equal(Self, Self) -> Bool
+pub fn ExecutionEpoch::not_equal(Self, Self) -> Bool
+pub fn ExecutionEpoch::number(Self) -> Int
+pub fn ExecutionEpoch::to_repr(Self) -> @debug.Repr
+
+pub(all) enum FrameKind {
+  MoonBitUserFrame
+  MoonBitRuntimeFrame
+  NativeFrame
+  UnknownFrame
+} derive(Eq, @debug.Debug)
+pub fn FrameKind::equal(Self, Self) -> Bool
+pub fn FrameKind::not_equal(Self, Self) -> Bool
+pub fn FrameKind::to_repr(Self) -> @debug.Repr
+
+pub enum FrameNavigationResult {
+  FrameAvailable(FrameSelection)
+  MoreFramesRequired(start_frame~ : Int)
+  VisibleFrameBoundary
+} derive(Eq, @debug.Debug)
+pub fn FrameNavigationResult::equal(Self, Self) -> Bool
+pub fn FrameNavigationResult::not_equal(Self, Self) -> Bool
+pub fn FrameNavigationResult::to_repr(Self) -> @debug.Repr
+
+pub struct FrameSelection {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn FrameSelection::equal(Self, Self) -> Bool
+pub fn FrameSelection::index(Self) -> Int
+pub fn FrameSelection::not_equal(Self, Self) -> Bool
+pub fn FrameSelection::to_repr(Self) -> @debug.Repr
+
+pub struct FunctionBreakpoint {
+  // private fields
+}
+pub fn FunctionBreakpoint::display_name(Self) -> String
+pub fn FunctionBreakpoint::enabled(Self) -> Bool
+pub fn FunctionBreakpoint::id(Self) -> Int
+pub fn FunctionBreakpoint::selector(Self) -> FunctionBreakpointSelector
+
+pub enum FunctionBreakpointRequest {
+  CurrentPackageFunction(String)
+  ImportedPackageFunction(String, String)
+} derive(Eq, @debug.Debug)
+pub fn FunctionBreakpointRequest::current(String) -> Self
+pub fn FunctionBreakpointRequest::display_name(Self) -> String
+pub fn FunctionBreakpointRequest::equal(Self, Self) -> Bool
+pub fn FunctionBreakpointRequest::imported(String, String) -> Self
+pub fn FunctionBreakpointRequest::not_equal(Self, Self) -> Bool
+pub fn FunctionBreakpointRequest::to_repr(Self) -> @debug.Repr
+
+pub enum FunctionBreakpointSelector {
+  ExactPhysicalFunction(String)
+  MoonBitFunctionFamily(String)
+} derive(Eq, @debug.Debug)
+pub fn FunctionBreakpointSelector::equal(Self, Self) -> Bool
+pub fn FunctionBreakpointSelector::exact_physical(String) -> Self
+pub fn FunctionBreakpointSelector::family(String) -> Self
+pub fn FunctionBreakpointSelector::not_equal(Self, Self) -> Bool
+pub fn FunctionBreakpointSelector::to_repr(Self) -> @debug.Repr
+
+pub struct FunctionBreakpointSnapshot {
+  // private fields
+}
+pub fn FunctionBreakpointSnapshot::display_name(Self) -> String
+pub fn FunctionBreakpointSnapshot::id(Self) -> Int
+pub fn FunctionBreakpointSnapshot::location_count(Self) -> Int?
+pub fn FunctionBreakpointSnapshot::locations(Self) -> Array[BreakpointLocation]
+pub fn FunctionBreakpointSnapshot::pending(Int, String) -> Self
+pub fn FunctionBreakpointSnapshot::rejected(Int, String, String, location_count? : Int?) -> Self
+pub fn FunctionBreakpointSnapshot::status(Self) -> BreakpointStatus
+pub fn FunctionBreakpointSnapshot::verified(Int, String, location_count? : Int?) -> Self
+pub fn FunctionBreakpointSnapshot::with_locations(Self, Array[BreakpointLocation]) -> Self
+
+pub(all) enum IndexedCollectionKind {
+  FixedArrayCollection
+  ArrayCollection
+} derive(Eq, @debug.Debug)
+pub fn IndexedCollectionKind::equal(Self, Self) -> Bool
+pub fn IndexedCollectionKind::not_equal(Self, Self) -> Bool
+pub fn IndexedCollectionKind::source_name(Self) -> String
+pub fn IndexedCollectionKind::to_repr(Self) -> @debug.Repr
+
+pub struct IndexedCollectionSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn IndexedCollectionSnapshot::element_type_name(Self) -> String
+pub fn IndexedCollectionSnapshot::equal(Self, Self) -> Bool
+pub fn IndexedCollectionSnapshot::is_complete(Self) -> Bool
+pub fn IndexedCollectionSnapshot::kind(Self) -> IndexedCollectionKind
+pub fn IndexedCollectionSnapshot::new(IndexedCollectionKind, String, Int, Array[IndexedVariableElement]) -> Self raise VariableSnapshotError
+pub fn IndexedCollectionSnapshot::not_equal(Self, Self) -> Bool
+pub fn IndexedCollectionSnapshot::omitted_count(Self) -> Int
+pub fn IndexedCollectionSnapshot::preview_elements(Self) -> ReadOnlyArray[IndexedVariableElement]
+pub fn IndexedCollectionSnapshot::to_repr(Self) -> @debug.Repr
+pub fn IndexedCollectionSnapshot::total_length(Self) -> Int
+
+pub struct IndexedVariableElement {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn IndexedVariableElement::equal(Self, Self) -> Bool
+pub fn IndexedVariableElement::index(Self) -> Int
+pub fn IndexedVariableElement::not_equal(Self, Self) -> Bool
+pub fn IndexedVariableElement::placeholder(Int) -> Self
+pub fn IndexedVariableElement::to_repr(Self) -> @debug.Repr
+pub fn IndexedVariableElement::value(Self) -> VariableSnapshot?
+pub fn IndexedVariableElement::with_value(Int, VariableSnapshot) -> Self
+
+pub(all) enum LocalCompactValue {
+  LocalScalar(String)
+  LocalCollection(IndexedCollectionKind, Int)
+  LocalStructure
+  LocalEnumConstructor(String)
+  LocalOpaque
+} derive(Eq, @debug.Debug)
+pub fn LocalCompactValue::equal(Self, Self) -> Bool
+pub fn LocalCompactValue::not_equal(Self, Self) -> Bool
+pub fn LocalCompactValue::to_repr(Self) -> @debug.Repr
+
+pub(all) enum LocalScopeAvailability {
+  LocalScopeAvailable
+  LocalScopeUnavailable
+} derive(Eq, @debug.Debug)
+pub fn LocalScopeAvailability::equal(Self, Self) -> Bool
+pub fn LocalScopeAvailability::not_equal(Self, Self) -> Bool
+pub fn LocalScopeAvailability::to_repr(Self) -> @debug.Repr
+
+pub(all) enum LocalVariableAvailability {
+  LocalVariableAvailable(LocalCompactValue)
+  LocalVariableUnavailable
+  LocalVariableAmbiguous
+} derive(Eq, @debug.Debug)
+pub fn LocalVariableAvailability::equal(Self, Self) -> Bool
+pub fn LocalVariableAvailability::not_equal(Self, Self) -> Bool
+pub fn LocalVariableAvailability::to_repr(Self) -> @debug.Repr
+
+pub struct LocalVariableSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn LocalVariableSnapshot::availability(Self) -> LocalVariableAvailability
+pub fn LocalVariableSnapshot::equal(Self, Self) -> Bool
+pub fn LocalVariableSnapshot::name(Self) -> String
+pub fn LocalVariableSnapshot::new(String, String?, LocalVariableAvailability) -> Self
+pub fn LocalVariableSnapshot::not_equal(Self, Self) -> Bool
+pub fn LocalVariableSnapshot::to_repr(Self) -> @debug.Repr
+pub fn LocalVariableSnapshot::type_name(Self) -> String?
+
+pub struct LocalVariablesSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn LocalVariablesSnapshot::available(ThreadSelection, FrameSelection, Array[LocalVariableSnapshot]) -> Self
+pub fn LocalVariablesSnapshot::equal(Self, Self) -> Bool
+pub fn LocalVariablesSnapshot::frame(Self) -> FrameSelection
+pub fn LocalVariablesSnapshot::not_equal(Self, Self) -> Bool
+pub fn LocalVariablesSnapshot::scope_availability(Self) -> LocalScopeAvailability
+pub fn LocalVariablesSnapshot::scope_unavailable(ThreadSelection, FrameSelection) -> Self
+pub fn LocalVariablesSnapshot::thread(Self) -> ThreadSelection
+pub fn LocalVariablesSnapshot::to_repr(Self) -> @debug.Repr
+pub fn LocalVariablesSnapshot::variables(Self) -> ReadOnlyArray[LocalVariableSnapshot]
+
+pub enum RunOutcome {
+  Stopped(StopSnapshot)
+  Exited(Int?)
+}
+pub fn RunOutcome::exited(Int?) -> Self
+pub fn RunOutcome::stopped(StopSnapshot) -> Self
+
+pub struct SourceBreakpoint {
+  // private fields
+}
+pub fn SourceBreakpoint::display_path(Self) -> String
+pub fn SourceBreakpoint::enabled(Self) -> Bool
+pub fn SourceBreakpoint::id(Self) -> Int
+pub fn SourceBreakpoint::requested_line(Self) -> Int
+pub fn SourceBreakpoint::source_path(Self) -> String
+
+pub struct StackFrameSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn StackFrameSnapshot::column(Self) -> Int?
+pub fn StackFrameSnapshot::display_name(Self) -> String
+pub fn StackFrameSnapshot::equal(Self, Self) -> Bool
+pub fn StackFrameSnapshot::kind(Self) -> FrameKind
+pub fn StackFrameSnapshot::line(Self) -> Int?
+pub fn StackFrameSnapshot::linkage_name(Self) -> String?
+pub fn StackFrameSnapshot::new(Int, String, String, String?, String?, Int?, Int?, FrameKind) -> Self raise StackSnapshotError
+pub fn StackFrameSnapshot::not_equal(Self, Self) -> Bool
+pub fn StackFrameSnapshot::physical_index(Self) -> Int
+pub fn StackFrameSnapshot::raw_name(Self) -> String
+pub fn StackFrameSnapshot::source_path(Self) -> String?
+pub fn StackFrameSnapshot::to_repr(Self) -> @debug.Repr
+
+pub struct StackSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn StackSnapshot::default_selection(Self) -> FrameSelection?
+pub fn StackSnapshot::equal(Self, Self) -> Bool
+pub fn StackSnapshot::frame(Self, Int) -> StackFrameSnapshot?
+pub fn StackSnapshot::frames(Self) -> ReadOnlyArray[StackFrameSnapshot]
+pub fn StackSnapshot::is_complete(Self) -> Bool
+pub fn StackSnapshot::is_loaded(Self, Int) -> Bool
+pub fn StackSnapshot::loaded_count(Self) -> Int
+pub fn StackSnapshot::loaded_end(Self) -> Int
+pub fn StackSnapshot::loaded_start(Self) -> Int
+pub fn StackSnapshot::new(ThreadSelection, Array[StackFrameSnapshot], Int, Int, Int?, Bool) -> Self raise StackSnapshotError
+pub fn StackSnapshot::not_equal(Self, Self) -> Bool
+pub fn StackSnapshot::selection(Self, Int) -> FrameSelection?
+pub fn StackSnapshot::thread(Self) -> ThreadSelection
+pub fn StackSnapshot::to_repr(Self) -> @debug.Repr
+pub fn StackSnapshot::total_frames_hint(Self) -> Int?
+pub fn StackSnapshot::validate_extension(Self, Self) -> Unit raise StackSnapshotError
+pub fn StackSnapshot::visible_callee(Self, FrameSelection) -> FrameNavigationResult
+pub fn StackSnapshot::visible_caller(Self, FrameSelection) -> FrameNavigationResult
+pub fn StackSnapshot::visible_frames(Self) -> Array[StackFrameSnapshot]
+
+pub struct StackWindow {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn StackWindow::count(Self) -> Int
+pub fn StackWindow::equal(Self, Self) -> Bool
+pub fn StackWindow::initial() -> Self
+pub fn StackWindow::new(Int, Int) -> Self raise StackSnapshotError
+pub fn StackWindow::not_equal(Self, Self) -> Bool
+pub fn StackWindow::start(Self) -> Int
+pub fn StackWindow::to_repr(Self) -> @debug.Repr
+
+pub struct StopEpoch {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn StopEpoch::equal(Self, Self) -> Bool
+pub fn StopEpoch::execution(Self) -> ExecutionEpoch
+pub fn StopEpoch::not_equal(Self, Self) -> Bool
+pub fn StopEpoch::number(Self) -> Int
+pub fn StopEpoch::to_repr(Self) -> @debug.Repr
+
+pub struct StopSnapshot {
+  // private fields
+}
+pub fn StopSnapshot::column(Self) -> Int?
+pub fn StopSnapshot::function_name(Self) -> String
+pub fn StopSnapshot::line(Self) -> Int?
+pub fn StopSnapshot::new(String, String, String?, Int?, Int?) -> Self
+pub fn StopSnapshot::reason(Self) -> String
+pub fn StopSnapshot::source_path(Self) -> String?
+
+pub struct ThreadSelection {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn ThreadSelection::at(Int) -> Self raise StackSnapshotError
+pub fn ThreadSelection::equal(Self, Self) -> Bool
+pub fn ThreadSelection::index(Self) -> Int
+pub fn ThreadSelection::initial() -> Self
+pub fn ThreadSelection::not_equal(Self, Self) -> Bool
+pub fn ThreadSelection::to_repr(Self) -> @debug.Repr
+
+pub enum VariableContent {
+  VariableLeaf
+  VariableStructure(VariableStructureSnapshot)
+  VariableIndexedCollection(IndexedCollectionSnapshot)
+  VariableEnum(VariableEnumSnapshot)
+} derive(Eq, @debug.Debug)
+pub fn VariableContent::equal(Self, Self) -> Bool
+pub fn VariableContent::not_equal(Self, Self) -> Bool
+pub fn VariableContent::to_repr(Self) -> @debug.Repr
+
+pub struct VariableEnumPayload {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableEnumPayload::aggregate(Int, String) -> Self
+pub fn VariableEnumPayload::equal(Self, Self) -> Bool
+pub fn VariableEnumPayload::not_equal(Self, Self) -> Bool
+pub fn VariableEnumPayload::position(Self) -> Int
+pub fn VariableEnumPayload::scalar(Int, String, String) -> Self
+pub fn VariableEnumPayload::scalar_value(Self) -> String?
+pub fn VariableEnumPayload::to_repr(Self) -> @debug.Repr
+pub fn VariableEnumPayload::type_name(Self) -> String
+
+pub struct VariableEnumSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableEnumSnapshot::constructor_name(Self) -> String
+pub fn VariableEnumSnapshot::equal(Self, Self) -> Bool
+pub fn VariableEnumSnapshot::new(String, Array[VariableEnumPayload]) -> Self raise VariableSnapshotError
+pub fn VariableEnumSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableEnumSnapshot::payload(Self) -> ReadOnlyArray[VariableEnumPayload]
+pub fn VariableEnumSnapshot::to_repr(Self) -> @debug.Repr
+
+pub enum VariableLookupFailure {
+  VariableRootNotFound(String)
+  VariableFieldNotFound(String, String)
+  VariableFieldAccessOnNonStruct(String, String, String?)
+  VariableIndexAccessOnNonCollection(String, Int, String?)
+  VariableIndexOutOfBounds(String, Int, Int)
+  VariableUnavailable(String)
+} derive(Eq, @debug.Debug)
+pub fn VariableLookupFailure::equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::not_equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::requested_path(Self) -> String
+pub fn VariableLookupFailure::to_repr(Self) -> @debug.Repr
+
+pub enum VariableLookupResult {
+  VariableFound(VariableSnapshot)
+  VariableLookupFailed(VariableLookupFailure)
+} derive(Eq, @debug.Debug)
+pub fn VariableLookupResult::equal(Self, Self) -> Bool
+pub fn VariableLookupResult::field_access_on_non_struct(String, String, String?) -> Self
+pub fn VariableLookupResult::field_not_found(String, String) -> Self
+pub fn VariableLookupResult::found(VariableSnapshot) -> Self
+pub fn VariableLookupResult::index_access_on_non_collection(String, Int, String?) -> Self
+pub fn VariableLookupResult::index_out_of_bounds(String, Int, Int) -> Self
+pub fn VariableLookupResult::not_equal(Self, Self) -> Bool
+pub fn VariableLookupResult::not_found(String) -> Self
+pub fn VariableLookupResult::to_repr(Self) -> @debug.Repr
+pub fn VariableLookupResult::unavailable(String) -> Self
+
+pub struct VariablePath {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariablePath::display_name(Self) -> String
+pub fn VariablePath::equal(Self, Self) -> Bool
+pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
+pub fn VariablePath::not_equal(Self, Self) -> Bool
+pub fn VariablePath::root(String) -> Self
+pub fn VariablePath::root_name(Self) -> String
+pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
+pub fn VariablePath::to_repr(Self) -> @debug.Repr
+pub fn VariablePath::with_fields(String, Array[String]) -> Self
+
+pub(all) enum VariablePathStep {
+  Field(String)
+  Index(Int)
+} derive(Eq, @debug.Debug)
+pub fn VariablePathStep::equal(Self, Self) -> Bool
+pub fn VariablePathStep::not_equal(Self, Self) -> Bool
+pub fn VariablePathStep::to_repr(Self) -> @debug.Repr
+
+pub struct VariableSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableSnapshot::content(Self) -> VariableContent
+pub fn VariableSnapshot::enum_value(String, String?, VariableEnumSnapshot) -> Self
+pub fn VariableSnapshot::equal(Self, Self) -> Bool
+pub fn VariableSnapshot::expanded(String, String, String?, Array[Self]) -> Self
+pub fn VariableSnapshot::indexed_collection(String, String, String?, IndexedCollectionSnapshot) -> Self
+pub fn VariableSnapshot::name(Self) -> String
+pub fn VariableSnapshot::new(String, String, String?) -> Self
+pub fn VariableSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableSnapshot::to_repr(Self) -> @debug.Repr
+pub fn VariableSnapshot::truncated(String, String, String?, Array[Self]) -> Self
+pub fn VariableSnapshot::type_name(Self) -> String?
+pub fn VariableSnapshot::value(Self) -> String
+
+pub struct VariableStructureSnapshot {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariableStructureSnapshot::children(Self) -> ReadOnlyArray[VariableSnapshot]
+pub fn VariableStructureSnapshot::equal(Self, Self) -> Bool
+pub fn VariableStructureSnapshot::is_truncated(Self) -> Bool
+pub fn VariableStructureSnapshot::not_equal(Self, Self) -> Bool
+pub fn VariableStructureSnapshot::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
+pub(open) trait DebugBackend {
+  async fn launch(Self, String, Array[SourceBreakpoint], Array[FunctionBreakpoint]) -> RunOutcome
+  async fn synchronize_breakpoints(Self, BreakpointConfiguration) -> BreakpointSyncResult
+  async fn abandon_execution(Self) -> Unit
+  async fn continue_execution(Self, ThreadSelection) -> RunOutcome
+  async fn next(Self, ThreadSelection) -> RunOutcome
+  async fn step(Self, ThreadSelection) -> RunOutcome
+  async fn finish(Self, ThreadSelection) -> RunOutcome
+  async fn stack_snapshot(Self, ThreadSelection, StackWindow) -> StackSnapshot
+  async fn find_variable(Self, ThreadSelection, FrameSelection, VariablePath) -> VariableLookupResult
+  async fn local_variables(Self, ThreadSelection, FrameSelection) -> LocalVariablesSnapshot
+  fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
+  fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]
+  fn take_output(Self) -> Array[DebugOutput]
+  async fn disconnect(Self) -> Unit
+  fn close(Self) -> Unit
+}

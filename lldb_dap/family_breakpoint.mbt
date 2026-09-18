@@ -18,7 +18,7 @@ priv struct FamilyConfiguration {
 
 ///|
 fn FamilyConfiguration::from_domain(
-  value : @moondbg.FunctionBreakpoint,
+  value : @debugger.FunctionBreakpoint,
 ) -> FamilyConfiguration {
   {
     breakpoint: LogicalFunctionBreakpoint::from_domain(value),
@@ -36,7 +36,7 @@ async fn DebugExecution::family_command(
     "context": "repl",
   })
   guard self.wait_for_response(seq, "evaluate") is Some(response) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "lldb-dap exited during family breakpoint operation",
     )
   }
@@ -55,13 +55,13 @@ async fn DebugExecution::change_family(
     "disable" => "1 breakpoints disabled."
     "enable" => "1 breakpoints enabled."
     _ =>
-      raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
+      raise @debugger.BreakpointSyncError::BreakpointSyncRejected(
         "invalid family operation",
       )
   }
   guard self.family_command("breakpoint \{operation} \{number}") is Some(result) &&
     result.trim() == expected else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "LLDB did not confirm family breakpoint \{operation}",
     )
   }
@@ -216,14 +216,14 @@ fn family_addresses(
 async fn DebugExecution::family_source_location(
   self : DebugExecution,
   address : String,
-) -> @moondbg.BreakpointLocation? {
+) -> @debugger.BreakpointLocation? {
   let seq = self.dispatcher.send_request("disassemble", {
     "memoryReference": address,
     "instructionCount": 1,
     "resolveSymbols": false,
   })
   guard self.wait_for_response(seq, "disassemble") is Some(response) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "lldb-dap exited while reading family locations",
     )
   }
@@ -273,7 +273,7 @@ async fn DebugExecution::refresh_family_details(
     Some(result) => family_location_count(result, id)
     None => None
   }
-  let locations : Array[@moondbg.BreakpointLocation] = []
+  let locations : Array[@debugger.BreakpointLocation] = []
   if count is Some(count) && count > 0 && count <= 8 {
     if self.family_command("breakpoint list --full \{number}") is Some(result) &&
       family_addresses(result, count, id) is Some(addresses) {

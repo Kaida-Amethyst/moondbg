@@ -5,7 +5,7 @@ fn breakpoint_optional_int(
   minimum~ : Int,
 ) -> Int? raise {
   guard result is Object(fields) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "breakpoint result is not an object",
     )
   }
@@ -15,7 +15,7 @@ fn breakpoint_optional_int(
       value <= 2147483647.0 &&
       value.to_int().to_double() == value => Some(value.to_int())
     _ =>
-      raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
         "invalid breakpoint \{field} field",
       )
   }
@@ -24,7 +24,7 @@ fn breakpoint_optional_int(
 ///|
 fn breakpoint_optional_string(result : Json, field : String) -> String? raise {
   guard result is Object(fields) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "breakpoint result is not an object",
     )
   }
@@ -32,7 +32,7 @@ fn breakpoint_optional_string(result : Json, field : String) -> String? raise {
     None => None
     Some(String(value)) => Some(value)
     _ =>
-      raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
         "invalid breakpoint \{field} field",
       )
   }
@@ -41,7 +41,7 @@ fn breakpoint_optional_string(result : Json, field : String) -> String? raise {
 ///|
 fn parse_breakpoint_outcome(result : Json) -> AdapterBreakpointOutcome raise {
   guard result is Object(fields) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "breakpoint result is not an object",
     )
   }
@@ -49,7 +49,7 @@ fn parse_breakpoint_outcome(result : Json) -> AdapterBreakpointOutcome raise {
     Some(True) => true
     Some(False) => false
     _ =>
-      raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
         "breakpoint result has no boolean verified field",
       )
   }
@@ -64,11 +64,11 @@ fn parse_breakpoint_outcome(result : Json) -> AdapterBreakpointOutcome raise {
     None => None
     Some(Object(_) as source) => breakpoint_optional_string(source, "path")
     _ =>
-      raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+      raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
         "invalid breakpoint source field",
       )
   }
-  let locations : Array[@moondbg.BreakpointLocation] = if source_path is None &&
+  let locations : Array[@debugger.BreakpointLocation] = if source_path is None &&
     line is None &&
     column is None &&
     instruction_reference is None {
@@ -99,7 +99,7 @@ fn parse_breakpoint_replacement(
   expected : Int,
 ) -> Array[AdapterBreakpointOutcome] raise {
   guard response.success() else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       response
       .message()
       .unwrap_or("lldb-dap rejected breakpoint synchronization"),
@@ -107,7 +107,7 @@ fn parse_breakpoint_replacement(
   }
   guard response.body() is { "breakpoints": Array(results), .. } &&
     results.length() == expected else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncUncertain(
+    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "lldb-dap returned an incomplete breakpoint replacement",
     )
   }
@@ -122,9 +122,9 @@ async fn LldbDapSession::synchronize_breakpoints(
   families? : Array[FamilyConfiguration] = family_function_breakpoints(
     functions,
   ).map(breakpoint => { breakpoint, enabled: true, }),
-) -> @moondbg.BreakpointSyncResult {
+) -> @debugger.BreakpointSyncResult {
   guard self.state() is Stopped && self.execution is Some(execution) else {
-    raise @moondbg.BreakpointSyncError::BreakpointSyncRejected(
+    raise @debugger.BreakpointSyncError::BreakpointSyncRejected(
       "breakpoint synchronization requires a stopped execution",
     )
   }
@@ -178,7 +178,7 @@ async fn LldbDapSession::synchronize_breakpoints(
   self.source_breakpoints.append(sources)
   self.function_breakpoints.clear()
   self.function_breakpoints.append(functions)
-  @moondbg.BreakpointSyncResult::new(
+  @debugger.BreakpointSyncResult::new(
     self.source_breakpoints(),
     self.function_breakpoints(),
   )

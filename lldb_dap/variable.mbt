@@ -26,8 +26,8 @@ priv struct DapVariable {
 }
 
 ///|
-fn DapVariable::snapshot(self : DapVariable) -> @moondbg.VariableSnapshot {
-  @moondbg.VariableSnapshot::new(self.name, self.value, self.type_name)
+fn DapVariable::snapshot(self : DapVariable) -> @debugger.VariableSnapshot {
+  @debugger.VariableSnapshot::new(self.name, self.value, self.type_name)
 }
 
 ///|
@@ -354,8 +354,8 @@ priv struct StopVariableCache {
   mut scopes : Array[DapScope]?
   variables : Map[Int, Array[DapVariable]]
   evaluated_variables : Map[String, DapVariable]
-  snapshots : Map[String, @moondbg.VariableSnapshot]
-  local_snapshots : Map[Int, @moondbg.LocalVariablesSnapshot]
+  snapshots : Map[String, @debugger.VariableSnapshot]
+  local_snapshots : Map[Int, @debugger.LocalVariablesSnapshot]
 }
 
 ///|
@@ -435,7 +435,7 @@ fn StopVariableCache::cached_snapshot(
   self : StopVariableCache,
   identity : VariableCacheIdentity,
   key : String,
-) -> @moondbg.VariableSnapshot? {
+) -> @debugger.VariableSnapshot? {
   guard self.is_current(identity) else { return None }
   self.snapshots.get(key)
 }
@@ -445,7 +445,7 @@ fn StopVariableCache::store_snapshot(
   self : StopVariableCache,
   identity : VariableCacheIdentity,
   key : String,
-  snapshot : @moondbg.VariableSnapshot,
+  snapshot : @debugger.VariableSnapshot,
 ) -> Unit {
   guard self.is_current(identity) else { return }
   self.snapshots.set(key, snapshot)
@@ -455,7 +455,7 @@ fn StopVariableCache::store_snapshot(
 fn StopVariableCache::cached_local_snapshot(
   self : StopVariableCache,
   identity : VariableCacheIdentity,
-) -> @moondbg.LocalVariablesSnapshot? {
+) -> @debugger.LocalVariablesSnapshot? {
   guard self.is_current(identity) else { return None }
   self.local_snapshots.get(identity.frame_index)
 }
@@ -464,7 +464,7 @@ fn StopVariableCache::cached_local_snapshot(
 fn StopVariableCache::store_local_snapshot(
   self : StopVariableCache,
   identity : VariableCacheIdentity,
-  snapshot : @moondbg.LocalVariablesSnapshot,
+  snapshot : @debugger.LocalVariablesSnapshot,
 ) -> Unit {
   guard self.is_current(identity) else { return }
   self.local_snapshots.set(identity.frame_index, snapshot)
@@ -755,15 +755,15 @@ fn indexed_scalar_elements(
   first_index : Int,
   payload : Bytes,
   element_count : Int,
-) -> Array[@moondbg.IndexedVariableElement] raise {
+) -> Array[@debugger.IndexedVariableElement] raise {
   @runtime_value.decode_scalar_payload(scalar, payload, element_count).mapi((
     index,
     value,
   ) => {
     let source_index = first_index + index
-    @moondbg.IndexedVariableElement::with_value(
+    @debugger.IndexedVariableElement::with_value(
       source_index,
-      @moondbg.VariableSnapshot::new(
+      @debugger.VariableSnapshot::new(
         "[\{source_index}]",
         value,
         Some(scalar.source_name()),
@@ -774,7 +774,7 @@ fn indexed_scalar_elements(
 
 ///|
 priv struct DapIndexedCollectionLayout {
-  kind : @moondbg.IndexedCollectionKind
+  kind : @debugger.IndexedCollectionKind
   body : DapVariable
   element_type : @runtime_value.NativeArrayElementType
   payload_pointer : NativePayloadPointer
@@ -784,7 +784,7 @@ priv struct DapIndexedCollectionLayout {
 ///|
 async fn VariableInspector::load_native_indexed_collection_layout(
   self : VariableInspector,
-  kind : @moondbg.IndexedCollectionKind,
+  kind : @debugger.IndexedCollectionKind,
   body : DapVariable,
   logical_length : Int?,
 ) -> DapIndexedCollectionLayout {
@@ -831,7 +831,7 @@ async fn VariableInspector::load_fixed_array_layout(
     raise InvalidIndexedCollectionValue("FixedArray has no body field")
   }
   self.load_native_indexed_collection_layout(
-    @moondbg.FixedArrayCollection,
+    @debugger.FixedArrayCollection,
     body,
     None,
   )
@@ -875,7 +875,7 @@ async fn VariableInspector::load_array_layout(
     raise InvalidIndexedCollectionValue("Array buffer has no body field")
   }
   self.load_native_indexed_collection_layout(
-    @moondbg.ArrayCollection,
+    @debugger.ArrayCollection,
     body,
     Some(logical_length),
   )
@@ -908,7 +908,7 @@ async fn VariableInspector::resolve_indexed_element(
   guard variable.is_moonbit_array_candidate() ||
     variable.is_moonbit_fixed_array_candidate() else {
     return DapVariableResolutionFailed(
-      @moondbg.VariableLookupResult::index_access_on_non_collection(
+      @debugger.VariableLookupResult::index_access_on_non_collection(
         owner,
         index,
         variable.type_name,
@@ -923,7 +923,7 @@ async fn VariableInspector::resolve_indexed_element(
   }
   guard self.load_indexed_collection_layout(identity, variable) is Some(layout) else {
     return DapVariableResolutionFailed(
-      @moondbg.VariableLookupResult::index_access_on_non_collection(
+      @debugger.VariableLookupResult::index_access_on_non_collection(
         owner,
         index,
         variable.type_name,
@@ -932,7 +932,7 @@ async fn VariableInspector::resolve_indexed_element(
   }
   guard index >= 0 && index < layout.total_length else {
     return DapVariableResolutionFailed(
-      @moondbg.VariableLookupResult::index_out_of_bounds(
+      @debugger.VariableLookupResult::index_out_of_bounds(
         owner,
         index,
         layout.total_length,
@@ -983,13 +983,13 @@ async fn VariableInspector::materialize_indexed_collection(
   self : VariableInspector,
   variable : DapVariable,
   layout : DapIndexedCollectionLayout,
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   let element_type_name = layout.element_type.source_name()
   let total_length = layout.total_length
   let plan = @runtime_value.IndexedPreviewPlan::new(total_length) catch {
     error => raise InvalidIndexedCollectionValue(@debug.to_string(error))
   }
-  let elements : Array[@moondbg.IndexedVariableElement] = []
+  let elements : Array[@debugger.IndexedVariableElement] = []
   match layout.element_type {
     @runtime_value.NativeArrayScalar(scalar) =>
       match layout.payload_pointer {
@@ -1028,20 +1028,20 @@ async fn VariableInspector::materialize_indexed_collection(
       }
     @runtime_value.NativeArrayOpaque(_) => {
       for index in 0..<plan.head_count() {
-        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
+        elements.push(@debugger.IndexedVariableElement::placeholder(index))
       }
       if plan.tail_index() is Some(index) {
-        elements.push(@moondbg.IndexedVariableElement::placeholder(index))
+        elements.push(@debugger.IndexedVariableElement::placeholder(index))
       }
     }
   }
-  let collection = @moondbg.IndexedCollectionSnapshot::new(
+  let collection = @debugger.IndexedCollectionSnapshot::new(
     layout.kind,
     element_type_name,
     total_length,
     elements,
   )
-  @moondbg.VariableSnapshot::indexed_collection(
+  @debugger.VariableSnapshot::indexed_collection(
     variable.name,
     variable.value,
     variable.type_name,
@@ -1054,7 +1054,7 @@ async fn VariableInspector::materialize_fixed_array(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   let layout = self.load_fixed_array_layout(identity, variable)
   self.materialize_indexed_collection(variable, layout)
 }
@@ -1064,7 +1064,7 @@ async fn VariableInspector::materialize_array(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   let layout = self.load_array_layout(identity, variable)
   self.materialize_indexed_collection(variable, layout)
 }
@@ -1093,7 +1093,7 @@ fn direct_enum_payload_position(name : String) -> Int raise DapSessionError {
 fn direct_enum_payload(
   variable : DapVariable,
   position : Int,
-) -> @moondbg.VariableEnumPayload raise DapSessionError {
+) -> @debugger.VariableEnumPayload raise DapSessionError {
   guard variable.type_name is Some(debug_type) &&
     @runtime_value.source_name_from_debug_type(debug_type) is Some(source_type) else {
     raise InvalidEnumValue("enum payload '.\{position}' has no usable type")
@@ -1105,13 +1105,13 @@ fn direct_enum_payload(
           "scalar enum payload '.\{position}' is unavailable",
         )
       }
-      @moondbg.VariableEnumPayload::scalar(
+      @debugger.VariableEnumPayload::scalar(
         position,
         source_type,
         variable.value,
       )
     }
-    None => @moondbg.VariableEnumPayload::aggregate(position, source_type)
+    None => @debugger.VariableEnumPayload::aggregate(position, source_type)
   }
 }
 
@@ -1121,14 +1121,14 @@ async fn VariableInspector::materialize_enum(
   identity : VariableCacheIdentity,
   variable : DapVariable,
   variants : Array[DapEnumVariant],
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   let active = self.active_enum_variant(variants)
   let direct_payload = if active.payload_reference > 0 {
     self.load_variables(identity, active.payload_reference)
   } else {
     []
   }
-  let payload_by_position : Map[Int, @moondbg.VariableEnumPayload] = Map([])
+  let payload_by_position : Map[Int, @debugger.VariableEnumPayload] = Map([])
   for child in direct_payload {
     let position = direct_enum_payload_position(child.name)
     guard position < direct_payload.length() &&
@@ -1139,7 +1139,7 @@ async fn VariableInspector::materialize_enum(
     }
     payload_by_position.set(position, direct_enum_payload(child, position))
   }
-  let payload : Array[@moondbg.VariableEnumPayload] = []
+  let payload : Array[@debugger.VariableEnumPayload] = []
   for position in 0..<direct_payload.length() {
     guard payload_by_position.get(position) is Some(element) else {
       raise InvalidEnumValue(
@@ -1148,13 +1148,13 @@ async fn VariableInspector::materialize_enum(
     }
     payload.push(element)
   }
-  let enum_value = @moondbg.VariableEnumSnapshot::new(
+  let enum_value = @debugger.VariableEnumSnapshot::new(
     active.variant_name,
     payload,
   ) catch {
     error => raise InvalidEnumValue(@debug.to_string(error))
   }
-  @moondbg.VariableSnapshot::enum_value(
+  @debugger.VariableSnapshot::enum_value(
     variable.name,
     variable.type_name,
     enum_value,
@@ -1209,7 +1209,7 @@ async fn VariableInspector::active_enum_variant_raw(
 fn unavailable_shadowed_local_summary(
   name : String,
   variables : Array[DapVariable],
-) -> @moondbg.LocalVariableSnapshot {
+) -> @debugger.LocalVariableSnapshot {
   let mut type_name : String? = None
   let mut same_type = true
   for index, variable in variables.iter2() {
@@ -1220,14 +1220,14 @@ fn unavailable_shadowed_local_summary(
       same_type = false
     }
   }
-  @moondbg.LocalVariableSnapshot::new(
+  @debugger.LocalVariableSnapshot::new(
     name,
     if same_type {
       type_name
     } else {
       None
     },
-    @moondbg.LocalVariableUnavailable,
+    @debugger.LocalVariableUnavailable,
   )
 }
 
@@ -1251,13 +1251,13 @@ async fn VariableInspector::evaluate_shadowed_root(
   self.ensure_variable_identity(identity)
   guard response.success() else {
     return DapVariableResolutionFailed(
-      @moondbg.VariableLookupResult::unavailable(name),
+      @debugger.VariableLookupResult::unavailable(name),
     )
   }
   let evaluated = parse_root_evaluate_response(response.body(), name)
   guard evaluated.is_available() else {
     return DapVariableResolutionFailed(
-      @moondbg.VariableLookupResult::unavailable(name),
+      @debugger.VariableLookupResult::unavailable(name),
     )
   }
   if evaluated.variables_reference > 0 {
@@ -1272,60 +1272,60 @@ async fn VariableInspector::compact_local_variable(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
-) -> @moondbg.LocalVariableSnapshot {
+) -> @debugger.LocalVariableSnapshot {
   let name = variable.source_local_name()
   let source_type = variable.source_type_name()
   guard variable.is_available() else {
-    return @moondbg.LocalVariableSnapshot::new(
+    return @debugger.LocalVariableSnapshot::new(
       name,
       source_type,
-      @moondbg.LocalVariableUnavailable,
+      @debugger.LocalVariableUnavailable,
     )
   }
   if variable.is_moonbit_array_candidate() ||
     variable.is_moonbit_fixed_array_candidate() {
     let layout = self.load_indexed_collection_layout(identity, variable) catch {
       InvalidIndexedCollectionValue(_) =>
-        return @moondbg.LocalVariableSnapshot::new(
+        return @debugger.LocalVariableSnapshot::new(
           name,
           source_type,
-          @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+          @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
         )
       error => raise error
     }
     guard layout is Some(layout) else {
-      return @moondbg.LocalVariableSnapshot::new(
+      return @debugger.LocalVariableSnapshot::new(
         name,
         source_type,
-        @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+        @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
       )
     }
     let type_name = Some(
       "\{layout.kind.source_name()}[\{layout.element_type.source_name()}]",
     )
-    return @moondbg.LocalVariableSnapshot::new(
+    return @debugger.LocalVariableSnapshot::new(
       name,
       type_name,
-      @moondbg.LocalVariableAvailable(
-        @moondbg.LocalCollection(layout.kind, layout.total_length),
+      @debugger.LocalVariableAvailable(
+        @debugger.LocalCollection(layout.kind, layout.total_length),
       ),
     )
   }
   if variable.is_moonbit_struct_type() {
-    return @moondbg.LocalVariableSnapshot::new(
+    return @debugger.LocalVariableSnapshot::new(
       name,
       source_type,
-      @moondbg.LocalVariableAvailable(@moondbg.LocalStructure),
+      @debugger.LocalVariableAvailable(@debugger.LocalStructure),
     )
   }
   if variable.variables_reference > 0 {
     let children = self.load_variables(identity, variable.variables_reference)
     let enum_layout = detect_dap_enum_layout(children) catch {
       InvalidEnumValue(_) =>
-        return @moondbg.LocalVariableSnapshot::new(
+        return @debugger.LocalVariableSnapshot::new(
           name,
           source_type,
-          @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+          @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
         )
       error => raise error
     }
@@ -1333,33 +1333,33 @@ async fn VariableInspector::compact_local_variable(
       DapEnum(variants) => {
         let active = self.active_enum_variant_raw(variants) catch {
           InvalidIndexedCollectionValue(_) | InvalidEnumValue(_) =>
-            return @moondbg.LocalVariableSnapshot::new(
+            return @debugger.LocalVariableSnapshot::new(
               name,
               source_type,
-              @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+              @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
             )
           error => raise error
         }
-        return @moondbg.LocalVariableSnapshot::new(
+        return @debugger.LocalVariableSnapshot::new(
           name,
           source_type,
-          @moondbg.LocalVariableAvailable(
-            @moondbg.LocalEnumConstructor(active.variant_name),
+          @debugger.LocalVariableAvailable(
+            @debugger.LocalEnumConstructor(active.variant_name),
           ),
         )
       }
       NotDapEnum => ()
     }
-    return @moondbg.LocalVariableSnapshot::new(
+    return @debugger.LocalVariableSnapshot::new(
       name,
       source_type,
-      @moondbg.LocalVariableAvailable(@moondbg.LocalOpaque),
+      @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
     )
   }
-  @moondbg.LocalVariableSnapshot::new(
+  @debugger.LocalVariableSnapshot::new(
     name,
     source_type,
-    @moondbg.LocalVariableAvailable(@moondbg.LocalScalar(variable.value)),
+    @debugger.LocalVariableAvailable(@debugger.LocalScalar(variable.value)),
   )
 }
 
@@ -1368,27 +1368,27 @@ async fn VariableInspector::load_local_variables_inner(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
-) -> @moondbg.LocalVariablesSnapshot {
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
+) -> @debugger.LocalVariablesSnapshot {
   if self.variable_cache.cached_local_snapshot(identity) is Some(snapshot) {
     return snapshot
   }
   let scopes = self.load_scopes(identity, frame_id)
   let local_scopes = scopes.filter(scope => scope.is_locals())
   guard local_scopes is [_, ..] else {
-    let snapshot = @moondbg.LocalVariablesSnapshot::scope_unavailable(
+    let snapshot = @debugger.LocalVariablesSnapshot::scope_unavailable(
       thread, frame,
     )
     self.variable_cache.store_local_snapshot(identity, snapshot)
     return snapshot
   }
-  let summaries : Array[@moondbg.LocalVariableSnapshot] = []
+  let summaries : Array[@debugger.LocalVariableSnapshot] = []
   for variable in self.source_locals(identity, frame_id, local_scopes) {
     summaries.push(self.compact_local_variable(identity, variable))
   }
   self.ensure_variable_identity(identity)
-  let snapshot = @moondbg.LocalVariablesSnapshot::available(
+  let snapshot = @debugger.LocalVariablesSnapshot::available(
     thread, frame, summaries,
   )
   self.variable_cache.store_local_snapshot(identity, snapshot)
@@ -1402,9 +1402,9 @@ async fn VariableInspector::materialize_variable(
   variable : DapVariable,
   depth : Int,
   budget : VariableMaterializationBudget,
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   guard budget.take_node() else {
-    return @moondbg.VariableSnapshot::truncated(
+    return @debugger.VariableSnapshot::truncated(
       variable.name,
       variable.value,
       variable.type_name,
@@ -1423,7 +1423,7 @@ async fn VariableInspector::materialize_variable(
       depth >= budget.max_depth ||
       budget.is_visiting(variable.variables_reference)
     ) {
-    return @moondbg.VariableSnapshot::truncated(
+    return @debugger.VariableSnapshot::truncated(
       variable.name,
       variable.value,
       variable.type_name,
@@ -1442,7 +1442,7 @@ async fn VariableInspector::materialize_variable(
   }
   budget.enter_reference(variable.variables_reference)
   defer budget.leave_reference(variable.variables_reference)
-  let children : Array[@moondbg.VariableSnapshot] = []
+  let children : Array[@debugger.VariableSnapshot] = []
   let mut truncated = false
   for child in dap_children {
     if budget.is_empty() {
@@ -1452,14 +1452,14 @@ async fn VariableInspector::materialize_variable(
     children.push(self.materialize_variable(identity, child, depth + 1, budget))
   }
   if truncated {
-    @moondbg.VariableSnapshot::truncated(
+    @debugger.VariableSnapshot::truncated(
       variable.name,
       variable.value,
       variable.type_name,
       children,
     )
   } else {
-    @moondbg.VariableSnapshot::expanded(
+    @debugger.VariableSnapshot::expanded(
       variable.name,
       variable.value,
       variable.type_name,
@@ -1475,7 +1475,7 @@ async fn VariableInspector::materialize_variable_with_limits(
   variable : DapVariable,
   max_depth : Int,
   max_nodes : Int,
-) -> @moondbg.VariableSnapshot {
+) -> @debugger.VariableSnapshot {
   let budget = VariableMaterializationBudget::new(max_depth, max_nodes)
   self.materialize_variable(identity, variable, 0, budget)
 }
@@ -1483,7 +1483,7 @@ async fn VariableInspector::materialize_variable_with_limits(
 ///|
 priv enum DapVariableResolution {
   DapVariableResolved(DapVariable)
-  DapVariableResolutionFailed(@moondbg.VariableLookupResult)
+  DapVariableResolutionFailed(@debugger.VariableLookupResult)
 }
 
 ///|
@@ -1503,14 +1503,14 @@ async fn VariableInspector::resolve_root_variable(
       DapVariableSelected(variable) => return DapVariableResolved(variable)
       DapVariableUnavailable =>
         return DapVariableResolutionFailed(
-          @moondbg.VariableLookupResult::unavailable(name),
+          @debugger.VariableLookupResult::unavailable(name),
         )
       DapVariableAmbiguous =>
         return self.evaluate_shadowed_root(identity, frame_id, name)
       DapVariableMissing => ()
     }
   }
-  DapVariableResolutionFailed(@moondbg.VariableLookupResult::not_found(name))
+  DapVariableResolutionFailed(@debugger.VariableLookupResult::not_found(name))
 }
 
 ///|
@@ -1518,7 +1518,7 @@ async fn VariableInspector::resolve_variable_path(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
-  path : @moondbg.VariablePath,
+  path : @debugger.VariablePath,
 ) -> DapVariableResolution {
   let mut variable = match
     self.resolve_root_variable(identity, frame_id, path.root_name()) {
@@ -1529,10 +1529,10 @@ async fn VariableInspector::resolve_variable_path(
   let mut owner = path.root_name()
   for step in path.steps() {
     match step {
-      @moondbg.Field(field) => {
+      @debugger.Field(field) => {
         guard variable.is_moonbit_struct_type() else {
           return DapVariableResolutionFailed(
-            @moondbg.VariableLookupResult::field_access_on_non_struct(
+            @debugger.VariableLookupResult::field_access_on_non_struct(
               owner,
               field,
               variable.type_name,
@@ -1541,7 +1541,7 @@ async fn VariableInspector::resolve_variable_path(
         }
         guard variable.variables_reference > 0 else {
           return DapVariableResolutionFailed(
-            @moondbg.VariableLookupResult::field_not_found(owner, field),
+            @debugger.VariableLookupResult::field_not_found(owner, field),
           )
         }
         let children = self.load_variables(
@@ -1551,7 +1551,7 @@ async fn VariableInspector::resolve_variable_path(
         match detect_dap_enum_layout(children) {
           DapEnum(_) =>
             return DapVariableResolutionFailed(
-              @moondbg.VariableLookupResult::field_access_on_non_struct(
+              @debugger.VariableLookupResult::field_access_on_non_struct(
                 owner,
                 field,
                 variable.type_name,
@@ -1566,19 +1566,19 @@ async fn VariableInspector::resolve_variable_path(
           }
           DapVariableUnavailable =>
             return DapVariableResolutionFailed(
-              @moondbg.VariableLookupResult::unavailable("\{owner}.\{field}"),
+              @debugger.VariableLookupResult::unavailable("\{owner}.\{field}"),
             )
           DapVariableAmbiguous =>
             return DapVariableResolutionFailed(
-              @moondbg.VariableLookupResult::field_not_found(owner, field),
+              @debugger.VariableLookupResult::field_not_found(owner, field),
             )
           DapVariableMissing =>
             return DapVariableResolutionFailed(
-              @moondbg.VariableLookupResult::field_not_found(owner, field),
+              @debugger.VariableLookupResult::field_not_found(owner, field),
             )
         }
       }
-      @moondbg.Index(index) =>
+      @debugger.Index(index) =>
         match
           self.resolve_indexed_element(
             identity, frame_id, owner, index, variable,
@@ -1600,11 +1600,11 @@ async fn VariableInspector::find_variable_inner(
   self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
-  path : @moondbg.VariablePath,
-) -> @moondbg.VariableLookupResult {
+  path : @debugger.VariablePath,
+) -> @debugger.VariableLookupResult {
   let cache_key = "\{identity.frame_index}:\{path.display_name()}"
   if self.variable_cache.cached_snapshot(identity, cache_key) is Some(snapshot) {
-    return @moondbg.VariableLookupResult::found(snapshot)
+    return @debugger.VariableLookupResult::found(snapshot)
   }
   let variable = match self.resolve_variable_path(identity, frame_id, path) {
     DapVariableResolved(variable) => variable
@@ -1617,16 +1617,16 @@ async fn VariableInspector::find_variable_inner(
     MAX_VARIABLE_EXPANSION_NODES,
   )
   self.variable_cache.store_snapshot(identity, cache_key, snapshot)
-  @moondbg.VariableLookupResult::found(snapshot)
+  @debugger.VariableLookupResult::found(snapshot)
 }
 
 ///|
 async fn DebugExecution::find_variable(
   self : DebugExecution,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
-  path : @moondbg.VariablePath,
-) -> @moondbg.VariableLookupResult {
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
+  path : @debugger.VariablePath,
+) -> @debugger.VariableLookupResult {
   guard self.machine.state is Stopped &&
     self.machine.current_stop_epoch() is Some(epoch) else {
     raise LldbDapBackendError::OperationNotAllowed(
@@ -1655,9 +1655,9 @@ async fn DebugExecution::find_variable(
 ///|
 async fn DebugExecution::local_variables(
   self : DebugExecution,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
-) -> @moondbg.LocalVariablesSnapshot {
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
+) -> @debugger.LocalVariablesSnapshot {
   guard self.machine.state is Stopped &&
     self.machine.current_stop_epoch() is Some(epoch) else {
     raise LldbDapBackendError::OperationNotAllowed(
@@ -1688,10 +1688,10 @@ async fn DebugExecution::local_variables(
 ///|
 async fn LldbDapSession::find_variable(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
-  path : @moondbg.VariablePath,
-) -> @moondbg.VariableLookupResult {
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
+  path : @debugger.VariablePath,
+) -> @debugger.VariableLookupResult {
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.detached_state,
@@ -1712,9 +1712,9 @@ async fn LldbDapSession::find_variable(
 ///|
 async fn LldbDapSession::local_variables(
   self : LldbDapSession,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
-) -> @moondbg.LocalVariablesSnapshot {
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
+) -> @debugger.LocalVariablesSnapshot {
   guard self.execution is Some(execution) else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.detached_state,

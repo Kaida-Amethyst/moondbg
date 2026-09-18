@@ -4,7 +4,7 @@
 async fn LldbDapSession::install_source_breakpoint(
   self : LldbDapSession,
   breakpoint : LogicalSourceBreakpoint,
-) -> @moondbg.BreakpointSnapshot {
+) -> @debugger.BreakpointSnapshot {
   let sources = self.source_breakpoints.copy()
   let functions = self.function_breakpoints.copy()
   sources.push(breakpoint)
@@ -31,7 +31,7 @@ async fn LldbDapSession::install_source_breakpoint(
 async fn LldbDapSession::install_function_breakpoint(
   self : LldbDapSession,
   breakpoint : LogicalFunctionBreakpoint,
-) -> @moondbg.FunctionBreakpointSnapshot {
+) -> @debugger.FunctionBreakpointSnapshot {
   let sources = self.source_breakpoints.copy()
   let functions = self.function_breakpoints.copy()
   functions.push(breakpoint)

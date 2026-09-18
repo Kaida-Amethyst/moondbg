@@ -1,0 +1,10 @@
+import {
+  "Kaida-Amethyst/moondbg/name_mangle",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "moonbitlang/async",
+} for "wbtest"
+
+supported_targets = "+native"

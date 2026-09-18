@@ -9,6 +9,12 @@ VS Code 调试及逐步操作说明见 [扩展 README](extensions/vscode/README.
 
 ## 命令行使用
 
+安装根目录的可执行包即可：
+
+```sh
+moon install Kaida-Amethyst/moondbg
+```
+
 在 MoonBit 项目目录中运行 `moondbg <包目录>`，例如 `moondbg main`。
 也支持包的项目内相对名称和完整包名。目标必须是支持 native 的可执行包；library 包会被拒绝。
 启动时调用当前环境中的 `moon check` 获取包信息，再调用
@@ -45,8 +51,8 @@ set_moon_stable
 moon info && moon fmt
 moon check
 moon test
-moon build --target native -g main
-alias moondbg="$PWD/_build/native/debug/build/main/main.exe"
+moon build --target native -g .
+alias moondbg="$PWD/_build/native/debug/build/moondbg.exe"
 ```
 
 这个 alias 只供当前终端使用。VS Code 固定启动 `$MOON_HOME/bin/moondbg --dap`，

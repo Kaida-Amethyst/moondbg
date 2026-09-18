@@ -73,18 +73,18 @@ async test "family detail queries are capped and unsupported or incorrect detail
           preparation_timeout_ms=10000,
         ),
       }
-      let session = @moondbg.DebugSession::new(
+      let session = @debugger.DebugSession::new(
         "/tmp/program",
         backend,
-        debug_context=@moondbg.DebugContext::new("example/main", []),
+        debug_context=@debugger.DebugContext::new("example/main", []),
       )
       defer session.close()
       session.run() |> ignore
       session.add_function_breakpoint(
-        @moondbg.FunctionBreakpointRequest::current("identity"),
+        @debugger.FunctionBreakpointRequest::current("identity"),
       )
       |> ignore
-      assert_true(session.state() is @moondbg.Stopped)
+      assert_true(session.state() is @debugger.Stopped)
       let item = session.breakpoints()[0]
       assert_eq(item.location_count, Some(count))
       assert_eq(
@@ -140,27 +140,27 @@ async test "family restart discards disabled old handles and creates a fresh han
         preparation_timeout_ms=10000,
       ),
     }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       backend,
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("identity"),
+      @debugger.FunctionBreakpointRequest::current("identity"),
     )
     |> ignore
     session.run() |> ignore
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
     session.run() |> ignore
     assert_eq(family_request_expressions(second).length(), 0)
-    session.manage_breakpoint(1, @moondbg.EnableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.EnableBreakpoint) |> ignore
     assert_true(
       backend.session.execution
       is Some({ breakpoint_state: { families, .. }, .. }) &&
       families.get(1) is Some({ id: LldbBreakpointId(27), enabled: true, }),
     )
-    session.manage_breakpoint(1, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DeleteBreakpoint) |> ignore
     assert_true(
       family_request_expressions(second) is [_, _, "breakpoint delete 27"],
     )
@@ -211,25 +211,25 @@ async test "family creation or detail transport failure recovers after a source 
           preparation_timeout_ms=10000,
         ),
       }
-      let session = @moondbg.DebugSession::new(
+      let session = @debugger.DebugSession::new(
         "/tmp/program",
         backend,
-        debug_context=@moondbg.DebugContext::new("example/main", []),
+        debug_context=@debugger.DebugContext::new("example/main", []),
       )
       defer session.close()
       session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
       session.add_function_breakpoint(
-        @moondbg.FunctionBreakpointRequest::current("identity"),
+        @debugger.FunctionBreakpointRequest::current("identity"),
       )
       |> ignore
       try {
         session.run() |> ignore
         fail("family failure should recover")
       } catch {
-        @moondbg.AdapterFailure(_) => ()
+        @debugger.AdapterFailure(_) => ()
         error => raise error
       }
-      assert_true(session.state() is @moondbg.Ready)
+      assert_true(session.state() is @debugger.Ready)
       assert_true(backend.session.execution is None)
       assert_true(transport.is_closed())
       assert_eq(session.breakpoints().map(item => item.id), [1, 2])

@@ -122,7 +122,7 @@ async fn DebugExecution::run_transaction(
   executable : String,
   source_breakpoints : Array[LogicalSourceBreakpoint],
   function_breakpoints : Array[LogicalFunctionBreakpoint],
-) -> @moondbg.RunOutcome {
+) -> @debugger.RunOutcome {
   errdefer self.machine.fail("run transaction failed")
   self.machine.begin_execution()
   let launch_seq = self.dispatcher.send_request("launch", {
@@ -132,7 +132,7 @@ async fn DebugExecution::run_transaction(
   })
   let mut launch_response = self.wait_for_initialized(launch_seq)
   if self.machine.state is Exited {
-    return @moondbg.RunOutcome::exited(self.exit_code)
+    return @debugger.RunOutcome::exited(self.exit_code)
   }
   self.configure_breakpoints(source_breakpoints)
   self.configure_function_breakpoints(function_breakpoints)
@@ -153,7 +153,7 @@ async fn DebugExecution::run(
   executable : String,
   source_breakpoints : Array[LogicalSourceBreakpoint],
   function_breakpoints : Array[LogicalFunctionBreakpoint],
-) -> @moondbg.RunOutcome {
+) -> @debugger.RunOutcome {
   guard self.machine.state is Ready else {
     raise LldbDapBackendError::OperationNotAllowed(
       state=self.machine.state,

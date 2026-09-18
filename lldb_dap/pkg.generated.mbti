@@ -2,8 +2,8 @@
 package "Kaida-Amethyst/moondbg/lldb_dap"
 
 import {
-  "Kaida-Amethyst/moondbg",
   "Kaida-Amethyst/moondbg/dap",
+  "Kaida-Amethyst/moondbg/debugger",
   "moonbitlang/async",
 }
 
@@ -15,7 +15,7 @@ import {
 pub struct LldbDapBackend {
   // private fields
 }
-pub fn LldbDapBackend::as_debug_backend(Self) -> &@moondbg.DebugBackend
+pub fn LldbDapBackend::as_debug_backend(Self) -> &@debugger.DebugBackend
 pub fn[X] LldbDapBackend::start(@async.TaskGroup[X], String, preparation_timeout_ms? : Int) -> Self
 
 pub struct VariableInspector {

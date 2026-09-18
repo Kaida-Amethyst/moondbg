@@ -48,27 +48,27 @@ async test "duplicate families keep separate handles and do not delete source or
         preparation_timeout_ms=10000,
       ),
     }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       backend,
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.run() |> ignore
     session.add_source_breakpoint("/tmp/main.mbt", 4) |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("main"),
+      @debugger.FunctionBreakpointRequest::current("main"),
     )
     |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("identity"),
+      @debugger.FunctionBreakpointRequest::current("identity"),
     )
     |> ignore
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("identity"),
+      @debugger.FunctionBreakpointRequest::current("identity"),
     )
     |> ignore
-    session.manage_breakpoint(3, @moondbg.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(3, @debugger.DisableBreakpoint) |> ignore
     guard backend.session.execution is Some(execution) else {
       fail("stopped execution")
     }
@@ -80,11 +80,11 @@ async test "duplicate families keep separate handles and do not delete source or
       execution.breakpoint_state.families.get(4)
       is Some({ id: LldbBreakpointId(8), enabled: true, }),
     )
-    session.manage_breakpoint(3, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(3, @debugger.DeleteBreakpoint) |> ignore
     assert_true(
-      !session.manage_breakpoint(4, @moondbg.EnableBreakpoint).changed,
+      !session.manage_breakpoint(4, @debugger.EnableBreakpoint).changed,
     )
-    session.manage_breakpoint(4, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(4, @debugger.DeleteBreakpoint) |> ignore
     assert_eq(
       execution.breakpoint_state.outcomes.get(1).map(outcome => outcome.dap_id),
       Some(Some(10)),
@@ -176,10 +176,10 @@ async test "family locations use bounded structured disassembly and preserve sel
         preparation_timeout_ms=10000,
       ),
     }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       backend,
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.run() |> ignore
@@ -187,7 +187,7 @@ async test "family locations use bounded structured disassembly and preserve sel
     let epoch = session.stop_epoch()
     assert_eq(frame.map(item => item.index()), Some(1))
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("identity"),
+      @debugger.FunctionBreakpointRequest::current("identity"),
     )
     |> ignore
     let item = session.breakpoints()[0]
@@ -200,17 +200,19 @@ async test "family locations use bounded structured disassembly and preserve sel
       Some("0x10"),
       Some("0x20"),
     ])
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
     let before = transport.sent_messages().length()
     assert_true(
-      !session.manage_breakpoint(1, @moondbg.DisableBreakpoint).changed,
+      !session.manage_breakpoint(1, @debugger.DisableBreakpoint).changed,
     )
     assert_eq(transport.sent_messages().length(), before)
-    session.manage_breakpoint(1, @moondbg.EnableBreakpoint) |> ignore
-    assert_true(session.function_breakpoints()[0].status() is @moondbg.Verified)
+    session.manage_breakpoint(1, @debugger.EnableBreakpoint) |> ignore
+    assert_true(
+      session.function_breakpoints()[0].status() is @debugger.Verified,
+    )
     assert_eq(session.breakpoints()[0].location_count, None)
     assert_eq(session.breakpoints()[0].locations.length(), 0)
-    session.manage_breakpoint(1, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DeleteBreakpoint) |> ignore
     assert_eq(session.selected_frame(), frame)
     assert_eq(session.stop_epoch(), epoch)
     assert_eq(
@@ -252,32 +254,32 @@ async test "disabled never installed family creates on enable and zero location 
         preparation_timeout_ms=10000,
       ),
     }
-    let session = @moondbg.DebugSession::new(
+    let session = @debugger.DebugSession::new(
       "/tmp/program",
       backend,
-      debug_context=@moondbg.DebugContext::new("example/main", []),
+      debug_context=@debugger.DebugContext::new("example/main", []),
     )
     defer session.close()
     session.add_function_breakpoint(
-      @moondbg.FunctionBreakpointRequest::current("missing"),
+      @debugger.FunctionBreakpointRequest::current("missing"),
     )
     |> ignore
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
     session.run() |> ignore
     assert_eq(family_request_expressions(transport).length(), 0)
-    session.manage_breakpoint(1, @moondbg.EnableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.EnableBreakpoint) |> ignore
     assert_eq(session.breakpoints()[0].location_count, Some(0))
     assert_true(
-      session.function_breakpoints()[0].status() is @moondbg.Rejected(_),
+      session.function_breakpoints()[0].status() is @debugger.Rejected(_),
     )
-    session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
-    session.manage_breakpoint(1, @moondbg.EnableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.EnableBreakpoint) |> ignore
     assert_true(session.breakpoints()[0].enabled)
     assert_true(
-      session.function_breakpoints()[0].status() is @moondbg.Rejected(_),
+      session.function_breakpoints()[0].status() is @debugger.Rejected(_),
     )
     assert_eq(session.breakpoints()[0].location_count, None)
-    session.manage_breakpoint(1, @moondbg.DeleteBreakpoint) |> ignore
+    session.manage_breakpoint(1, @debugger.DeleteBreakpoint) |> ignore
     assert_eq(family_request_expressions(transport), [
       "breakpoint set --func-regex '^_M0FP27example4main7missing($|G|H)'", "breakpoint list --brief 8",
       "breakpoint disable 8", "breakpoint enable 8", "breakpoint list --brief 8",
@@ -296,11 +298,11 @@ async test "disabled never installed family creates on enable and zero location 
 async test "family management unconfirmed replies recover execution without committing destructive intent" {
   for
     operation in [
-      @moondbg.DeleteBreakpoint,
-      @moondbg.DisableBreakpoint,
-      @moondbg.EnableBreakpoint,
+      @debugger.DeleteBreakpoint,
+      @debugger.DisableBreakpoint,
+      @debugger.EnableBreakpoint,
     ] {
-    let seq = if operation is @moondbg.EnableBreakpoint { 8 } else { 7 }
+    let seq = if operation is @debugger.EnableBreakpoint { 8 } else { 7 }
     for
       failure in [
         family_reply(seq, "error: invalid breakpoint id"),
@@ -310,7 +312,7 @@ async test "family management unconfirmed replies recover execution without comm
       ] {
       @async.with_task_group(async fn(group) {
         let script = function_family_script()
-        if operation is @moondbg.EnableBreakpoint {
+        if operation is @debugger.EnableBreakpoint {
           script.push(family_reply(7, "1 breakpoints disabled."))
         }
         script.append([
@@ -325,28 +327,28 @@ async test "family management unconfirmed replies recover execution without comm
             preparation_timeout_ms=10000,
           ),
         }
-        let session = @moondbg.DebugSession::new(
+        let session = @debugger.DebugSession::new(
           "/tmp/program",
           backend,
-          debug_context=@moondbg.DebugContext::new("example/main", []),
+          debug_context=@debugger.DebugContext::new("example/main", []),
         )
         defer session.close()
         session.add_function_breakpoint(
-          @moondbg.FunctionBreakpointRequest::current("identity"),
+          @debugger.FunctionBreakpointRequest::current("identity"),
         )
         |> ignore
         session.run() |> ignore
-        if operation is @moondbg.EnableBreakpoint {
-          session.manage_breakpoint(1, @moondbg.DisableBreakpoint) |> ignore
+        if operation is @debugger.EnableBreakpoint {
+          session.manage_breakpoint(1, @debugger.DisableBreakpoint) |> ignore
         }
         try {
           session.manage_breakpoint(1, operation) |> ignore
           fail("unconfirmed family operation")
         } catch {
-          @moondbg.AdapterFailure(_) => ()
+          @debugger.AdapterFailure(_) => ()
           error => raise error
         }
-        assert_true(session.state() is @moondbg.Ready)
+        assert_true(session.state() is @debugger.Ready)
         assert_true(session.breakpoints()[0].enabled)
         assert_true(backend.session.execution is None)
         assert_true(transport.is_closed())

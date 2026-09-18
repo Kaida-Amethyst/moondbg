@@ -90,18 +90,18 @@ fn select_parsed_stack_frame(
 }
 
 ///|
-fn stack_frame_kind(frame : ParsedStackFrame) -> @moondbg.FrameKind {
+fn stack_frame_kind(frame : ParsedStackFrame) -> @debugger.FrameKind {
   match frame.source_path {
     Some(source_path) if source_path.has_suffix(".mbt") =>
-      @moondbg.MoonBitUserFrame
-    Some(_) => @moondbg.NativeFrame
-    None => @moondbg.UnknownFrame
+      @debugger.MoonBitUserFrame
+    Some(_) => @debugger.NativeFrame
+    None => @debugger.UnknownFrame
   }
 }
 
 ///|
 fn moonbit_frame_identity(frame : ParsedStackFrame) -> (String, String?) {
-  guard stack_frame_kind(frame) is @moondbg.MoonBitUserFrame else {
+  guard stack_frame_kind(frame) is @debugger.MoonBitUserFrame else {
     return (frame.name, None)
   }
   if frame.name == "moonbit_main" {
@@ -127,9 +127,9 @@ fn stack_total_frames_hint(body : Json) -> Int? {
 ///|
 fn ParsedStackFrame::snapshot(
   self : ParsedStackFrame,
-) -> @moondbg.StackFrameSnapshot raise @moondbg.StackSnapshotError {
+) -> @debugger.StackFrameSnapshot raise @debugger.StackSnapshotError {
   let (display_name, linkage_name) = moonbit_frame_identity(self)
-  @moondbg.StackFrameSnapshot::new(
+  @debugger.StackFrameSnapshot::new(
     self.physical_index,
     self.name,
     display_name,
@@ -159,9 +159,9 @@ async fn DebugExecution::resolve_stopped_thread(self : DebugExecution) -> Int {
 ///|
 async fn DebugExecution::load_stack_window(
   self : DebugExecution,
-  thread : @moondbg.ThreadSelection,
-  window : @moondbg.StackWindow,
-) -> @moondbg.StackSnapshot {
+  thread : @debugger.ThreadSelection,
+  window : @debugger.StackWindow,
+) -> @debugger.StackSnapshot {
   let thread_id = self.selected_thread_id(thread, "inspect the stack")
   guard self.machine.current_stop_epoch() is Some(expected_epoch) else {
     raise InvalidSessionTransition(
@@ -223,7 +223,7 @@ async fn DebugExecution::load_stack_window(
     page_ids.set(frame.id, true)
   }
 
-  let frames : Array[@moondbg.StackFrameSnapshot] = []
+  let frames : Array[@debugger.StackFrameSnapshot] = []
   let previous_hint = match self.stack_snapshot {
     Some(stack) => {
       for frame in stack.frames() {
@@ -240,7 +240,7 @@ async fn DebugExecution::load_stack_window(
     Some(total) => Some(total)
     None => previous_hint
   }
-  let snapshot = @moondbg.StackSnapshot::new(
+  let snapshot = @debugger.StackSnapshot::new(
     thread,
     frames,
     0,
@@ -258,11 +258,11 @@ async fn DebugExecution::load_stack_window(
 ///|
 async fn DebugExecution::build_stop_snapshot(
   self : DebugExecution,
-) -> @moondbg.StopSnapshot {
+) -> @debugger.StopSnapshot {
   self.resolve_stopped_thread() |> ignore
   let stack = self.load_stack_window(
-    @moondbg.ThreadSelection::initial(),
-    @moondbg.StackWindow::initial(),
+    @debugger.ThreadSelection::initial(),
+    @debugger.StackWindow::initial(),
   )
   let frames : Array[ParsedStackFrame] = []
   for snapshot in stack.frames() {
@@ -284,7 +284,7 @@ async fn DebugExecution::build_stop_snapshot(
   guard select_parsed_stack_frame(frames) is Some(frame) else {
     raise InvalidMessage({ "stackFrames": [] })
   }
-  @moondbg.StopSnapshot::new(
+  @debugger.StopSnapshot::new(
     self.stop_reason,
     frame.snapshot().display_name(),
     frame.source_path,

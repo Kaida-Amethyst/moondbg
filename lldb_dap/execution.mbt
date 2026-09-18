@@ -106,10 +106,10 @@ priv struct DebugExecution {
   mut capabilities : Json
   mut stop_reason : String
   mut exit_code : Int?
-  mut stack_snapshot : @moondbg.StackSnapshot?
+  mut stack_snapshot : @debugger.StackSnapshot?
   variable_cache : StopVariableCache
   breakpoint_state : ExecutionBreakpointState
-  pending_output : Array[@moondbg.DebugOutput]
+  pending_output : Array[@debugger.DebugOutput]
 }
 
 ///|
@@ -123,7 +123,7 @@ fn DebugExecution::state(self : DebugExecution) -> DapSessionState {
 /// application exposes thread navigation.
 fn DebugExecution::selected_thread_id(
   self : DebugExecution,
-  selection : @moondbg.ThreadSelection,
+  selection : @debugger.ThreadSelection,
   action : String,
 ) -> Int raise LldbDapBackendError {
   guard self.machine.state is Stopped &&
@@ -142,8 +142,8 @@ fn DebugExecution::selected_thread_id(
 /// execution's temporary DAP frame id.
 fn DebugExecution::selected_frame_id(
   self : DebugExecution,
-  thread : @moondbg.ThreadSelection,
-  frame : @moondbg.FrameSelection,
+  thread : @debugger.ThreadSelection,
+  frame : @debugger.FrameSelection,
   action : String,
 ) -> Int raise LldbDapBackendError {
   self.selected_thread_id(thread, action) |> ignore
@@ -285,14 +285,14 @@ async fn DebugExecution::wait_until_stable(self : DebugExecution) -> Unit {
 ///|
 async fn DebugExecution::complete_execution(
   self : DebugExecution,
-) -> @moondbg.RunOutcome {
+) -> @debugger.RunOutcome {
   self.wait_until_stable()
   match self.machine.state {
     Stopped => {
       let snapshot = self.build_stop_snapshot()
-      @moondbg.RunOutcome::stopped(snapshot)
+      @debugger.RunOutcome::stopped(snapshot)
     }
-    Exited => @moondbg.RunOutcome::exited(self.exit_code)
+    Exited => @debugger.RunOutcome::exited(self.exit_code)
     state =>
       raise InvalidSessionTransition(
         state~,
@@ -305,7 +305,7 @@ async fn DebugExecution::complete_execution(
 async fn DebugExecution::resume_transaction(
   self : DebugExecution,
   request : @dap.DapRequest,
-) -> @moondbg.RunOutcome {
+) -> @debugger.RunOutcome {
   errdefer self.machine.fail("\{request.command()} transaction failed")
   self.machine.mark_resumed()
   self.stack_snapshot = None
@@ -318,8 +318,8 @@ async fn DebugExecution::resume_transaction(
 async fn DebugExecution::resume_execution(
   self : DebugExecution,
   kind : ExecutionResumeKind,
-  thread : @moondbg.ThreadSelection,
-) -> @moondbg.RunOutcome {
+  thread : @debugger.ThreadSelection,
+) -> @debugger.RunOutcome {
   let thread_id = self.selected_thread_id(thread, kind.action())
   let request = kind.request(thread_id, self.capabilities)
   self.resume_transaction(request) catch {
