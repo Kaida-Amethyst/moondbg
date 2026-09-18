@@ -2715,7 +2715,9 @@ async test "P5 compact aggregate summaries do not hide adapter request failures"
     }
     execution.variable_cache.select_frame(epoch, 0)
     let failed = try {
-      execution.compact_local_variable(
+      execution
+      .variable_inspector()
+      .compact_local_variable(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         DapVariable::{
           name: "broken",
@@ -4135,7 +4137,9 @@ async test "lldb-dap materializes Array logical values within bounded storage re
       fail("scripted Array execution should retain its second stop epoch")
     }
     let invalid_rejected = try {
-      execution.find_variable_inner(
+      execution
+      .variable_inspector()
+      .find_variable_inner(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         121,
         @moondbg.VariablePath::root("invalid"),
@@ -4402,7 +4406,9 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
     }
     execution.variable_cache.select_frame(epoch, 0)
     let message = try {
-      execution.find_variable_inner(
+      execution
+      .variable_inspector()
+      .find_variable_inner(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         150,
         @moondbg.VariablePath::new("arr", [@moondbg.Index(0)]),
@@ -4585,7 +4591,9 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
     for _, case in cases {
       let (name, expected) = case
       let rejected = try {
-        execution.find_variable_inner(
+        execution
+        .variable_inspector()
+        .find_variable_inner(
           VariableCacheIdentity::{ epoch, frame_index: 0, },
           140,
           @moondbg.VariablePath::root(name),
@@ -4648,12 +4656,14 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       variables_reference: 101,
       evaluate_name: None,
     }
-    let snapshot = execution.materialize_variable_with_limits(
-      VariableCacheIdentity::{ epoch, frame_index: 0, },
-      line,
-      8,
-      2,
-    )
+    let snapshot = execution
+      .variable_inspector()
+      .materialize_variable_with_limits(
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
+        line,
+        8,
+        2,
+      )
     guard snapshot.content() is @moondbg.VariableStructure(line_structure) &&
       line_structure.is_truncated() &&
       line_structure.children() is [start] &&
@@ -4665,12 +4675,14 @@ async test "lldb-dap variable materialization obeys depth and node budgets" {
       )
     }
     assert_eq(start.name(), "start")
-    let depth_limited = execution.materialize_variable_with_limits(
-      VariableCacheIdentity::{ epoch, frame_index: 0, },
-      line,
-      0,
-      10,
-    )
+    let depth_limited = execution
+      .variable_inspector()
+      .materialize_variable_with_limits(
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
+        line,
+        0,
+        10,
+      )
     assert_true(
       depth_limited.content() is @moondbg.VariableStructure(structure) &&
       structure.is_truncated() &&
@@ -4708,12 +4720,14 @@ async test "lldb-dap variable materialization truncates recursive references" {
       variables_reference: 101,
       evaluate_name: None,
     }
-    let snapshot = execution.materialize_variable_with_limits(
-      VariableCacheIdentity::{ epoch, frame_index: 0, },
-      node,
-      8,
-      10,
-    )
+    let snapshot = execution
+      .variable_inspector()
+      .materialize_variable_with_limits(
+        VariableCacheIdentity::{ epoch, frame_index: 0, },
+        node,
+        8,
+        10,
+      )
     guard snapshot.content() is @moondbg.VariableStructure(node_structure) &&
       !node_structure.is_truncated() &&
       node_structure.children() is [next] &&

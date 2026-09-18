@@ -57,9 +57,16 @@ async fn serve_live(
       ended: false,
       closing: false,
       deadline: Some(@async.now() + 15000),
+      inspection: InspectionState::new(),
+      capabilities: {},
     }
     let inbox : @async.Queue[LiveInput] = @async.Queue(kind=Blocking(128))
     defer inbox.close()
+    defer session.inspection.jobs.close()
+    let inspection_task = group.spawn(no_wait=true, () => {
+      session.inspect_worker(inbox)
+    })
+    defer inspection_task.cancel()
     let input_task = group.spawn(no_wait=true, () => {
       try {
         while @dap.read_frame(reader) is Some(body) {
@@ -138,10 +145,23 @@ async fn serve_live(
             }
             raise LiveError(message)
           }
+          InspectRead(epoch, command, args, reply) =>
+            if session.inspection_epoch() == Some(epoch) {
+              session.request(0, command, args, inspection_reply=Some(reply))
+            } else {
+              reply.close(
+                error=LiveError("Variable request belongs to a stale stop"),
+              )
+            }
+          InspectDone(seq, result) =>
+            session.complete_inspection(writer, seq, result)
         }
       }
     } catch {
       error => {
+        session.invalidate_inspection(writer) catch {
+          _ => ()
+        }
         session.cancel_launch(writer, @debug.to_string(error)) catch {
           _ => ()
         }

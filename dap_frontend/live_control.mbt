@@ -71,6 +71,7 @@ async fn LiveSession::control(
     }
   }
   if resumes_execution(command) {
+    self.invalidate_inspection(writer)
     self.execution_revision += 1
     self.stopped = false
   } else {

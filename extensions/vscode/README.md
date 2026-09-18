@@ -1,11 +1,11 @@
 # moondbg 的 VS Code 调试
 
 这一版由 VS Code 启动 `$MOON_HOME/bin/moondbg --dap`，再由 moondbg 启动 lldb-dap。
-支持预编译 native 程序的行断点、调用栈、三种单步、继续运行、暂停、实时输出和停止清理。
+支持预编译 native 程序的行断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
 暂不支持自动构建、程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
-变量树或表达式求值。变量面板为空是预期行为；调试控制台目前只显示输出，
+表达式求值。调试控制台目前只显示输出，
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
 ## 已完成连接验证后：开始真实调试
@@ -73,6 +73,31 @@ Mac 若拦截功能键，可直接点击调试工具栏中对应的按钮，或�
 普通程序也可能停在 runtime 或系统函数中，可通过调用栈查看 MoonBit 调用者。
 这里不自动跳到用户 frame。Apple LLDB 在响应主动暂停时可能报告 `SIGSTOP` 异常，
 moondbg 仅将这类已请求的暂停标为 pause；实际断点、其他异常及外部 SIGSTOP 保留原始原因。
+
+### 变量面板试用
+
+在 `testdata/dwarf_probe` 下执行 `moon run dap_variables --build-only --target native -g`。
+重新打开扩展开发窗口，选择 **moondbg：变量面板试用（dap_variables）**，
+打开 `dap_variables/main.mbt`，在 `let marker = point.x` 和 `println(marker)` 两行打断点。
+
+按 F5 停在第一处断点，在左侧 **VARIABLES / 变量 → Locals** 中：
+
+- 展开 `point`，查看 `x = 3`、`y = 4`。
+- 展开 `values`，查看 `[0] = 1.5` 等 Double 元素。
+- 展开 `fixed`，共有 1000 项。VS Code 可显示分组；展开末组查看 `[999] = 1000`。
+- 展开 `points → [1]`，查看 Point 字段 `x = 5`、`y = 6`。
+- 展开 `list`，查看当前构造器 `Cons` 的 `.0 = 3` 和 `.1`；逐次展开 `.1`，最终到 `Empty`。
+- 在 **CALL STACK / 调用堆栈** 中点击 main，Locals 切换到调用者，可查看 `caller_only = 700`。
+  再选回 `inspect_values`，恢复查看被调用函数的参数。
+
+按 F5 到第二处断点，展开 `values`，`[0]` 应更新成 `42`。旧的停止状态不会继续提供变量数据。
+编译器或 LLDB 无法提供的变量会显示 `<unavailable>`；生命周期已结束的局部变量可能消失，
+这不等于其值为 0 或空数组。当前仅提供 Locals（含参数），不提供 globals/registers 或修改变量。
+
+树节点展示简短摘要，只有展开时才读取子值，不调用用户的 Debug trait 或 MoonBit 函数。
+基本类型数组的每页至多读取 100 项；无分页参数或超大页请求使用可展开的范围节点，
+不会静默丢弃剩余元素。递归 enum 按用户点击逐层查看，不自动展开整个链表。
+Watch、悬停求值和调试控制台表达式仍未接入。
 
 ### 构建和启动路径
 
@@ -196,7 +221,8 @@ ln -s "$PWD/_build/native/debug/build/main/main.exe" "$MOON_HOME/bin/moondbg"
   请反馈实际文件路径（如果是链接，包含链接目标）与错误，不要将 REPL 输出当成 DAP。
 - **没有停住**：确认选的不是连接验证配置，断点在可执行语句上，且 `.exe` 对应最新源码。
 - **无法在行号旁打断点**：确认 `.mbt` 的语言模式是 MoonBit，开发窗口已加载 MoonBit 语言扩展。
-- **没有变量**：本阶段返回空 scopes，尚未实现变量树。
+- **没有变量**：先确认程序已停住并选择了用户 frame；runtime frame 可能没有可用的局部变量。
+  若显示 `<unavailable>`，说明当前 DWARF/寄存器位置无法提供该值，不会使用旧停点的值补齐。
 - **单步不可用**：单步只能在程序停住时使用；暂停只能在运行时使用。
   不支持指令级单步、指定调用目标的 step-in 或只运行某一线程。
 - **在调试控制台输入表达式时报错**：本阶段尚未开放 evaluate；控制台仍仅用于显示输出。
@@ -211,6 +237,7 @@ node --test extensions/vscode/extension.test.js extensions/vscode/launcher.test.
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_connection_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_live_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_control_wbtest.mbt --no-parallelize
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_variables_wbtest.mbt --no-parallelize
 ```
 
 Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
@@ -247,13 +274,18 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
   后才开放栈查询。拒绝重复恢复执行、重复暂停及无效状态请求；请求失败时只恢复属于本次
   请求的状态，不允许迟到的失败响应覆盖新停点或进程退出。
 - `threads`/`stackTrace` 复用 LLDB 的线程和帧信息；可识别的 MoonBit 符号名使用已有 demangler。
-  对象句柄仅在本次执行内使用，不允许重启或跨会话复用。`scopes` 返回空数组，evaluate 等请求明确拒绝。
+  对外 frameId 和 variablesReference 由 moondbg 分配，绑定当前暂停状态；继续、单步、退出
+  或断开后失效，并且不复用旧编号。`scopes` 提供 Locals，evaluate 等请求仍明确拒绝。
 - 一次会话只拥有一个启动的进程；disconnect 始终使用 `terminateDebuggee: true`，不支持 detach。
   EOF、异常和超时也尝试 disconnect，随后关闭传输并取消 adapter。配置/请求超时为 15 秒，
   结束握手窗口为 3 秒；正常运行或停在断点等待用户操作没有空闲超时。
 - `dap.open_transport` 是与 REPL 共享的底层进程/帧传输；本轮没有让 DAP 绕进 REPL 的
-  `DebugSession::run -> RunOutcome` 等待事务。将来接变量树时，需要复用或提取 MoonBit
-  变量探查端口，不能直接放开 LLDB 原始 variables 就宣称支持 MoonBit 展示。
+  `DebugSession::run -> RunOutcome` 等待事务。`lldb_dap.VariableInspector` 是共享变量探查
+  服务，复用类型识别、数组布局、enum tag、内存读取和同名局部变量解析；REPL 保留原有的
+  有界文本渲染，DAP 使用路径式变量树。该服务不拥有 adapter，也不读取协议管道。
+- DAP 的变量探查在串行后台任务中执行，通过主消息循环发送请求、获取响应；主循环始终
+  能接收 continue/disconnect。每个变量任务绑定 stop epoch，恢复执行会立即取消其对外响应。
+  每次展开重新建立对应 frame 的 scope 上下文，通过源级路径定位，避免 LLDB 复用原始引用。
 
 `test/live-host.js` 是真实 VS Code 集成测试入口：默认验证编辑器行断点、自动调用栈请求、
 继续和自然退出。若设置 `MOONDBG_TEST_RUNNING_PROGRAM` 为使用 cc 编译的

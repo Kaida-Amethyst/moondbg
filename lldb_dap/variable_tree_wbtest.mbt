@@ -1,0 +1,241 @@
+///|
+fn tree_reply(command : String, body : Json) -> @dap.DapResponse raise {
+  guard @dap.classify_message({
+      "type": "response",
+      "seq": 1,
+      "request_seq": 1,
+      "command": command,
+      "success": true,
+      "body": body,
+    })
+    is @dap.Response(response) else {
+    fail("response")
+  }
+  response
+}
+
+///|
+async test "tree descriptions do not recursively expand a self-referential struct" {
+  let requested : Array[Int] = []
+  let inspector = VariableInspector::new(
+    (command, args) => {
+      let body : Json = match command {
+        "scopes" =>
+          { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+        "variables" => {
+          let reference = json_int_field(args, "variablesReference").unwrap()
+          requested.push(reference)
+          match reference {
+            100 =>
+              {
+                "variables": [
+                  {
+                    "name": "node",
+                    "value": "0x1",
+                    "type": "example/Node &",
+                    "variablesReference": 101,
+                  },
+                ],
+              }
+            101 =>
+              {
+                "variables": [
+                  {
+                    "name": "next",
+                    "value": "0x1",
+                    "type": "example/Node &",
+                    "variablesReference": 101,
+                  },
+                ],
+              }
+            _ => fail(args.stringify())
+          }
+        }
+        _ => fail(command)
+      }
+      tree_reply(command, body)
+    },
+    () => Some(1),
+    {},
+  )
+  let nodes = inspector.tree_locals(10)
+  assert_eq(requested, [100, 101])
+  assert_eq(nodes.length(), 1)
+  assert_eq(nodes[0].named_children, 1)
+  let children = inspector.tree_children(10, nodes[0], start=0, count=100)
+  assert_eq(children.length(), 1)
+  assert_eq(children[0].name, "next")
+  assert_eq(children[0].named_children, 1)
+  let grandchildren = inspector.tree_children(
+    10,
+    children[0],
+    start=0,
+    count=100,
+  )
+  assert_eq(grandchildren.length(), 1)
+  assert_eq(grandchildren[0].name, "next")
+  assert_eq(requested, [100, 101, 100, 101, 100, 101])
+}
+
+///|
+async test "scalar array listing reads headers only and an expansion reads one bounded payload" {
+  let reads : Array[(Int, Int)] = []
+  let inspector = VariableInspector::new(
+    (command, args) => {
+      let body : Json = match command {
+        "scopes" =>
+          { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+        "variables" =>
+          match json_int_field(args, "variablesReference") {
+            Some(100) =>
+              {
+                "variables": [
+                  {
+                    "name": "arr",
+                    "value": "0x1000",
+                    "type": "FixedArray[Int]",
+                    "variablesReference": 101,
+                  },
+                ],
+              }
+            Some(101) =>
+              {
+                "variables": [
+                  {
+                    "name": "body",
+                    "value": "0x1000",
+                    "type": "int *",
+                    "variablesReference": 0,
+                  },
+                ],
+              }
+            _ => fail(args.stringify())
+          }
+        "readMemory" => {
+          let offset = json_int_field(args, "offset").unwrap()
+          let count = json_int_field(args, "count").unwrap()
+          reads.push((offset, count))
+          match (offset, count) {
+            (-8, 8) => { "data": "AAAAAAMAAAA=" }
+            (4, 8) => { "data": "AgAAAAMAAAA=" }
+            _ => fail(args.stringify())
+          }
+        }
+        _ => fail(command)
+      }
+      tree_reply(command, body)
+    },
+    () => Some(1),
+    { "supportsReadMemoryRequest": true },
+  )
+  let nodes = inspector.tree_locals(10)
+  assert_eq(nodes[0].indexed_children, 3)
+  assert_eq(reads, [(-8, 8)])
+  let page = inspector.tree_children(10, nodes[0], start=1, count=2)
+  assert_eq(page.map(node => (node.name, node.value)), [
+    ("[1]", "2"),
+    ("[2]", "3"),
+  ])
+  assert_eq(reads, [(-8, 8), (-8, 8), (4, 8)])
+  let before = reads.length()
+  let failed = try {
+    inspector.tree_children(10, nodes[0], start=0, count=101) |> ignore
+    false
+  } catch {
+    _ => true
+  }
+  assert_true(failed)
+  assert_eq(reads.length(), before)
+}
+
+///|
+async test "tree locals keep unavailable entries and failed layouts do not hide other locals" {
+  let inspector = VariableInspector::new(
+    (command, _) => {
+      tree_reply(
+        command,
+        if command == "scopes" {
+          { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+        } else {
+          {
+            "variables": [
+              {
+                "name": "good",
+                "value": "3",
+                "type": "Int",
+                "variablesReference": 0,
+              },
+              {
+                "name": "gone",
+                "value": "<variable not available>",
+                "type": "Int",
+                "variablesReference": 0,
+              },
+              {
+                "name": "broken",
+                "value": "0x1000",
+                "type": "FixedArray[Int]",
+                "variablesReference": 101,
+              },
+            ],
+          }
+        },
+      )
+    },
+    () => Some(1),
+    {},
+  )
+  let nodes = inspector.tree_locals(10)
+  assert_eq(nodes.length(), 3)
+  assert_eq(nodes[0].value, "3")
+  assert_eq(nodes[1].value, "<unavailable>")
+  assert_true(nodes[2].value.has_prefix("<unavailable:"))
+  assert_eq(nodes[2].indexed_children, 0)
+}
+
+///|
+priv struct TreeTestState {
+  mut frame : Int
+  mut epoch : Int
+}
+
+///|
+async test "tree operations reestablish the frame and discard stale replies" {
+  let state = TreeTestState::{ frame: 0, epoch: 1, }
+  let inspector = VariableInspector::new(
+    (command, args) => {
+      let body : Json = if command == "scopes" {
+        state.frame = json_int_field(args, "frameId").unwrap()
+        { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+      } else {
+        if state.frame == 30 {
+          state.epoch += 1
+        }
+        {
+          "variables": [
+            {
+              "name": "value",
+              "value": state.frame.to_string(),
+              "type": "Int",
+              "variablesReference": 0,
+            },
+          ],
+        }
+      }
+      tree_reply(command, body)
+    },
+    () => Some(state.epoch),
+    {},
+  )
+  assert_eq(inspector.tree_locals(10)[0].value, "10")
+  assert_eq(inspector.tree_locals(20)[0].value, "20")
+  assert_eq(inspector.tree_locals(10)[0].value, "10")
+  assert_true(
+    try {
+      inspector.tree_locals(30) |> ignore
+      false
+    } catch {
+      _ => true
+    },
+  )
+}

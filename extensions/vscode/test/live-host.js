@@ -90,7 +90,17 @@ exports.run = async function () {
       assert.equal(stack.body.stackFrames[0].line, line + 1);
       assert.equal(fs.realpathSync(stack.body.stackFrames[0].source.path), fs.realpathSync(source));
       const scopes = await session.customRequest("scopes", { frameId: stack.body.stackFrames[0].id });
-      assert.deepEqual(scopes.scopes, []);
+      assert.equal(scopes.scopes[0].name, "Locals");
+      const locals = await session.customRequest("variables", {
+        variablesReference: scopes.scopes[0].variablesReference,
+      });
+      const point = locals.variables.find((variable) => variable.name === "p");
+      assert.ok(point?.variablesReference > 0, JSON.stringify(locals));
+      const fields = await session.customRequest("variables", {
+        variablesReference: point.variablesReference,
+      });
+      assert.equal(fields.variables.find((field) => field.name === "x").value, "3");
+      assert.equal(fields.variables.find((field) => field.name === "y").value, "4");
       vscode.debug.removeBreakpoints([breakpoint]);
       await session.customRequest("continue", { threadId: stopped.body.threadId });
       const exited = await waitFor((m) => m.event === "exited");

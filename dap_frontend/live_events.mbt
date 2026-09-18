@@ -32,6 +32,28 @@ async fn LiveSession::on_adapter(
         raise LiveError("Unexpected lldb-dap response.")
       }
       self.pending.remove(raw.to_int())
+      if pending.inspection_reply is Some(reply) {
+        (reply.try_put(message) catch { _ => false }) |> ignore
+        return
+      }
+      if command == "stackTrace" &&
+        (
+          !self.stopped ||
+          self.exited ||
+          self.ended ||
+          self.closing ||
+          pending.execution_revision != self.execution_revision
+        ) {
+        send_client(
+          writer,
+          self.client.response(
+            pending.client_seq,
+            command,
+            error=Some("Stack request belongs to a stale stop"),
+          ),
+        )
+        return
+      }
       let body = match message {
         { "body": body, .. } => body
         _ => {}
@@ -45,6 +67,7 @@ async fn LiveSession::on_adapter(
             fields.set("name", Json(rendered))
           }
         }
+        self.inspection.map_frames(frames)
       }
       let error = match success {
         True => None
@@ -62,6 +85,7 @@ async fn LiveSession::on_adapter(
           raise LiveError(error)
         }
         if !self.closing {
+          self.capabilities = body
           self.request(launch_seq, "launch", launch_args)
         }
         return
@@ -131,6 +155,7 @@ async fn LiveSession::on_adapter(
           send_client(writer, self.client.event(name, body))
         }
         "stopped" if !self.ended && !self.exited && !self.closing => {
+          self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = true
           send_client(
@@ -139,15 +164,19 @@ async fn LiveSession::on_adapter(
           )
         }
         "continued" if !self.ended && !self.exited => {
+          self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = false
           send_client(writer, self.client.event(name, body))
         }
-        "terminated" =>
+        "terminated" => {
+          self.invalidate_inspection(writer)
           if self.finish() is Some(event) {
             send_client(writer, event)
           }
+        }
         "exited" => {
+          self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.exited = true
           self.pause_revision = None

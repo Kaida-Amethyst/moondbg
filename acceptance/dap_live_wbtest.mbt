@@ -230,7 +230,7 @@ async test "live DAP configures source breakpoints displays a stack and continue
     assert_eq(@fs.realpath(path), @fs.realpath(source))
     assert_true(
       peer.response(peer.send("scopes", arguments={ "frameId": frame }))
-      is { "scopes": [], .. },
+      is { "scopes": [{ "name": String("Locals"), .. }], .. },
     )
     peer.response(
       peer.send("evaluate", arguments={ "expression": "p" }),

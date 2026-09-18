@@ -31,6 +31,14 @@
       "program": "${workspaceFolder}/_build/native/debug/build/dap_pause/dap_pause.exe",
       "cwd": "${workspaceFolder}",
       "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "type": "moondbg",
+      "request": "launch",
+      "name": "moondbg：变量面板试用（dap_variables）",
+      "program": "${workspaceFolder}/_build/native/debug/build/dap_variables/dap_variables.exe",
+      "cwd": "${workspaceFolder}",
+      "internalConsoleOptions": "openOnSessionStart"
     }
   ]
 }

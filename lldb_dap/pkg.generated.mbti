@@ -3,6 +3,7 @@ package "Kaida-Amethyst/moondbg/lldb_dap"
 
 import {
   "Kaida-Amethyst/moondbg",
+  "Kaida-Amethyst/moondbg/dap",
   "moonbitlang/async",
 }
 
@@ -16,6 +17,22 @@ pub struct LldbDapBackend {
 }
 pub fn LldbDapBackend::as_debug_backend(Self) -> &@moondbg.DebugBackend
 pub fn[X] LldbDapBackend::start(@async.TaskGroup[X], String, preparation_timeout_ms? : Int) -> Self
+
+pub struct VariableInspector {
+  // private fields
+}
+pub fn VariableInspector::new(async (String, Json) -> @dap.DapResponse, () -> Int?, Json) -> Self
+pub async fn VariableInspector::tree_children(Self, Int, VariableNode, start~ : Int, count~ : Int) -> Array[VariableNode]
+pub async fn VariableInspector::tree_locals(Self, Int) -> Array[VariableNode]
+
+pub struct VariableNode {
+  name : String
+  value : String
+  type_name : String?
+  named_children : Int
+  indexed_children : Int
+  // private fields
+}
 
 // Type aliases
 

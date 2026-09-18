@@ -46,6 +46,7 @@ async fn LiveSession::on_client(
       return
     }
     self.closing = true
+    self.invalidate_inspection(writer)
     self.deadline = Some(@async.now() + 3000)
     self.cancel_launch(writer, "Launch cancelled by client.")
     self.request(seq, command, { "terminateDebuggee": true })
@@ -108,11 +109,8 @@ async fn LiveSession::on_client(
     }
     "stackTrace" if self.stopped && !self.ended =>
       self.request(seq, command, arguments)
-    "scopes" if self.stopped && !self.ended =>
-      send_client(
-        writer,
-        self.client.response(seq, command, body={ "scopes": [] }),
-      )
+    "scopes" | "variables" =>
+      self.inspect_client(writer, seq, command, arguments)
     "continue" | "next" | "stepIn" | "stepOut" | "pause" =>
       self.control(writer, seq, command, arguments)
     _ =>

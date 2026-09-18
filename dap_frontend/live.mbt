@@ -3,6 +3,8 @@ priv enum LiveInput {
   Client(String?)
   Adapter(Json)
   Failed(String)
+  InspectRead(Int, String, Json, @async.Queue[Json])
+  InspectDone(Int, Result[Array[@lldb_dap.VariableNode], String])
 }
 
 ///|
@@ -11,14 +13,13 @@ priv struct PendingRequest {
   command : String
   deadline : Int64
   execution_revision : Int
+  inspection_reply : @async.Queue[Json]?
 }
 
 ///|
-/// One target, one adapter, no restart or attach. Downstream object handles
-/// stay opaque and session-scoped; only request/message sequences are mapped.
-/// This protocol-facing path deliberately does not use the REPL's blocking
-/// RunOutcome transactions. MoonBit variable semantics will need a separate
-/// inspection seam before scopes/variables can be exposed here.
+/// One target, one adapter, no restart or attach. The main loop owns all
+/// transport IO and lifecycle state. Inspection jobs use the shared MoonBit
+/// value service through that loop, never through a competing adapter reader.
 priv struct LiveSession {
   client : ConnectionSession
   transport : &@dap.DapTransport
@@ -35,6 +36,8 @@ priv struct LiveSession {
   mut ended : Bool
   mut closing : Bool
   mut deadline : Int64?
+  inspection : InspectionState
+  mut capabilities : Json
 }
 
 ///|
@@ -48,6 +51,7 @@ async fn LiveSession::request(
   client_seq : Int,
   command : String,
   arguments : Json,
+  inspection_reply? : @async.Queue[Json]? = None,
 ) -> Unit {
   let seq = self.next_seq
   self.next_seq += 1
@@ -56,6 +60,7 @@ async fn LiveSession::request(
     command,
     deadline: @async.now() + 15000,
     execution_revision: self.execution_revision,
+    inspection_reply,
   })
   self.transport.send_message({
     "seq": seq,

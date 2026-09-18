@@ -73,6 +73,11 @@ VS Code DAP 的真实验收可分别运行 `acceptance/dap_connection_wbtest.mbt
 以及运行/暂停时停止会话后目标 PID 消失。C 持续运行示例另覆盖没有初始断点时的暂停。
 默认进程内测试覆盖响应/事件顺序、失败回滚、过期响应、状态拒绝和主动暂停 SIGSTOP 的映射。
 
+`acceptance/dap_variables_wbtest.mbt` 构建 `dap_variables`，覆盖局部变量、调用者 frame、
+struct 字段、数组元素和末页、分页降级范围节点、递归 enum 的当前载荷与 Empty、修改后的新值，
+以及旧 frame/变量引用的拒绝。默认测试另检查循环结构不递归物化、数组只按页读取内存、
+部分变量不可用不影响其余项、LLDB frame-local 引用复用，以及变量读取期间 continue 的响应性。
+
 真实验收在 capability gate 之后获取包内共享互斥锁，整个用例结束后释放。
 `moon test --no-parallelize` 不禁止同一测试进程中的异步用例并发；现有 C PTY 的同步
 `poll` 会阻塞同进程的 DAP IO 和超时处理，因此这些真实会话必须串行执行。

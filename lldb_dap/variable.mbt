@@ -417,11 +417,11 @@ fn StopVariableCache::is_current(
 }
 
 ///|
-fn DebugExecution::ensure_variable_identity(
-  self : DebugExecution,
+fn VariableInspector::ensure_variable_identity(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
 ) -> Unit raise DapSessionError {
-  guard self.machine.current_stop_epoch() == Some(identity.epoch) &&
+  guard (self.current_epoch)() == Some(identity.epoch) &&
     self.variable_cache.is_current(identity) else {
     raise StaleVariableResult(
       expected_epoch=identity.epoch,
@@ -667,8 +667,8 @@ fn parse_root_evaluate_response(
 }
 
 ///|
-async fn DebugExecution::load_scopes(
-  self : DebugExecution,
+async fn VariableInspector::load_scopes(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
 ) -> Array[DapScope] {
@@ -682,15 +682,15 @@ async fn DebugExecution::load_scopes(
     raise InvalidMessage(response.body())
   }
   for scope in scopes {
-    self.machine.remember_variable_reference(scope.variables_reference)
+    (self.remember_reference)(scope.variables_reference)
   }
   self.variable_cache.store_scopes(identity, scopes)
   scopes
 }
 
 ///|
-async fn DebugExecution::load_variables(
-  self : DebugExecution,
+async fn VariableInspector::load_variables(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   reference : Int,
 ) -> Array[DapVariable] {
@@ -705,7 +705,7 @@ async fn DebugExecution::load_variables(
   }
   for variable in variables {
     if variable.variables_reference > 0 {
-      self.machine.remember_variable_reference(variable.variables_reference)
+      (self.remember_reference)(variable.variables_reference)
     }
   }
   self.variable_cache.store_variables(identity, reference, variables)
@@ -713,8 +713,8 @@ async fn DebugExecution::load_variables(
 }
 
 ///|
-async fn DebugExecution::read_memory(
-  self : DebugExecution,
+async fn VariableInspector::read_memory(
+  self : VariableInspector,
   memory_reference : String,
   offset : Int,
   count : Int,
@@ -782,8 +782,8 @@ priv struct DapIndexedCollectionLayout {
 }
 
 ///|
-async fn DebugExecution::load_native_indexed_collection_layout(
-  self : DebugExecution,
+async fn VariableInspector::load_native_indexed_collection_layout(
+  self : VariableInspector,
   kind : @moondbg.IndexedCollectionKind,
   body : DapVariable,
   logical_length : Int?,
@@ -821,8 +821,8 @@ async fn DebugExecution::load_native_indexed_collection_layout(
 }
 
 ///|
-async fn DebugExecution::load_fixed_array_layout(
-  self : DebugExecution,
+async fn VariableInspector::load_fixed_array_layout(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout {
@@ -849,8 +849,8 @@ fn parse_array_logical_length(variable : DapVariable) -> Int? {
 }
 
 ///|
-async fn DebugExecution::load_array_layout(
-  self : DebugExecution,
+async fn VariableInspector::load_array_layout(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout {
@@ -882,8 +882,8 @@ async fn DebugExecution::load_array_layout(
 }
 
 ///|
-async fn DebugExecution::load_indexed_collection_layout(
-  self : DebugExecution,
+async fn VariableInspector::load_indexed_collection_layout(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> DapIndexedCollectionLayout? {
@@ -897,8 +897,8 @@ async fn DebugExecution::load_indexed_collection_layout(
 }
 
 ///|
-async fn DebugExecution::resolve_indexed_element(
-  self : DebugExecution,
+async fn VariableInspector::resolve_indexed_element(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   owner : String,
@@ -972,15 +972,15 @@ async fn DebugExecution::resolve_indexed_element(
     )
   }
   if evaluated.variables_reference > 0 {
-    self.machine.remember_variable_reference(evaluated.variables_reference)
+    (self.remember_reference)(evaluated.variables_reference)
   }
   self.variable_cache.store_evaluated_variable(identity, cache_key, evaluated)
   DapVariableResolved(evaluated)
 }
 
 ///|
-async fn DebugExecution::materialize_indexed_collection(
-  self : DebugExecution,
+async fn VariableInspector::materialize_indexed_collection(
+  self : VariableInspector,
   variable : DapVariable,
   layout : DapIndexedCollectionLayout,
 ) -> @moondbg.VariableSnapshot {
@@ -1050,8 +1050,8 @@ async fn DebugExecution::materialize_indexed_collection(
 }
 
 ///|
-async fn DebugExecution::materialize_fixed_array(
-  self : DebugExecution,
+async fn VariableInspector::materialize_fixed_array(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @moondbg.VariableSnapshot {
@@ -1060,8 +1060,8 @@ async fn DebugExecution::materialize_fixed_array(
 }
 
 ///|
-async fn DebugExecution::materialize_array(
-  self : DebugExecution,
+async fn VariableInspector::materialize_array(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @moondbg.VariableSnapshot {
@@ -1116,8 +1116,8 @@ fn direct_enum_payload(
 }
 
 ///|
-async fn DebugExecution::materialize_enum(
-  self : DebugExecution,
+async fn VariableInspector::materialize_enum(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
   variants : Array[DapEnumVariant],
@@ -1162,8 +1162,8 @@ async fn DebugExecution::materialize_enum(
 }
 
 ///|
-async fn DebugExecution::active_enum_variant(
-  self : DebugExecution,
+async fn VariableInspector::active_enum_variant(
+  self : VariableInspector,
   variants : Array[DapEnumVariant],
 ) -> DapEnumVariant {
   self.active_enum_variant_raw(variants) catch {
@@ -1177,8 +1177,8 @@ async fn DebugExecution::active_enum_variant(
 /// Reads only the enum descriptor while preserving request/protocol failures.
 /// Compact locals can therefore downgrade an invalid descriptor without
 /// accidentally hiding an adapter request failure.
-async fn DebugExecution::active_enum_variant_raw(
-  self : DebugExecution,
+async fn VariableInspector::active_enum_variant_raw(
+  self : VariableInspector,
   variants : Array[DapEnumVariant],
 ) -> DapEnumVariant {
   guard variants is [first, ..] else {
@@ -1232,8 +1232,8 @@ fn unavailable_shadowed_local_summary(
 }
 
 ///|
-async fn DebugExecution::evaluate_shadowed_root(
-  self : DebugExecution,
+async fn VariableInspector::evaluate_shadowed_root(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   name : String,
@@ -1261,15 +1261,15 @@ async fn DebugExecution::evaluate_shadowed_root(
     )
   }
   if evaluated.variables_reference > 0 {
-    self.machine.remember_variable_reference(evaluated.variables_reference)
+    (self.remember_reference)(evaluated.variables_reference)
   }
   self.variable_cache.store_evaluated_variable(identity, cache_key, evaluated)
   DapVariableResolved(evaluated)
 }
 
 ///|
-async fn DebugExecution::compact_local_variable(
-  self : DebugExecution,
+async fn VariableInspector::compact_local_variable(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @moondbg.LocalVariableSnapshot {
@@ -1364,8 +1364,8 @@ async fn DebugExecution::compact_local_variable(
 }
 
 ///|
-async fn DebugExecution::load_local_variables_inner(
-  self : DebugExecution,
+async fn VariableInspector::load_local_variables_inner(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   thread : @moondbg.ThreadSelection,
@@ -1383,35 +1383,9 @@ async fn DebugExecution::load_local_variables_inner(
     self.variable_cache.store_local_snapshot(identity, snapshot)
     return snapshot
   }
-  let groups : Map[String, Array[DapVariable]] = Map([])
-  let order : Array[String] = []
-  for scope in local_scopes {
-    for variable in self.load_variables(identity, scope.variables_reference) {
-      let name = variable.source_local_name()
-      match groups.get(name) {
-        Some(group) => group.push(variable)
-        None => {
-          groups.set(name, [variable])
-          order.push(name)
-        }
-      }
-    }
-  }
   let summaries : Array[@moondbg.LocalVariableSnapshot] = []
-  for name in order {
-    guard groups.get(name) is Some(group) else { continue }
-    match group {
-      [variable] =>
-        summaries.push(self.compact_local_variable(identity, variable))
-      [_, _, ..] =>
-        match self.evaluate_shadowed_root(identity, frame_id, name) {
-          DapVariableResolved(variable) =>
-            summaries.push(self.compact_local_variable(identity, variable))
-          DapVariableResolutionFailed(_) =>
-            summaries.push(unavailable_shadowed_local_summary(name, group))
-        }
-      [] => ()
-    }
+  for variable in self.source_locals(identity, frame_id, local_scopes) {
+    summaries.push(self.compact_local_variable(identity, variable))
   }
   self.ensure_variable_identity(identity)
   let snapshot = @moondbg.LocalVariablesSnapshot::available(
@@ -1422,8 +1396,8 @@ async fn DebugExecution::load_local_variables_inner(
 }
 
 ///|
-async fn DebugExecution::materialize_variable(
-  self : DebugExecution,
+async fn VariableInspector::materialize_variable(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
   depth : Int,
@@ -1495,8 +1469,8 @@ async fn DebugExecution::materialize_variable(
 }
 
 ///|
-async fn DebugExecution::materialize_variable_with_limits(
-  self : DebugExecution,
+async fn VariableInspector::materialize_variable_with_limits(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   variable : DapVariable,
   max_depth : Int,
@@ -1513,8 +1487,8 @@ priv enum DapVariableResolution {
 }
 
 ///|
-async fn DebugExecution::resolve_root_variable(
-  self : DebugExecution,
+async fn VariableInspector::resolve_root_variable(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   name : String,
@@ -1540,8 +1514,8 @@ async fn DebugExecution::resolve_root_variable(
 }
 
 ///|
-async fn DebugExecution::resolve_variable_path(
-  self : DebugExecution,
+async fn VariableInspector::resolve_variable_path(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   path : @moondbg.VariablePath,
@@ -1622,8 +1596,8 @@ async fn DebugExecution::resolve_variable_path(
 }
 
 ///|
-async fn DebugExecution::find_variable_inner(
-  self : DebugExecution,
+async fn VariableInspector::find_variable_inner(
+  self : VariableInspector,
   identity : VariableCacheIdentity,
   frame_id : Int,
   path : @moondbg.VariablePath,
@@ -1663,9 +1637,12 @@ async fn DebugExecution::find_variable(
   self.variable_cache.select_frame(epoch, frame.index())
   let identity = VariableCacheIdentity::{ epoch, frame_index: frame.index(), }
   let frame_id = self.selected_frame_id(thread, frame, "inspect a variable")
-  let result = self.find_variable_inner(identity, frame_id, path) catch {
-    error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
-  }
+  let result = self
+    .variable_inspector()
+    .find_variable_inner(identity, frame_id, path) catch {
+      error =>
+        raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
   guard self.machine.current_stop_epoch() == Some(epoch) &&
     self.variable_cache.is_current(identity) else {
     raise LldbDapBackendError::AdapterFailure(
@@ -1693,11 +1670,12 @@ async fn DebugExecution::local_variables(
   let frame_id = self.selected_frame_id(
     thread, frame, "inspect local variables",
   )
-  let result = self.load_local_variables_inner(
-    identity, frame_id, thread, frame,
-  ) catch {
-    error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
-  }
+  let result = self
+    .variable_inspector()
+    .load_local_variables_inner(identity, frame_id, thread, frame) catch {
+      error =>
+        raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+    }
   guard self.machine.current_stop_epoch() == Some(epoch) &&
     self.variable_cache.is_current(identity) else {
     raise LldbDapBackendError::AdapterFailure(

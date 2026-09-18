@@ -19,6 +19,8 @@ fn live_test_session() -> (LiveSession, @dap_testkit.ScriptedTransport) {
     ended: false,
     closing: false,
     deadline: None,
+    inspection: InspectionState::new(),
+    capabilities: {},
   }
   (session, transport)
 }

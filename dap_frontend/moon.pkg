@@ -8,6 +8,7 @@ import {
   "moonbitlang/async/fs",
   "moonbitlang/async/process",
   "Kaida-Amethyst/moondbg/name_mangle",
+  "Kaida-Amethyst/moondbg/lldb_dap",
 }
 
 supported_targets = "+native"
