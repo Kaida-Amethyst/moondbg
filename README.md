@@ -1,6 +1,51 @@
 # moondbg
 
-MoonBit native 程序的 REPL 调试器，通过 `lldb-dap` 调试，不依赖 Python formatter。
+MoonBit native 程序的调试器，提供 REPL 和 VS Code 调试，通过 `lldb-dap` 调试，不依赖 Python formatter。
+
+## VS Code 技术预览版
+
+下载 [GitHub Release：vscode-v0.1.1](https://github.com/Kaida-Amethyst/moondbg/releases/tag/vscode-v0.1.1)
+中的 `moondbg-0.1.1-darwin-arm64.vsix`。这是预发布版本，尚未上架 VS Code Marketplace。
+VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**。
+
+### 安装与启动
+
+1. 安装 CLI。通常通过 `moon install Kaida-Amethyst/moondbg` 安装到 `~/.moon/bin/moondbg`。
+   本版自动定位需要 CLI 的 `--resolve-source` 接口；旧版 Mooncakes 包可能尚未包含它。
+   要确保 CLI 与此预览版匹配，可在一个新的目录中安装本 release 的源码：
+
+   ```sh
+   git clone --branch vscode-v0.1.1 --depth 1 https://github.com/Kaida-Amethyst/moondbg.git moondbg-preview
+   cd moondbg-preview
+   moon install --path .
+   ```
+
+   安装会替换原来的 moondbg CLI，但不会更新你的 MoonBit 工具链。
+2. 在 VS Code 按 `Cmd+Shift+P`，执行 **Extensions: Install from VSIX… / 扩展：从 VSIX 安装…**，
+   选择下载的 VSIX，随后重新加载窗口。若装过旧 `moondbg-dev`，先卸载，避免调试类型冲突。
+3. 在用户设置中将 `moondbg.moonHome` 设为 `~/.moon`（自定义安装则填实际工具链目录）。
+   扩展只启动该目录的 `bin/moondbg`，不会搜索 PATH 或自动安装 CLI。
+4. 打开要调试的 MoonBit 项目文件夹，打开可执行包中的 `.mbt` 文件并设置断点。
+   在命令面板执行 **moondbg：调试当前包**；也可以按 F5 并选择 moondbg。
+   不需要编写 `launch.json`。项目已有其他调试配置时，使用当前包命令可避免启动旧配置。
+
+当前文件属于 library、测试文件或非 native 可执行包，或没有打开已保存的源码时，
+提示“未确定 main 函数位置”，**不会自动寻找其他可执行包**。
+已有明确 `package` / `program` 的启动配置仍按其指定目标运行。
+后续更新请从对应 release 下载新 VSIX，按其说明同步 CLI；扩展不自动更新 CLI。
+
+### 支持范围与限制
+
+- 仅支持 macOS Apple Silicon（`aarch64-apple-darwin`）及原生 ARM64 VS Code；
+  不支持 Intel Mac、Rosetta、Windows、Linux 或远程调试环境。仅支持受信任的本地文件工作区。
+- MoonBit 支持基线记录为 **v0.10.4**；实际验收使用 `moonc v0.10.12+2583f1173-nightly`，
+  尚未完成 v0.10.4 的独立兼容性验收。
+- 需要 MoonBit 语言扩展，以及可用的 `lldb-dap`（可用 `xcrun --find lldb-dap` 检查）。
+  包调试要求整个项目检查通过，以 `-g -O0` 构建；其他包或测试的检查错误也可能阻止启动。
+- 支持行/函数断点、单步、暂停、调用栈、变量按需展开、Watch、悬停和程序输出。
+  求值仅支持 `point.x`、`arr[0].x` 等只读变量路径，不支持算术、函数调用或赋值。
+- 暂不支持 attach、会话内 restart、条件断点、程序参数、环境变量覆盖及交互式 stdin。
+  修改代码后重新启动调试；行号与变量可见性仍受编译器 DWARF 和 LLDB 限制。
 
 VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，本地 VSIX 打包见
 [打包说明](extensions/vscode/PACKAGING.md)。安装后可在普通 VS Code 窗口调试，不需要扩展开发窗口。

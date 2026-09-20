@@ -16,6 +16,9 @@
 
 ## 安装
 
+从 [GitHub Release：vscode-v0.1.1](https://github.com/Kaida-Amethyst/moondbg/releases/tag/vscode-v0.1.1)
+下载 `moondbg-0.1.1-darwin-arm64.vsix`。这是技术预览，尚未上架 Marketplace。
+
 1. 在终端使用你的 MoonBit 工具链安装 CLI：
 
    ```sh
@@ -23,6 +26,16 @@
    ```
 
    默认安装位置是 `~/.moon/bin/moondbg`。此扩展不包含 CLI，也不会自动安装或更新它。
+   自动定位需要 CLI 支持 `--resolve-source`；旧 Mooncakes 包可能尚未提供此接口。
+   要安装与本 release 匹配的 CLI，可在新的目录中执行：
+
+   ```sh
+   git clone --branch vscode-v0.1.1 --depth 1 https://github.com/Kaida-Amethyst/moondbg.git moondbg-preview
+   cd moondbg-preview
+   moon install --path .
+   ```
+
+   这会替换原来的 moondbg CLI，不会升级 MoonBit 工具链。
 2. 在普通 VS Code 窗口按 `Cmd+Shift+P`，执行 **Extensions: Install from VSIX… / 扩展：从 VSIX 安装…**，
    选择 `moondbg-0.1.1-darwin-arm64.vsix`，如有提示则重新加载窗口。
    不需要克隆 moondbg 仓库或打开扩展开发窗口。
@@ -40,6 +53,7 @@
 
 若之前装过 `moondbg-dev` 或启动了旧的 moondbg 扩展开发窗口，请先禁用旧扩展并关闭旧窗口，
 避免两个扩展同时注册 `moondbg` 调试类型。本预览包的扩展标识是 `moondbg-local.moondbg`。
+更新时下载相应 release 的 VSIX 重新安装，并按其说明同步 CLI。
 
 ## 第一次调试
 

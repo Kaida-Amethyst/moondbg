@@ -1,6 +1,6 @@
 # 本地 VSIX 打包
 
-本阶段只生成本地预览包，不上传 Marketplace，也不改动 `$MOON_HOME/bin`。
+打包生成预览包，发布到 GitHub Releases，不上传 Marketplace，也不改动 `$MOON_HOME/bin`。
 CLI 由用户通过 `moon install Kaida-Amethyst/moondbg` 安装。
 
 在本目录执行（打包需要 Node.js 22+；使用扩展本身不需要另外安装 Node.js）：
@@ -15,7 +15,7 @@ npm run package
 不会包含 node_modules、测试、开发文档、CLI 或本机配置。`LICENSE` 必须与仓库根目录一致。
 
 使用 `--target darwin-arm64 --pre-release`，扩展本身也检查平台。当前的 `moondbg-local`
-仅为本地 VSIX 发布者标识；正式上传前由项目维护者确认实际 publisher，并考虑扩展 ID 迁移。
+仅为 VSIX 发布者标识；正式上传 Marketplace 前由项目维护者确认实际 publisher，并考虑扩展 ID 迁移。
 
 发布基线为 MoonBit v0.10.4；当前 nightly 验收不能替代 v0.10.4 的独立兼容性验收。
 打包成功不代表该项验收已完成。
@@ -31,3 +31,12 @@ npm run package
 `test/automatic-host.js` 验证无 launch.json 项目的 Run and Debug / 当前包命令、源码断点和 library 拒绝。
 
 打包参考：[VS Code Publishing Extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)。
+
+## GitHub Release
+
+扩展使用独立标签 `vscode-v0.1.1`，与 MoonBit CLI 模块版本区分。
+先提交并推送对应源码与文档，创建、推送该标签，再发布为 **prerelease**，上传
+`dist/moondbg-0.1.1-darwin-arm64.vsix`。发布说明见
+[vscode-v0.1.1](../../docs/releases/vscode-v0.1.1.md)。
+发布前重新打包，确保扩展内的 README 与标签中的源码一致；发布后下载资产并核对 SHA-256。
+不要把 VSIX 提交到 Git，也不要自动发布 Mooncakes 包或 Marketplace 扩展。
