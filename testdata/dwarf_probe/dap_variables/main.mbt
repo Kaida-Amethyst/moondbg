@@ -32,7 +32,7 @@ fn inspect_values(
 ///|
 fn main {
   let caller_only = 700
-  let point = Point::{ x: 3, y: 4 }
+  let point = Point::{ x: 35, y: 4 }
   let values : Array[Double] = [1.5, 2.5, 3.5]
   let fixed : FixedArray[Int] = [for i in 1..<=1000 => i]
   let points : Array[Point] = [point, { x: 5, y: 6 }]
