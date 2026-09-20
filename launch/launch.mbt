@@ -87,18 +87,8 @@ pub async fn prepare_target(
   // Use one explicit output directory for both commands. This also keeps the
   // debug launch artifacts separate from regular project builds.
   let target_dir = "\{project}/_build/moondbg"
-  run_moon(
-    project,
-    ["check", "--target", "native", "-g", "--target-dir", target_dir],
-    output~,
-  )
-  |> ignore
-  let metadata = @fs.read_file("\{target_dir}/native/debug/check/packages.json")
-  let pkg = select_package(
-    parse_package_metadata(metadata.text()),
-    target,
-    directory,
-  )
+  let metadata = check_packages(project, output~)
+  let pkg = select_package(parse_package_metadata(metadata), target, directory)
   let output = run_moon(
     project,
     [

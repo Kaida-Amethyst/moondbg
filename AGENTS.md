@@ -57,8 +57,11 @@ set_moon_stable
 `_build/native/debug/build/moondbg.exe`，也可用 `MOONDBG_ACCEPTANCE_EXECUTABLE`
 指定本次构建的绝对路径，避免误测旧的已安装版本。
 
-VS Code 扩展只启动 `$MOON_HOME/bin/moondbg --dap`，允许普通可执行文件或有效软链接，
-不搜索 PATH 或自动安装。仓库的扩展开发窗口默认设置 `MOON_HOME=~/.moon`，并将其
+VS Code 扩展只启动所选 `$MOON_HOME/bin/moondbg --dap`，允许普通可执行文件或有效软链接，
+不搜索 PATH 或自动安装。用户设置 `moondbg.moonHome` 优先于扩展进程的 `MOON_HOME`，
+该设置支持 `~/`，解析为绝对目录后作为 `MOON_HOME` 传给 CLI，并将其 bin 放到 PATH 最前。
+本地 VSIX 打包见 `extensions/vscode/PACKAGING.md`，仅支持 macOS arm64；不要静默改动用户安装的 CLI。
+仓库的扩展开发窗口默认设置 `MOON_HOME=~/.moon`，并将其
 `bin` 放在 PATH 最前面；修改启动配置后需重新启动开发窗口。若缺少 moondbg，应报告
 实际路径，由用户安装或配置链接，不静默修改用户工具链。
 

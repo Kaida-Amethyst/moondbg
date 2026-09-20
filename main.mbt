@@ -79,6 +79,35 @@ async fn main {
   // Dispatch before argparse: help/error output from the human CLI must never
   // enter the DAP stdout stream. The existing executable remains the launcher.
   let argv = @env.args()
+  if argv.length() > 1 && argv[1] == "--resolve-source" {
+    let (result, code) = try {
+      guard argv is [_, _, source] else {
+        raise @launch.LaunchError(
+          "--resolve-source requires one absolute source path",
+        )
+      }
+      (
+        @launch.resolve_source(source, output=(_, text) => {
+          @stdio.stderr.write(text)
+        }),
+        0,
+      )
+    } catch {
+      error => {
+        let message = match error {
+          @launch.LaunchError(message) => message
+          _ => @debug.to_string(error)
+        }
+        let result : Json = { "protocolVersion": 1, "error": message }
+        (result, 1)
+      }
+    }
+    @stdio.stdout.write(result.stringify() + "\n") catch {
+      _ => ()
+    }
+    exit_process(code)
+    return
+  }
   if argv.length() > 1 && argv[1] == "--build-worker" {
     let code = @launch.run_worker(argv[2:].to_owned()) catch {
       error => {

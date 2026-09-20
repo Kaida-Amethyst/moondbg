@@ -91,8 +91,9 @@ async fn run_moon(
   project : String,
   arguments : Array[String],
   output~ : async (String, String) -> Unit,
+  isolated? : Bool = true,
 ) -> String {
-  selected_moon() |> ignore
+  let moon = selected_moon()
   guard @env.args() is [entry, ..] else {
     raise LaunchError("Missing executable entry")
   }
@@ -106,14 +107,26 @@ async fn run_moon(
     let input = @process.redirect_from_file("/dev/null")
     let process = @process.spawn(
       group,
-      worker,
-      ["--build-worker", ..arguments],
+      if isolated {
+        worker
+      } else {
+        moon
+      },
+      if isolated {
+        ["--build-worker", ..arguments]
+      } else {
+        arguments
+      },
       cwd=project,
       inherit_env=true,
       stdin=input,
       stdout=out,
       stderr=err,
-      cancel_handler=@process.CancellationHandler(pid => cancel_build_group(pid)),
+      cancel_handler=if isolated {
+        @process.CancellationHandler(pid => cancel_build_group(pid))
+      } else {
+        @process.hard_cancel()
+      },
       no_wait=true,
     )
     let captured = @buffer.Buffer()

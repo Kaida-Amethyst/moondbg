@@ -4,54 +4,7 @@
     {
       "type": "moondbg",
       "request": "launch",
-      "name": "moondbg：DAP 连接验证（不运行程序）",
-      "connectionTest": true,
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：调试 main（预编译）",
-      "program": "${workspaceFolder}/_build/native/debug/build/main/main.exe",
-      "cwd": "${workspaceFolder}",
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：单步试用（dap_steps）",
-      "program": "${workspaceFolder}/_build/native/debug/build/dap_steps/dap_steps.exe",
-      "cwd": "${workspaceFolder}",
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：暂停试用（dap_pause）",
-      "program": "${workspaceFolder}/_build/native/debug/build/dap_pause/dap_pause.exe",
-      "cwd": "${workspaceFolder}",
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：变量面板试用（dap_variables）",
-      "program": "${workspaceFolder}/_build/native/debug/build/dap_variables/dap_variables.exe",
-      "cwd": "${workspaceFolder}",
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：自动构建试用（dap_variables）",
-      "package": "${workspaceFolder}/dap_variables",
-      "internalConsoleOptions": "openOnSessionStart"
-    },
-    {
-      "type": "moondbg",
-      "request": "launch",
-      "name": "moondbg：函数断点试用（dap_functions）",
-      "package": "${workspaceFolder}/dap_functions",
+      "name": "moondbg：调试当前包",
       "internalConsoleOptions": "openOnSessionStart"
     }
   ]

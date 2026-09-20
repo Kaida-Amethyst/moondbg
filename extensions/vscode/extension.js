@@ -1,7 +1,10 @@
 const vscode = require("vscode");
 const { resolveDebugger } = require("./launcher");
+const { createConfigurationProvider, automaticConfiguration } = require("./configuration");
 
 function activate(context) {
+  const output = vscode.window.createOutputChannel("moondbg");
+  context.subscriptions.push(output);
   context.subscriptions.push(
     vscode.commands.registerCommand("moondbg.showStatus", () =>
       vscode.window.showInformationMessage(
@@ -10,27 +13,17 @@ function activate(context) {
     ),
   );
   context.subscriptions.push(
-    vscode.debug.registerDebugConfigurationProvider("moondbg", {
-      resolveDebugConfiguration(_folder, configuration) {
-        const hasPackage = Object.hasOwn(configuration, "package");
-        const hasProgram = Object.hasOwn(configuration, "program");
-        const validTarget = hasPackage !== hasProgram &&
-          typeof configuration[hasPackage ? "package" : "program"] === "string" &&
-          configuration[hasPackage ? "package" : "program"].trim().length > 0;
-        if (configuration.request !== "launch" ||
-            (configuration.connectionTest === true ? hasPackage || hasProgram : !validTarget)) {
-          vscode.window.showErrorMessage(
-            "请为 launch 配置 package（包目录，自动构建）或 program（预编译可执行文件），两者只能选一个。连接验证不接受目标；当前不支持 attach。",
-          );
-          return undefined;
-        }
-        return configuration;
-      },
+    vscode.commands.registerCommand("moondbg.debugCurrentPackage", () => {
+      const document = vscode.window.activeTextEditor?.document;
+      const folder = document && vscode.workspace.getWorkspaceFolder(document.uri);
+      return vscode.debug.startDebugging(folder, automaticConfiguration());
     }),
+    vscode.debug.registerDebugConfigurationProvider("moondbg", createConfigurationProvider(vscode, output)),
     vscode.debug.registerDebugAdapterDescriptorFactory("moondbg", {
       async createDebugAdapterDescriptor() {
-        const executable = await resolveDebugger();
-        return new vscode.DebugAdapterExecutable(executable, ["--dap"]);
+        const moonHome = vscode.workspace.getConfiguration("moondbg").get("moonHome", "");
+        const launch = await resolveDebugger(process.env, { moonHome });
+        return new vscode.DebugAdapterExecutable(launch.executable, ["--dap"], { env: launch.env });
       },
     }),
   );

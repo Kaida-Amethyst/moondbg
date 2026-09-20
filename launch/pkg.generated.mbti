@@ -8,6 +8,8 @@ import {
 // Values
 pub async fn prepare_target(String, output~ : async (String, String) -> Unit) -> PreparedTarget
 
+pub async fn resolve_source(String, output~ : async (String, String) -> Unit) -> Json
+
 pub async fn run_worker(Array[String]) -> Int
 
 // Errors

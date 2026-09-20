@@ -1,20 +1,45 @@
 {
-  "name": "moondbg-dev",
-  "displayName": "moondbg (Development)",
+  "name": "moondbg",
+  "displayName": "moondbg (Preview)",
   "description": "通过 moondbg 构建并调试 MoonBit native 程序。",
-  "version": "0.0.1",
+  "version": "0.1.1",
   "publisher": "moondbg-local",
   "private": true,
+  "preview": true,
   "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Kaida-Amethyst/moondbg.git", "directory": "extensions/vscode" },
+  "bugs": { "url": "https://github.com/Kaida-Amethyst/moondbg/issues" },
+  "extensionKind": ["workspace"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": false, "description": "调试会构建并运行工作区程序，请先确认信任此工作区。" },
+    "virtualWorkspaces": { "supported": false }
+  },
+  "files": ["extension.js", "launcher.js", "configuration.js", "discovery.js", "README.md", "LICENSE", "CHANGELOG.md"],
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": ["Debuggers"],
   "main": "./extension.js",
-  "activationEvents": ["onCommand:moondbg.showStatus", "onDebugResolve:moondbg"],
+  "activationEvents": ["onCommand:moondbg.showStatus", "onCommand:moondbg.debugCurrentPackage", "onDebugResolve:moondbg", "onDebugInitialConfigurations"],
   "contributes": {
+    "configuration": {
+      "title": "moondbg",
+      "properties": {
+        "moondbg.moonHome": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "MoonBit 工具链目录，例如 `~/.moon` 或 `/Users/你的用户名/.moon`。留空使用扩展进程的 `MOON_HOME`；不搜索 PATH。扩展启动该目录下的 `bin/moondbg`，并把此目录作为 MOON_HOME 传给调试器。"
+        }
+      }
+    },
     "breakpoints": [{ "language": "moonbit" }],
     "commands": [
+      {
+        "command": "moondbg.debugCurrentPackage",
+        "title": "调试当前包",
+        "category": "moondbg"
+      },
       {
         "command": "moondbg.showStatus",
         "title": "检查扩展加载",
@@ -54,23 +79,7 @@
           {
             "type": "moondbg",
             "request": "launch",
-            "name": "moondbg：自动构建并调试包",
-            "package": "${workspaceFolder}/main",
-            "internalConsoleOptions": "openOnSessionStart"
-          },
-          {
-            "type": "moondbg",
-            "request": "launch",
-            "name": "moondbg：调试预编译程序",
-            "program": "${workspaceFolder}/_build/native/debug/build/main/main.exe",
-            "cwd": "${workspaceFolder}",
-            "internalConsoleOptions": "openOnSessionStart"
-          },
-          {
-            "type": "moondbg",
-            "request": "launch",
-            "name": "moondbg：DAP 连接验证（不运行程序）",
-            "connectionTest": true,
+            "name": "moondbg：调试当前包",
             "internalConsoleOptions": "openOnSessionStart"
           }
         ]
@@ -78,6 +87,10 @@
     ]
   },
   "scripts": {
-    "test": "node --test extension.test.js launcher.test.js"
+    "test": "node --test extension.test.js launcher.test.js packaging.test.js configuration.test.js discovery.test.js",
+    "package": "npm test && node scripts/package.js"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "4.0.0"
   }
 }

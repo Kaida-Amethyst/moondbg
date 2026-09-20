@@ -27,7 +27,9 @@ test("launch configuration loads this extension and opens the existing fixture",
   assert.ok(fs.statSync(path.join(__dirname, manifest.main)).isFile());
   const fixtureLaunch = JSON.parse(fs.readFileSync(path.join(args[1], ".vscode/launch.json"), "utf8"));
   assert.equal(fixtureLaunch.configurations[0].type, "moondbg");
-  assert.equal(fixtureLaunch.configurations[0].connectionTest, true);
+  assert.equal(fixtureLaunch.configurations.length, 1);
+  assert.equal(fixtureLaunch.configurations[0].package, undefined);
+  assert.equal(fixtureLaunch.configurations[0].connectionTest, undefined);
   assert.equal(manifest.contributes.debuggers[0].type, "moondbg");
   assert.ok(manifest.activationEvents.includes("onDebugResolve:moondbg"));
 });
@@ -38,9 +40,16 @@ test("activation registers the declared status command and disposes with the hos
   const registrations = new Map();
   const vscode = {
     DebugAdapterExecutable: class {
-      constructor(command, args) { this.command = command; this.args = args; }
+      constructor(command, args, options) { this.command = command; this.args = args; this.options = options; }
+    },
+    workspace: {
+      getConfiguration(section) {
+        assert.equal(section, "moondbg");
+        return { get(key) { assert.equal(key, "moonHome"); return "~/.moon"; } };
+      },
     },
     debug: {
+      startDebugging: async () => true,
       registerDebugConfigurationProvider(type, provider) {
         assert.equal(type, "moondbg");
         registrations.set("provider", provider);
@@ -60,6 +69,7 @@ test("activation registers the declared status command and disposes with the hos
       },
     },
     window: {
+      createOutputChannel: () => ({ append() {}, appendLine() {}, show() {}, dispose() {} }),
       showErrorMessage(message) { messages.push(message); },
       showInformationMessage(message) {
         messages.push(message);
@@ -69,10 +79,16 @@ test("activation registers the declared status command and disposes with the hos
   };
   const sandbox = {
     module: { exports: {} },
+    process: { env: { MOON_HOME: "/old/.moon" } },
     require(id) {
       if (id === "./launcher") {
-        return { resolveDebugger: async () => "/test/.moon/bin/moondbg" };
+        return { resolveDebugger: async (environment, options) => {
+          assert.equal(environment.MOON_HOME, "/old/.moon");
+          assert.equal(options.moonHome, "~/.moon");
+          return { executable: "/test/.moon/bin/moondbg", env: { MOON_HOME: "/test/.moon", PATH: "/test/.moon/bin" } };
+        } };
       }
+      if (id === "./configuration") return require("./configuration");
       assert.equal(id, "vscode");
       return vscode;
     },
@@ -85,8 +101,8 @@ test("activation registers the declared status command and disposes with the hos
   const context = { subscriptions: [] };
   sandbox.module.exports.activate(context);
   assert.deepEqual(
-    [...commands.keys()],
-    manifest.contributes.commands.map((command) => command.command),
+    [...commands.keys()].sort(),
+    manifest.contributes.commands.map((command) => command.command).sort(),
   );
   assert.deepEqual(messages, []);
   for (const [id, handler] of commands) {
@@ -97,23 +113,25 @@ test("activation registers the declared status command and disposes with the hos
     "moondbg 扩展已加载。支持按包自动构建、断点、单步、暂停和变量查看。",
   ]);
   const provider = registrations.get("provider");
-  assert.equal(provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);
+  assert.equal(await provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);
   const configuration = { request: "launch", connectionTest: true };
-  assert.equal(provider.resolveDebugConfiguration(undefined, configuration), configuration);
+  assert.equal(await provider.resolveDebugConfiguration(undefined, configuration), configuration);
   const live = { request: "launch", program: "${workspaceFolder}/main.exe" };
-  assert.equal(provider.resolveDebugConfiguration(undefined, live), live);
+  assert.equal(await provider.resolveDebugConfiguration(undefined, live), live);
   const built = { request: "launch", package: "${workspaceFolder}/dap_variables" };
-  assert.equal(provider.resolveDebugConfiguration(undefined, built), built);
+  assert.equal(await provider.resolveDebugConfiguration(undefined, built), built);
   for (const invalid of [
     { request: "launch", package: "/pkg", program: "/prog" },
     { request: "launch", package: " " },
     { request: "launch", package: 42 },
     { request: "launch", connectionTest: true, package: "/pkg" },
-  ]) assert.equal(provider.resolveDebugConfiguration(undefined, invalid), undefined);
-  assert.equal(provider.resolveDebugConfiguration(undefined, { request: "attach", program: "/tmp/a.exe" }), undefined);
+  ]) assert.equal(await provider.resolveDebugConfiguration(undefined, invalid), undefined);
+  assert.equal(await provider.resolveDebugConfiguration(undefined, { request: "attach", program: "/tmp/a.exe" }), undefined);
   const descriptor = await registrations.get("factory").createDebugAdapterDescriptor();
   assert.equal(descriptor.command, "/test/.moon/bin/moondbg");
   assert.equal(descriptor.args.join(" "), "--dap");
+  assert.equal(descriptor.options.env.MOON_HOME, "/test/.moon");
+  assert.equal(descriptor.options.env.PATH, "/test/.moon/bin");
   for (const disposable of context.subscriptions) {
     disposable.dispose();
   }
