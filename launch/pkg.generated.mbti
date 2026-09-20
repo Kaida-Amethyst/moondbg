@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/launch"
+
+import {
+  "Kaida-Amethyst/moondbg/debugger",
+}
+
+// Values
+pub async fn prepare_target(String, output~ : async (String, String) -> Unit) -> PreparedTarget
+
+pub async fn run_worker(Array[String]) -> Int
+
+// Errors
+pub(all) suberror LaunchFailure {
+  LaunchError(String)
+}
+
+// Types and methods
+pub struct PreparedTarget {
+  executable : String
+  debug_context : @debugger.DebugContext
+  working_directory : String
+}
+
+// Type aliases
+
+// Traits

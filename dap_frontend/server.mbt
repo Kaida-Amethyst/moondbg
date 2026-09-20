@@ -25,7 +25,7 @@ pub async fn serve(reader : &@io.Reader, writer : &@io.Writer) -> Unit {
       session.launch_seq is None &&
       !session.finished &&
       !(arguments is { "connectionTest": True, .. }) {
-      serve_live(reader, writer, session, seq, arguments)
+      serve_launch(reader, writer, session, seq, arguments)
       return
     }
     let messages = session.handle_request(seq, command, arguments)

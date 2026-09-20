@@ -1,5 +1,6 @@
 import {
   "Kaida-Amethyst/moondbg/debugger",
+  "Kaida-Amethyst/moondbg/launch",
   "Kaida-Amethyst/moondbg/dap_frontend",
   "Kaida-Amethyst/moondbg/lldb_dap",
   "Kaida-Amethyst/moondbg/render",
@@ -12,7 +13,6 @@ import {
   "moonbitlang/core/argparse",
   "moonbitlang/core/debug",
   "moonbitlang/core/env",
-  "moonbitlang/core/json",
   "moonbitlang/core/string",
 }
 

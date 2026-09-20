@@ -3,7 +3,7 @@ async fn validate_executable(path : String) -> String {
   guard @fs.exists(path) else { raise ExecutableNotFound(path) }
   guard @fs.kind(path) is Regular else { raise ExecutableNotAFile(path) }
   guard @fs.can_execute(path) else {
-    raise LaunchError("file is not executable: \{path}")
+    raise @launch.LaunchError("file is not executable: \{path}")
   }
   @fs.realpath(path)
 }
@@ -79,6 +79,20 @@ async fn main {
   // Dispatch before argparse: help/error output from the human CLI must never
   // enter the DAP stdout stream. The existing executable remains the launcher.
   let argv = @env.args()
+  if argv.length() > 1 && argv[1] == "--build-worker" {
+    let code = @launch.run_worker(argv[2:].to_owned()) catch {
+      error => {
+        @stdio.stderr.write(
+          "moondbg build worker: \{@debug.to_string(error)}\n",
+        ) catch {
+          _ => ()
+        }
+        1
+      }
+    }
+    exit_process(code)
+    return
+  }
   if argv.length() > 1 && argv[1] == "--dap" {
     guard argv.length() == 2 else {
       @stdio.stderr.write("moondbg --dap accepts no additional arguments.\n") catch {
@@ -101,7 +115,11 @@ async fn main {
     let matches = command().parse()
     let target = target_argument(matches)
     let explicit_context = debug_context_argument(matches)
-    let (executable, debug_context) = prepare_target(target)
+    let prepared = @launch.prepare_target(target, output=(_, text) => {
+      @stdio.stderr.write(text)
+    })
+    let executable = prepared.executable
+    let debug_context = prepared.debug_context
     let debug_context = if matches.values.contains("current-package") {
       explicit_context
     } else {
@@ -113,7 +131,7 @@ async fn main {
       let message = match error {
         @debugger.AdapterFailure(message) =>
           "debugger adapter failed: \{message}"
-        LaunchError(message) => message
+        @launch.LaunchError(message) => message
         _ => @debug.to_string(error)
       }
       @stdio.stderr.write("moondbg: \{message}\n") catch {

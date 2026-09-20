@@ -3,9 +3,9 @@
 MoonBit native 程序的 REPL 调试器，通过 `lldb-dap` 调试，不依赖 Python formatter。
 
 VS Code 调试及逐步操作说明见 [扩展 README](extensions/vscode/README.md)。
-从本仓库根目录选择“运行 moondbg 扩展（开发窗口）”，再在新窗口选择“moondbg：调试 main（预编译）”。
+从本仓库根目录选择“运行 moondbg 扩展（开发窗口）”，再在新窗口选择“moondbg：自动构建试用（dap_variables）”。
 支持预编译 native 程序的行断点、调用栈、单步、继续、暂停、局部变量树、悬停、Watch、调试控制台只读访问路径求值、输出和停止。
-求值支持 `point.x`、`arr[0].x` 等变量路径；暂不支持自动构建、算术、函数调用或赋值。
+支持按包 F5 自动构建，也保留直接调试预编译程序。求值支持 `point.x`、`arr[0].x` 等变量路径；暂不支持算术、函数调用或赋值。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
 ## 命令行使用
@@ -18,7 +18,7 @@ moon install Kaida-Amethyst/moondbg
 
 在 MoonBit 项目目录中运行 `moondbg <包目录>`，例如 `moondbg main`。
 也支持包的项目内相对名称和完整包名。目标必须是支持 native 的可执行包；library 包会被拒绝。
-启动时调用当前环境中的 `moon check` 获取包信息，再调用
+启动时调用 `$MOON_HOME/bin/moon check` 获取包信息，再调用
 `moon run --build-only --target native -g` 构建目标，自动传入包名和 import alias。
 调试构建及元数据保存在项目 `_build/moondbg` 下。
 当前元数据获取需要完整项目检查，其他包或测试的检查错误也会阻止启动。

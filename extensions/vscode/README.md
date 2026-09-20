@@ -1,14 +1,53 @@
 # moondbg 的 VS Code 调试
 
 这一版由 VS Code 启动 `$MOON_HOME/bin/moondbg --dap`，再由 moondbg 启动 lldb-dap。
-支持预编译 native 程序的行断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
+支持按包自动构建或直接调试预编译 native 程序，以及行断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
-暂不支持自动构建、程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
+暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
 算术表达式、函数调用或赋值。调试控制台支持只读变量路径（如 `point.x`、`arr[0]`），
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
-## 已完成连接验证后：开始真实调试
+## 推荐：按包 F5 自动构建
+
+先在仓库根目录按“构建和启动路径”一节更新 moondbg，并重新启动扩展开发窗口。
+在新窗口选择 **moondbg：自动构建试用（dap_variables）**，打开 `dap_variables/main.mbt`，
+在第 21 行 `let marker = point.x` 打断点，按 F5。无需手动构建示例程序。
+
+调试控制台会显示包路径、构建诊断和 `Build succeeded`；随后停在断点，可以继续使用变量面板、
+Watch、悬停和单步。结束会话后修改源码、保存，再按 F5，会先重新构建，不会直接运行旧二进制。
+
+配置只需要指定包目录：
+
+```json
+{
+  "type": "moondbg",
+  "request": "launch",
+  "name": "调试 dap_variables",
+  "package": "${workspaceFolder}/dap_variables",
+  "internalConsoleOptions": "openOnSessionStart"
+}
+```
+
+- `package` 与 `program` 必须二选一；`package` 是绝对包目录，不是包名或 `.exe`。
+  `${workspaceFolder}` 由 VS Code 展开。连接验证配置不需要任何目标。
+- 每次新会话均运行 `moon check` 获取包元数据，再运行 `moon run --build-only --target native -g`。
+  Moon 的调试模式使用 `-g -O0`，并保留增量构建能力。构建产物在项目 `_build/moondbg` 下。
+- `cwd` 只控制用户程序的工作目录。package 模式默认项目根目录；program 模式默认二进制所在目录。
+  构建始终在目标项目根目录执行，支持模块的 `source` 目录、空格路径和符号链接目录。
+- 构建失败会显示诊断并结束会话，不启动 LLDB 或回退到旧程序。当前仍需整个项目 `moon check`
+  通过，其他包或测试的类型错误也会阻止启动。
+- 构建中点新窗口的红色 **Stop / 停止** 即可取消；关闭输入也会取消。
+  moondbg 等待其构建进程清理后再确认断开，不启动已取消会话的用户程序。
+- 自动构建使用 `$MOON_HOME/bin/moon`，并检查同一目录的 `moonc`；不静默切换工具链。
+  本阶段构建进程组实现支持 macOS/Linux（POSIX），尚不支持 Windows 的按包构建。
+- `program` 模式完全保留，不运行构建命令。暂不提供自动包选择菜单或会话内 restart。
+
+可验证更新效果：停止会话，把 main 中 `point` 的 `x: 3` 改为 `x: 30` 并保存，再 F5；
+Watch 中 `point.x` 应变成 `30`。试完恢复为 `3`。如果故意引入编译错误，应只看到构建失败，
+而不是继续调试上一次成功编译的程序。
+
+## 已完成连接验证后：调试预编译程序
 
 1. **关闭旧的扩展开发窗口**，在仓库根目录的原窗口重新选择
    **运行 moondbg 扩展（开发窗口）**并启动，让新窗口加载更新后的扩展。
@@ -158,7 +197,7 @@ ln -s "$PWD/_build/native/debug/build/moondbg.exe" "$MOON_HOME/bin/moondbg"
 根目录的扩展开发配置显式将新窗口的 `MOON_HOME` 设置为 `${env:HOME}/.moon`，
 同时将 `${env:HOME}/.moon/bin` 放在 PATH 最前面，不修改系统设置。
 扩展接受显式指定的其他绝对 MOON_HOME 路径，不限定安装目录或要求软链接；它不从 PATH
-查找 moondbg、不执行 shell、不自动修复链接或构建。若使用自定义工具链，应同步调整开发
+查找 moondbg、不执行 shell、不自动修复链接或构建 moondbg 本身。目标包构建由 moondbg 负责。若使用自定义工具链，应同步调整开发
 启动配置的 MOON_HOME 和 PATH，并重新启动扩展宿主。
 
 ## 第一次打开（macOS）
@@ -199,7 +238,7 @@ ln -s "$PWD/_build/native/debug/build/moondbg.exe" "$MOON_HOME/bin/moondbg"
 5. 应出现通知：
 
    ```text
-   moondbg 扩展已加载。支持已编译程序的行断点、调用栈、单步、继续和暂停。
+   moondbg 扩展已加载。支持按包自动构建、断点、单步、暂停和变量查看。
    ```
 
 这一步只确认扩展加载，可以跳过；开始 DAP 会话时扩展会自动激活。
@@ -271,6 +310,7 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_live_wbtest.mbt --no-par
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_control_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_variables_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_evaluate_wbtest.mbt --no-parallelize
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_build_wbtest.mbt --no-parallelize
 ```
 
 Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
@@ -299,7 +339,7 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
 
 - `initialize` 声明 moondbg 本轮实际支持的能力，不转发 LLDB 的完整 capabilities。
   当前仅接受本机路径及从 1 开始的行列号。
-- `launch` 验证 `program`/`cwd` 后启动 adapter；收到 LLDB `initialized` 后才接受配置。
+- `launch` 验证 `package`/`program`/`cwd`，按包启动先异步构建再启动 adapter；收到 LLDB `initialized` 后才接受配置。
   `setBreakpoints` 对每个文件整批替换，空数组清空该文件。实际落点和 verified 状态来自 LLDB。
 - 客户端输入和 adapter 输入分别由后台任务读取，进入有界队列，由同一个循环分派状态和写消息。
   启动/继续/单步的响应与随后发生的 stopped、output、exited 事件独立，因此运行期间仍能处理 pause 和 disconnect。
@@ -320,10 +360,19 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
   能接收 continue/disconnect。每个变量任务绑定 stop epoch，恢复执行会立即取消其对外响应。
   每次展开重新建立对应 frame 的 scope 上下文，通过源级路径定位，避免 LLDB 复用原始引用。
 
+构建准备和运行阶段共享同一个客户端读取任务，避免切换阶段时丢失半条 DAP 消息；输出通过
+有界队列交给唯一协议写入者。构建不套用 LLDB 的 15 秒请求超时，但随时允许 disconnect。
+CLI 和 DAP 共用 `launch/`，其中私有 `--build-worker` 子进程在 POSIX 独立进程组内运行 moon，
+取消时只清理本次构建进程组，不按名字全局杀进程。构建期间不会伪造 initialized/process 事件。
+这里不承诺清理构建脚本主动脱离进程组、另建 session 的后台服务。
+
 `test/live-host.js` 是真实 VS Code 集成测试入口：默认验证编辑器行断点、自动调用栈请求、
 继续和自然退出。若设置 `MOONDBG_TEST_RUNNING_PROGRAM` 为使用 cc 编译的
 `testdata/dap_running/main.c` 的绝对路径，则验证运行中实时输出和 VS Code Stop 操作，
 并确认目标 PID 已退出。可像 `test/host.js` 一样通过 `--extensionTestsPath` 在隔离宿主运行，
 `MOONDBG_VSCODE_TEST_RESULT` 指定 JSON 验收记录路径。
+
+设置 `MOONDBG_TEST_BUILD_PACKAGE=1` 可让同一真实 VS Code 集成测试通过 `package` 启动，
+并检查构建成功输出早于 initialized，以及随后断点、变量、求值和退出仍可用。
 
 DAP 时序依据：[Debug Adapter Protocol overview](https://microsoft.github.io/debug-adapter-protocol/overview)。

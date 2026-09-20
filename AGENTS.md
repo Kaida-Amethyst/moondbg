@@ -19,6 +19,9 @@ You can browse and install extra skills here:
   and session logic live in `debugger/`; import `Kaida-Amethyst/moondbg/debugger`
   as `@debugger` from other packages.
 
+- `launch/` owns shared package discovery, debug builds and build-process cleanup
+  for CLI and DAP. The root executable provides its private `--build-worker` entry.
+
 ## Coding convention
 
 - MoonBit code is organized in block style, each block is separated by `///|`,
@@ -30,7 +33,7 @@ You can browse and install extra skills here:
 
 ## 开发工具链环境
 
-moondbg 直接调用当前环境中的 `moon` 构建目标，不依赖 `moon debug`。
+moondbg 直接调用所选 `$MOON_HOME/bin/moon` 构建目标，不依赖 `moon debug`。
 构建、测试、运行前确认所选工具链，并保证 `moon`、`moonc` 来自同一 `MOON_HOME`。
 用户明确指定的工具链优先；本机可用以下命令选择 stable：
 

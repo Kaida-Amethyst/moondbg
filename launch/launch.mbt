@@ -14,21 +14,10 @@ async fn project_root(directory : String) -> String {
 }
 
 ///|
-async fn run_moon(project : String, arguments : Array[String]) -> String {
-  let (status, output) = @process.collect_stdout(
-    "moon",
-    arguments,
-    cwd=project,
-    inherit_env=true,
-    stderr=@stdio.stderr,
-  )
-  guard status == 0 else {
-    // Build scripts may also write diagnostics to stdout. Preserve them on
-    // failure, before returning to the CLI's nonzero exit path.
-    @stdio.stderr.write(output)
-    raise LaunchError("moon \{arguments[0]} failed (exit status \{status})")
-  }
-  output.text()
+pub struct PreparedTarget {
+  executable : String
+  debug_context : @debugger.DebugContext
+  working_directory : String
 }
 
 ///|
@@ -66,11 +55,20 @@ async fn select_package(
 }
 
 ///|
-async fn prepare_target(target : String) -> (String, @debugger.DebugContext) {
+pub async fn prepare_target(
+  target : String,
+  output~ : async (String, String) -> Unit,
+) -> PreparedTarget {
   let directory = if @fs.exists(target) {
     match @fs.kind(target) {
-      Regular =>
-        return (validate_executable(target), @debugger.DebugContext::empty())
+      Regular => {
+        let executable = validate_executable(target)
+        return {
+          executable,
+          debug_context: @debugger.DebugContext::empty(),
+          working_directory: @fs.realpath("."),
+        }
+      }
       Directory => Some(@fs.realpath(target))
       _ =>
         raise LaunchError(
@@ -89,9 +87,11 @@ async fn prepare_target(target : String) -> (String, @debugger.DebugContext) {
   // Use one explicit output directory for both commands. This also keeps the
   // debug launch artifacts separate from regular project builds.
   let target_dir = "\{project}/_build/moondbg"
-  run_moon(project, [
-    "check", "--target", "native", "-g", "--target-dir", target_dir,
-  ])
+  run_moon(
+    project,
+    ["check", "--target", "native", "-g", "--target-dir", target_dir],
+    output~,
+  )
   |> ignore
   let metadata = @fs.read_file("\{target_dir}/native/debug/check/packages.json")
   let pkg = select_package(
@@ -99,18 +99,34 @@ async fn prepare_target(target : String) -> (String, @debugger.DebugContext) {
     target,
     directory,
   )
-  let output = run_moon(project, [
-    "run",
-    "--build-only",
-    "--target",
-    "native",
-    "-g",
-    "--target-dir",
-    target_dir,
-    @fs.realpath(pkg.directory),
-  ])
+  let output = run_moon(
+    project,
+    [
+      "run",
+      "--build-only",
+      "--target",
+      "native",
+      "-g",
+      "--target-dir",
+      target_dir,
+      @fs.realpath(pkg.directory),
+    ],
+    output~,
+  )
   let artifact = build_artifact(output)
   // moon run --build-only emits an absolute artifact path.
   let executable = validate_executable(artifact)
-  (executable, @debugger.DebugContext::new(pkg.name, pkg.aliases))
+  {
+    executable,
+    debug_context: @debugger.DebugContext::new(pkg.name, pkg.aliases),
+    working_directory: project,
+  }
+}
+
+///|
+async fn validate_executable(path : String) -> String {
+  guard @fs.exists(path) && @fs.kind(path) is Regular && @fs.can_execute(path) else {
+    raise LaunchError("file is missing or not executable: \{path}")
+  }
+  @fs.realpath(path)
 }

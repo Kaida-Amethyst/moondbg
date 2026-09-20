@@ -5,26 +5,12 @@ async fn send_client(writer : &@io.Writer, message : Json) -> Unit {
 
 ///|
 async fn serve_live(
-  reader : &@io.Reader,
+  inbox : @async.Queue[LiveInput],
   writer : &@io.Writer,
   client : ConnectionSession,
   launch_seq : Int,
-  arguments : Json,
+  launch_args : Json,
 ) -> Unit {
-  let launch_args = launch_arguments(arguments) catch {
-    error => {
-      send_client(
-        writer,
-        client.response(
-          launch_seq,
-          "launch",
-          error=Some(@debug.to_string(error)),
-        ),
-      )
-      send_client(writer, client.event("terminated", {}))
-      return
-    }
-  }
   @async.with_task_group(group => {
     let transport = @dap.open_transport(group, find_adapter()) catch {
       error => {
@@ -60,29 +46,11 @@ async fn serve_live(
       inspection: InspectionState::new(),
       capabilities: {},
     }
-    let inbox : @async.Queue[LiveInput] = @async.Queue(kind=Blocking(128))
-    defer inbox.close()
     defer session.inspection.jobs.close()
     let inspection_task = group.spawn(no_wait=true, () => {
       session.inspect_worker(inbox)
     })
     defer inspection_task.cancel()
-    let input_task = group.spawn(no_wait=true, () => {
-      try {
-        while @dap.read_frame(reader) is Some(body) {
-          inbox.put(Client(Some(body)))
-        }
-        inbox.put(Client(None))
-      } catch {
-        error =>
-          if !@async.is_cancellation_error(error) {
-            inbox.put(Failed(@debug.to_string(error))) catch {
-              _ => ()
-            }
-          }
-      }
-    })
-    defer input_task.cancel()
     let adapter_task = group.spawn(no_wait=true, () => {
       try {
         for ;; {
@@ -135,6 +103,8 @@ async fn serve_live(
           raise LiveError("lldb-dap request or configuration timed out.")
         }
         match input {
+          Prepared(_) | BuildOutput(_, _) =>
+            raise LiveError("Unexpected late build event")
           Client(Some(text)) => session.on_client(writer, @json.parse(text))
           Client(None) => break
           Adapter(message) =>

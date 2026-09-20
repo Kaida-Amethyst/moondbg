@@ -1,7 +1,7 @@
 ///|
-priv suberror LaunchFailure {
+pub(all) suberror LaunchFailure {
   LaunchError(String)
-} derive(Debug)
+}
 
 ///|
 priv struct PackageMetadata {

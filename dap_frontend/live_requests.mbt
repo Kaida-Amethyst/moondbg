@@ -71,7 +71,7 @@ async fn LiveSession::on_client(
       )
     "threads" if self.ready => self.request(seq, command, {})
     "setBreakpoints" if self.ready && !self.ended => {
-      let checked = line_breakpoint_arguments(arguments) catch {
+      let checked = canonical_line_breakpoint_arguments(arguments) catch {
         error => {
           send_client(
             writer,
@@ -125,4 +125,18 @@ async fn LiveSession::on_client(
         ),
       )
   }
+}
+
+///|
+async fn canonical_line_breakpoint_arguments(arguments : Json) -> Json {
+  let checked = line_breakpoint_arguments(arguments)
+  guard checked
+    is { "source": { "path": String(path), .. }, "breakpoints": points, .. } else {
+    raise LiveError("Invalid checked source breakpoint")
+  }
+  // Package builds canonicalize directories. Match DWARF paths even when the
+  // editor opened a symlink (notably /tmp -> /private/tmp on macOS). Missing
+  // files still reach LLDB and get its usual unverified breakpoint response.
+  let canonical = if @fs.exists(path) { @fs.realpath(path) } else { path }
+  { "source": { "path": canonical }, "breakpoints": points }
 }

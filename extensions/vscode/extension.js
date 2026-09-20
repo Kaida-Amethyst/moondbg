@@ -5,18 +5,22 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand("moondbg.showStatus", () =>
       vscode.window.showInformationMessage(
-        "moondbg 扩展已加载。支持已编译程序的行断点、调用栈、单步、继续和暂停。",
+        "moondbg 扩展已加载。支持按包自动构建、断点、单步、暂停和变量查看。",
       ),
     ),
   );
   context.subscriptions.push(
     vscode.debug.registerDebugConfigurationProvider("moondbg", {
       resolveDebugConfiguration(_folder, configuration) {
+        const hasPackage = Object.hasOwn(configuration, "package");
+        const hasProgram = Object.hasOwn(configuration, "program");
+        const validTarget = hasPackage !== hasProgram &&
+          typeof configuration[hasPackage ? "package" : "program"] === "string" &&
+          configuration[hasPackage ? "package" : "program"].trim().length > 0;
         if (configuration.request !== "launch" ||
-            (configuration.connectionTest !== true &&
-             (typeof configuration.program !== "string" || !configuration.program.trim()))) {
+            (configuration.connectionTest === true ? hasPackage || hasProgram : !validTarget)) {
           vscode.window.showErrorMessage(
-            "请选择连接验证配置，或为 launch 配置 program（已使用 -g -O0 编译的可执行文件路径）。当前不支持 attach。",
+            "请为 launch 配置 package（包目录，自动构建）或 program（预编译可执行文件），两者只能选一个。连接验证不接受目标；当前不支持 attach。",
           );
           return undefined;
         }

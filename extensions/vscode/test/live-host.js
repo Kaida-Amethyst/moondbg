@@ -14,6 +14,7 @@ exports.run = async function () {
   const workspace = vscode.workspace.workspaceFolders[0];
   const source = path.join(workspace.uri.fsPath, "main/main.mbt");
   const runningProgram = process.env.MOONDBG_TEST_RUNNING_PROGRAM;
+  const buildPackage = process.env.MOONDBG_TEST_BUILD_PACKAGE === "1";
   const lines = fs.readFileSync(source, "utf8").split("\n");
   const line = lines.findIndex((text) => text.trim() === "let len = p.length()");
   assert.ok(line >= 0);
@@ -65,7 +66,9 @@ exports.run = async function () {
     if (!runningProgram) vscode.debug.addBreakpoints([breakpoint]);
     assert.equal(await vscode.debug.startDebugging(workspace, {
       type: "moondbg", request: "launch", name: "moondbg live host acceptance",
-      program: runningProgram || path.join(workspace.uri.fsPath, "_build/native/debug/build/main/main.exe"),
+      ...(buildPackage ? { package: path.join(workspace.uri.fsPath, "main") } : {
+        program: runningProgram || path.join(workspace.uri.fsPath, "_build/native/debug/build/main/main.exe"),
+      }),
       cwd: workspace.uri.fsPath, internalConsoleOptions: "openOnSessionStart",
     }), true);
     if (runningProgram) {
@@ -82,6 +85,11 @@ exports.run = async function () {
     } else {
       const stopped = await waitFor((m) => m.event === "stopped");
       assert.equal(stopped.body.reason, "breakpoint");
+      if (buildPackage) {
+        assert.ok(received.some((m) => m.event === "output" && m.body.output.includes("Build succeeded")));
+        assert.ok(received.findIndex((m) => m.event === "output" && m.body.output.includes("Build succeeded")) <
+          received.findIndex((m) => m.event === "initialized"));
+      }
       session = vscode.debug.activeDebugSession;
       assert.ok(session);
       // Await VS Code's own stack request, not just a manually issued request.

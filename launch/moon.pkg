@@ -1,0 +1,17 @@
+import {
+  "Kaida-Amethyst/moondbg/debugger",
+  "moonbitlang/async",
+  "moonbitlang/async/fs",
+  "moonbitlang/async/io",
+  "moonbitlang/async/process",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/buffer",
+}
+
+supported_targets = "+native"
+
+options(
+  "native-stub": [ "build_group.c" ],
+)

@@ -1,6 +1,8 @@
 ///|
 priv enum LiveInput {
   Client(String?)
+  Prepared(Result[Json, String])
+  BuildOutput(String, String)
   Adapter(Json)
   Failed(String)
   InspectRead(Int, String, Json, @async.Queue[Json])

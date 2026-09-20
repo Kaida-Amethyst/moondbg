@@ -1,6 +1,7 @@
 import {
   "Kaida-Amethyst/moondbg/dap",
   "Kaida-Amethyst/moondbg/debugger",
+  "Kaida-Amethyst/moondbg/launch",
   "moonbitlang/async",
   "moonbitlang/async/io",
   "moonbitlang/core/json",

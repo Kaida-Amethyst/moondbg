@@ -19,6 +19,7 @@ async fn find_adapter() -> String {
 
 ///|
 async fn launch_arguments(arguments : Json) -> Json {
+  validate_launch_options(arguments)
   guard arguments is { "program": String(program), .. } &&
     program.has_prefix("/") else {
     raise LiveError(
@@ -32,19 +33,35 @@ async fn launch_arguments(arguments : Json) -> Json {
       "Program is missing or not executable: \{program}. Build it with -g -O0 first.",
     )
   }
+  let default_cwd = match program.rev_find("/") {
+    Some(index) if index > 0 => program[:index].to_owned()
+    _ => "/"
+  }
+  let cwd = validate_launch_cwd(arguments, default_cwd)
+  {
+    "program": program,
+    "cwd": cwd,
+    "stopOnEntry": false,
+    "preRunCommands": ["!settings set target.input-path /dev/null"],
+  }
+}
+
+///|
+async fn validate_launch_cwd(arguments : Json, default_cwd : String) -> String {
   let cwd = match arguments {
     { "cwd": String(cwd), .. } => cwd
     { "cwd": _, .. } =>
       raise LiveError("launch.cwd must be an absolute directory path.")
-    _ =>
-      match program.rev_find("/") {
-        Some(index) if index > 0 => program[:index].to_owned()
-        _ => "/"
-      }
+    _ => default_cwd
   }
   guard cwd.has_prefix("/") && @fs.exists(cwd) && @fs.kind(cwd) is Directory else {
     raise LiveError("Working directory does not exist: \{cwd}")
   }
+  cwd
+}
+
+///|
+fn validate_launch_options(arguments : Json) -> Unit raise {
   // Do not forward arbitrary LLDB commands, terminal settings, args or attach
   // settings from launch.json. This milestone owns one no-argument launch.
   for
@@ -57,11 +74,5 @@ async fn launch_arguments(arguments : Json) -> Json {
   }
   if arguments is { "noDebug": True, .. } {
     raise LiveError("Running without debugging is not supported.")
-  }
-  {
-    "program": program,
-    "cwd": cwd,
-    "stopOnEntry": false,
-    "preRunCommands": ["!settings set target.input-path /dev/null"],
   }
 }

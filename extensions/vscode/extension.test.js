@@ -94,7 +94,7 @@ test("activation registers the declared status command and disposes with the hos
     await handler();
   }
   assert.deepEqual(messages, [
-    "moondbg 扩展已加载。支持已编译程序的行断点、调用栈、单步、继续和暂停。",
+    "moondbg 扩展已加载。支持按包自动构建、断点、单步、暂停和变量查看。",
   ]);
   const provider = registrations.get("provider");
   assert.equal(provider.resolveDebugConfiguration(undefined, { request: "launch" }), undefined);
@@ -102,6 +102,14 @@ test("activation registers the declared status command and disposes with the hos
   assert.equal(provider.resolveDebugConfiguration(undefined, configuration), configuration);
   const live = { request: "launch", program: "${workspaceFolder}/main.exe" };
   assert.equal(provider.resolveDebugConfiguration(undefined, live), live);
+  const built = { request: "launch", package: "${workspaceFolder}/dap_variables" };
+  assert.equal(provider.resolveDebugConfiguration(undefined, built), built);
+  for (const invalid of [
+    { request: "launch", package: "/pkg", program: "/prog" },
+    { request: "launch", package: " " },
+    { request: "launch", package: 42 },
+    { request: "launch", connectionTest: true, package: "/pkg" },
+  ]) assert.equal(provider.resolveDebugConfiguration(undefined, invalid), undefined);
   assert.equal(provider.resolveDebugConfiguration(undefined, { request: "attach", program: "/tmp/a.exe" }), undefined);
   const descriptor = await registrations.get("factory").createDebugAdapterDescriptor();
   assert.equal(descriptor.command, "/test/.moon/bin/moondbg");
