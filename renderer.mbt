@@ -469,20 +469,7 @@ fn render_breakpoint_error(error : BreakpointCommandError) -> Unit {
 fn variable_lookup_failure_message(
   failure : @debugger.VariableLookupFailure,
 ) -> String {
-  match failure {
-    @debugger.VariableRootNotFound(root) =>
-      "Variable '\{root}' was not found in the current frame."
-    @debugger.VariableFieldNotFound(owner, field) =>
-      "Field '\{field}' was not found in '\{owner}'."
-    @debugger.VariableFieldAccessOnNonStruct(owner, field, _) =>
-      "Cannot access field '\{field}' because '\{owner}' is not a struct."
-    @debugger.VariableIndexAccessOnNonCollection(owner, index, _) =>
-      "Cannot access index \{index} because '\{owner}' is not an Array or FixedArray."
-    @debugger.VariableIndexOutOfBounds(owner, index, total_length) =>
-      "Index \{index} is out of bounds for '\{owner}' with length \{total_length}."
-    @debugger.VariableUnavailable(path) =>
-      "Variable '\{path}' is unavailable at the current location."
-  }
+  failure.message()
 }
 
 ///|

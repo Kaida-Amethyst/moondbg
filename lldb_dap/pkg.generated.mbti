@@ -10,6 +10,9 @@ import {
 // Values
 
 // Errors
+pub suberror VariableEvaluationError {
+  VariableEvaluationError(String)
+}
 
 // Types and methods
 pub struct LldbDapBackend {
@@ -23,6 +26,7 @@ pub struct VariableInspector {
 }
 pub fn VariableInspector::new(async (String, Json) -> @dap.DapResponse, () -> Int?, Json) -> Self
 pub async fn VariableInspector::tree_children(Self, Int, VariableNode, start~ : Int, count~ : Int) -> Array[VariableNode]
+pub async fn VariableInspector::tree_evaluate(Self, Int, @debugger.VariablePath) -> VariableNode
 pub async fn VariableInspector::tree_locals(Self, Int) -> Array[VariableNode]
 
 pub struct VariableNode {
@@ -33,6 +37,7 @@ pub struct VariableNode {
   indexed_children : Int
   // private fields
 }
+pub fn VariableNode::evaluate_name(Self) -> String?
 
 // Type aliases
 

@@ -78,6 +78,11 @@ struct 字段、数组元素和末页、分页降级范围节点、递归 enum �
 以及旧 frame/变量引用的拒绝。默认测试另检查循环结构不递归物化、数组只按页读取内存、
 部分变量不可用不影响其余项、LLDB frame-local 引用复用，以及变量读取期间 continue 的响应性。
 
+`acceptance/dap_evaluate_wbtest.mbt` 复用 `dap_variables`，验证 hover/watch/repl 三种
+evaluate 上下文、字段和数组下标混合路径、可展开的求值结果及 evaluateName、调用者 frame、
+继续后的新值与旧引用拒绝，以及非法表达式、缺失变量、越界和无 frame 请求的失败响应。
+默认测试覆盖共享路径解析的只读语法和输入上限，以及求值队列在 continue 后的失效。
+
 真实验收在 capability gate 之后获取包内共享互斥锁，整个用例结束后释放。
 `moon test --no-parallelize` 不禁止同一测试进程中的异步用例并发；现有 C PTY 的同步
 `poll` 会阻塞同进程的 DAP IO 和超时处理，因此这些真实会话必须串行执行。

@@ -151,7 +151,7 @@ fn ConnectionSession::handle_request(
         "supportsConfigurationDoneRequest": true,
         "supportsFunctionBreakpoints": false,
         "supportsConditionalBreakpoints": false,
-        "supportsEvaluateForHovers": false,
+        "supportsEvaluateForHovers": true,
         "supportsTerminateRequest": false,
         "supportsRestartRequest": false,
         "exceptionBreakpointFilters": [],

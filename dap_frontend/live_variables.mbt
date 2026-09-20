@@ -2,6 +2,15 @@
 priv enum VariableTarget {
   Locals(Int)
   Children(Int, @lldb_dap.VariableNode, Int, Int, Bool)
+  Evaluate(Int, @debugger.VariablePath)
+}
+
+///|
+fn VariableTarget::command(self : VariableTarget) -> String {
+  match self {
+    Evaluate(_, _) => "evaluate"
+    _ => "variables"
+  }
 }
 
 ///|
@@ -115,7 +124,7 @@ async fn LiveSession::invalidate_inspection(
       writer,
       self.client.response(
         job.seq,
-        "variables",
+        job.target.command(),
         error=Some("Variable request belongs to a stale stop"),
       ),
     )
@@ -152,6 +161,9 @@ fn InspectionState::node_json(
   }
   if node.type_name is Some(name) {
     fields.set("type", Json(name))
+  }
+  if node.evaluate_name() is Some(expression) {
+    fields.set("evaluateName", Json(expression))
   }
   Json(fields)
 }
@@ -205,7 +217,11 @@ async fn LiveSession::inspect_client(
 ) -> Unit {
   try {
     guard self.inspection_epoch() is Some(epoch) else {
-      raise LiveError("Variables require a stopped program")
+      raise LiveError("Variable inspection requires a stopped program")
+    }
+    if command == "evaluate" {
+      self.enqueue_evaluate(seq, epoch, args)
+      return
     }
     if command == "scopes" {
       let frame = nonnegative_argument(args, "frameId", default=-1)
@@ -241,6 +257,7 @@ async fn LiveSession::inspect_client(
       _ => raise LiveError("Variable filter must be named or indexed")
     }
     let (actual_start, actual_count) = match target {
+      Evaluate(_, _) => raise LiveError("Invalid variable reference target")
       Locals(_) => {
         if filter == Some(true) {
           send_client(
@@ -289,7 +306,11 @@ async fn LiveSession::inspect_client(
     error =>
       send_client(
         writer,
-        self.client.response(seq, command, error=Some(@debug.to_string(error))),
+        self.client.response(
+          seq,
+          command,
+          error=Some(inspection_error_message(error)),
+        ),
       )
   }
 }
@@ -324,6 +345,7 @@ async fn LiveSession::inspect_worker(
       )
       let nodes = @async.with_timeout(12000, () => {
         match job.target {
+          Evaluate(frame, path) => [inspector.tree_evaluate(frame, path)]
           Locals(frame) => inspector.tree_locals(frame)
           Children(frame, node, _, _, _) =>
             inspector.tree_children(
@@ -340,7 +362,7 @@ async fn LiveSession::inspect_worker(
         if @async.is_cancellation_error(error) {
           raise error
         }
-        Err(@debug.to_string(error))
+        Err(inspection_error_message(error))
       }
     }
     inbox.put(InspectDone(job.seq, result))
@@ -365,28 +387,38 @@ async fn LiveSession::complete_inspection(
       Err(error) => raise LiveError(error)
     }
     let frame = match job.target {
-      Locals(frame) | Children(frame, _, _, _, _) => frame
+      Locals(frame) | Children(frame, _, _, _, _) | Evaluate(frame, _) => frame
     }
     let selected = match job.target {
       Locals(_) => {
         let count = if job.count == 0 { nodes.length() } else { job.count }
         nodes.iter().drop(job.start).take(count).collect()
       }
-      Children(_, _, _, _, _) => nodes
+      Children(_, _, _, _, _) | Evaluate(_, _) => nodes
     }
     let values = selected.map(node => self.inspection.node_json(frame, node))
-    send_client(
-      writer,
-      self.client.response(seq, "variables", body={ "variables": values }),
-    )
+    let body : Json = match job.target {
+      Evaluate(_, _) => {
+        guard values is [Object(fields)] && nodes is [node] else {
+          raise LiveError("Expected one evaluation result")
+        }
+        fields.remove("name")
+        fields.remove("value")
+        fields.remove("evaluateName")
+        fields.set("result", Json(node.value))
+        Json(fields)
+      }
+      _ => { "variables": values }
+    }
+    send_client(writer, self.client.response(seq, job.target.command(), body~))
   } catch {
     error =>
       send_client(
         writer,
         self.client.response(
           seq,
-          "variables",
-          error=Some(@debug.to_string(error)),
+          job.target.command(),
+          error=Some(inspection_error_message(error)),
         ),
       )
   }

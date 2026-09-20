@@ -536,6 +536,7 @@ pub enum VariableLookupFailure {
   VariableUnavailable(String)
 } derive(Eq, @debug.Debug)
 pub fn VariableLookupFailure::equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::message(Self) -> String
 pub fn VariableLookupFailure::not_equal(Self, Self) -> Bool
 pub fn VariableLookupFailure::requested_path(Self) -> String
 pub fn VariableLookupFailure::to_repr(Self) -> @debug.Repr
@@ -562,6 +563,7 @@ pub fn VariablePath::display_name(Self) -> String
 pub fn VariablePath::equal(Self, Self) -> Bool
 pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
 pub fn VariablePath::not_equal(Self, Self) -> Bool
+pub fn VariablePath::parse(StringView) -> Self?
 pub fn VariablePath::root(String) -> Self
 pub fn VariablePath::root_name(Self) -> String
 pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]

@@ -16,6 +16,7 @@ test "connection test replies in order without claiming a target was run" {
         "body": {
           "supportsConfigurationDoneRequest": True,
           "supportsFunctionBreakpoints": False,
+          "supportsEvaluateForHovers": True,
           ..
         },
         ..

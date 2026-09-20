@@ -4,7 +4,8 @@ MoonBit native 程序的 REPL 调试器，通过 `lldb-dap` 调试，不依赖 P
 
 VS Code 调试及逐步操作说明见 [扩展 README](extensions/vscode/README.md)。
 从本仓库根目录选择“运行 moondbg 扩展（开发窗口）”，再在新窗口选择“moondbg：调试 main（预编译）”。
-支持预编译 native 程序的行断点、调用栈、单步、继续、暂停、局部变量树、输出和停止；暂不支持自动构建或表达式求值。
+支持预编译 native 程序的行断点、调用栈、单步、继续、暂停、局部变量树、悬停、Watch、调试控制台只读访问路径求值、输出和停止。
+求值支持 `point.x`、`arr[0].x` 等变量路径；暂不支持自动构建、算术、函数调用或赋值。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
 ## 命令行使用

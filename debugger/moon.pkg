@@ -1,6 +1,8 @@
 import {
   "Kaida-Amethyst/moondbg/name_mangle",
   "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
 }
 
 import {

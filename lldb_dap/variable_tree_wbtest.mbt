@@ -62,10 +62,12 @@ async test "tree descriptions do not recursively expand a self-referential struc
   assert_eq(requested, [100, 101])
   assert_eq(nodes.length(), 1)
   assert_eq(nodes[0].named_children, 1)
+  assert_eq(nodes[0].evaluate_name(), Some("node"))
   let children = inspector.tree_children(10, nodes[0], start=0, count=100)
   assert_eq(children.length(), 1)
   assert_eq(children[0].name, "next")
   assert_eq(children[0].named_children, 1)
+  assert_eq(children[0].evaluate_name(), Some("node.next"))
   let grandchildren = inspector.tree_children(
     10,
     children[0],
@@ -75,6 +77,24 @@ async test "tree descriptions do not recursively expand a self-referential struc
   assert_eq(grandchildren.length(), 1)
   assert_eq(grandchildren[0].name, "next")
   assert_eq(requested, [100, 101, 100, 101, 100, 101])
+  let path = @debugger.VariablePath::parse("node.next.next").unwrap()
+  let evaluated = inspector.tree_evaluate(10, path)
+  assert_eq(evaluated.evaluate_name(), Some("node.next.next"))
+  assert_eq(evaluated.named_children, 1)
+  assert_eq(requested, [100, 101, 100, 101, 100, 101, 100, 101])
+  let expanded = inspector.tree_children(10, evaluated, start=0, count=100)
+  assert_eq(expanded[0].evaluate_name(), Some("node.next.next.next"))
+  for text in ["missing", "node.missing", "node[0]"] {
+    let failed = try {
+      inspector.tree_evaluate(10, @debugger.VariablePath::parse(text).unwrap())
+      |> ignore
+      false
+    } catch {
+      VariableEvaluationError(_) => true
+      error => raise error
+    }
+    assert_true(failed, msg=text)
+  }
 }
 
 ///|
@@ -130,6 +150,7 @@ async test "scalar array listing reads headers only and an expansion reads one b
   )
   let nodes = inspector.tree_locals(10)
   assert_eq(nodes[0].indexed_children, 3)
+  assert_eq(nodes[0].evaluate_name(), Some("arr"))
   assert_eq(reads, [(-8, 8)])
   let page = inspector.tree_children(10, nodes[0], start=1, count=2)
   assert_eq(page.map(node => (node.name, node.value)), [
@@ -137,6 +158,7 @@ async test "scalar array listing reads headers only and an expansion reads one b
     ("[2]", "3"),
   ])
   assert_eq(reads, [(-8, 8), (-8, 8), (4, 8)])
+  assert_eq(page[0].evaluate_name(), Some("arr[1]"))
   let before = reads.length()
   let failed = try {
     inspector.tree_children(10, nodes[0], start=0, count=101) |> ignore
@@ -230,9 +252,12 @@ async test "tree operations reestablish the frame and discard stale replies" {
   assert_eq(inspector.tree_locals(10)[0].value, "10")
   assert_eq(inspector.tree_locals(20)[0].value, "20")
   assert_eq(inspector.tree_locals(10)[0].value, "10")
+  let path = @debugger.VariablePath::root("value")
+  assert_eq(inspector.tree_evaluate(20, path).value, "20")
+  assert_eq(inspector.tree_evaluate(10, path).value, "10")
   assert_true(
     try {
-      inspector.tree_locals(30) |> ignore
+      inspector.tree_evaluate(30, path) |> ignore
       false
     } catch {
       _ => true

@@ -101,6 +101,28 @@ exports.run = async function () {
       });
       assert.equal(fields.variables.find((field) => field.name === "x").value, "3");
       assert.equal(fields.variables.find((field) => field.name === "y").value, "4");
+      const frameId = stack.body.stackFrames[0].id;
+      assert.equal(received.find((m) => m.type === "response" &&
+        m.command === "initialize").body.supportsEvaluateForHovers, true);
+      for (const context of ["hover", "watch", "repl"]) {
+        const value = await session.customRequest("evaluate", {
+          expression: "p.x", frameId, context,
+        });
+        assert.equal(value.result, "3");
+        assert.equal(value.variablesReference, 0);
+      }
+      assert.equal(fields.variables.find((field) => field.name === "x").evaluateName, "p.x");
+      const evaluated = await session.customRequest("evaluate", {
+        expression: "p", frameId, context: "watch",
+      });
+      assert.ok(evaluated.variablesReference > 0);
+      const evaluatedFields = await session.customRequest("variables", {
+        variablesReference: evaluated.variablesReference,
+      });
+      assert.equal(evaluatedFields.variables.find((field) => field.name === "y").value, "4");
+      await assert.rejects(session.customRequest("evaluate", {
+        expression: "p.x = 99", frameId, context: "repl",
+      }));
       vscode.debug.removeBreakpoints([breakpoint]);
       await session.customRequest("continue", { threadId: stopped.body.threadId });
       const exited = await waitFor((m) => m.event === "exited");

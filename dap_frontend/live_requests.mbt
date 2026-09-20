@@ -109,7 +109,7 @@ async fn LiveSession::on_client(
     }
     "stackTrace" if self.stopped && !self.ended =>
       self.request(seq, command, arguments)
-    "scopes" | "variables" =>
+    "scopes" | "variables" | "evaluate" =>
       self.inspect_client(writer, seq, command, arguments)
     "continue" | "next" | "stepIn" | "stepOut" | "pause" =>
       self.control(writer, seq, command, arguments)

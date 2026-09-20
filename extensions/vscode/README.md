@@ -5,7 +5,7 @@
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
 暂不支持自动构建、程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
-表达式求值。调试控制台目前只显示输出，
+算术表达式、函数调用或赋值。调试控制台支持只读变量路径（如 `point.x`、`arr[0]`），
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
 ## 已完成连接验证后：开始真实调试
@@ -97,7 +97,38 @@ moondbg 仅将这类已请求的暂停标为 pause；实际断点、其他异常
 树节点展示简短摘要，只有展开时才读取子值，不调用用户的 Debug trait 或 MoonBit 函数。
 基本类型数组的每页至多读取 100 项；无分页参数或超大页请求使用可展开的范围节点，
 不会静默丢弃剩余元素。递归 enum 按用户点击逐层查看，不自动展开整个链表。
-Watch、悬停求值和调试控制台表达式仍未接入。
+Watch、悬停和调试控制台可以读取同一套变量路径，试用步骤见下一节。
+
+### 悬停、Watch 和调试控制台试用
+
+使用上面的 `dap_variables` 示例和两个断点，无需新增启动配置：
+
+1. 在仓库根目录执行 `moon build --target native -g .`。确认 `$MOON_HOME/bin/moondbg`
+   指向本次构建产物；结束旧调试会话，再启动扩展开发窗口。
+2. 在 `testdata/dwarf_probe` 执行 `moon run dap_variables --build-only --target native -g`。
+   选择 **moondbg：变量面板试用（dap_variables）**，按 F5 停在 `let marker = point.x`。
+3. 将鼠标悬停在源码中的 `point` 上，查看并展开调试值。若编辑器没有识别完整的
+   `point.x`，可选中完整表达式再悬停，或在 Watch 中输入它。
+4. 左侧 **WATCH / 监视** 点 `+`，分别添加 `point.x`、`values[0]`、`fixed[999]`、
+   `points[1]` 和 `points[1].y`；应分别看到 `3`、`1.5`、`1000`、可展开的 Point 和 `6`。
+   从变量面板对可表达的节点使用 **Add to Watch / 添加到监视** 也能生成完整访问路径。
+5. 打开 **Debug Console / 调试控制台**，直接输入 `points[1].x` 并回车，应得到 `5`。
+   输入 `point`、`fixed` 或 `list`，结果可以按需展开。不要加 `p` 前缀。
+6. 在调用栈中选择 main，再求值 `caller_only`，应得到 `700`。选择 inspect_values 时
+   这个变量不在当前 frame 中，会报错，不会沿用上一个 frame 的值。
+7. 按 F5 到 `println(marker)`，Watch 中 `values[0]` 应刷新为 `42`。
+   可以尝试 `values[3]`（越界）和 `point.missing`（字段不存在），确认有明确错误。
+
+支持的语法为变量名后接任意组合的 `.字段` 和 `[非负整数字面量]`，例如
+`lines[0].start.x`、`matrix[1][2]`；允许首尾空白，不允许路径内部空白。
+暂不支持 `arr[i]`、`list.0`、包级变量、算术、赋值、函数调用或 REPL 命令。
+enum 本身仍可求值并通过树展开载荷；暂不为其数字载荷生成 Add to Watch 表达式。
+路径最多 4096 个字符、64 个后缀，防止意外的大输入占用调试会话。
+
+求值要求暂停且选中有效的调用栈 frame；不带 frameId 的协议请求表示全局求值，当前明确拒绝，
+不会隐式选择另一个 frame。三个入口共用 DAP `evaluate` 和已有变量探查服务；返回的展开引用
+在继续、单步、退出或断开后失效。只解析白名单路径，不将用户原始文本交给 LLDB 执行命令。
+协议依据：[DAP Evaluate](https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Evaluate)。
 
 ### 构建和启动路径
 
@@ -225,7 +256,8 @@ ln -s "$PWD/_build/native/debug/build/moondbg.exe" "$MOON_HOME/bin/moondbg"
   若显示 `<unavailable>`，说明当前 DWARF/寄存器位置无法提供该值，不会使用旧停点的值补齐。
 - **单步不可用**：单步只能在程序停住时使用；暂停只能在运行时使用。
   不支持指令级单步、指定调用目标的 step-in 或只运行某一线程。
-- **在调试控制台输入表达式时报错**：本阶段尚未开放 evaluate；控制台仍仅用于显示输出。
+- **求值时报错**：确认程序暂停且选中了用户 frame。直接输入 `point.x` 或 `arr[0]`，
+  不要加 `p`；算术、调用、赋值和动态下标尚不支持。变量也可能已超出当前作用域。
 
 ## 本地静态与单元检查
 
@@ -238,6 +270,7 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_connection_wbtest.mbt --
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_live_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_control_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_variables_wbtest.mbt --no-parallelize
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_evaluate_wbtest.mbt --no-parallelize
 ```
 
 Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
@@ -275,7 +308,7 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
   请求的状态，不允许迟到的失败响应覆盖新停点或进程退出。
 - `threads`/`stackTrace` 复用 LLDB 的线程和帧信息；可识别的 MoonBit 符号名使用已有 demangler。
   对外 frameId 和 variablesReference 由 moondbg 分配，绑定当前暂停状态；继续、单步、退出
-  或断开后失效，并且不复用旧编号。`scopes` 提供 Locals，evaluate 等请求仍明确拒绝。
+  或断开后失效，并且不复用旧编号。`scopes` 提供 Locals，`evaluate` 支持只读变量访问路径。
 - 一次会话只拥有一个启动的进程；disconnect 始终使用 `terminateDebuggee: true`，不支持 detach。
   EOF、异常和超时也尝试 disconnect，随后关闭传输并取消 adapter。配置/请求超时为 15 秒，
   结束握手窗口为 3 秒；正常运行或停在断点等待用户操作没有空闲超时。
