@@ -21,6 +21,7 @@ fn live_test_session() -> (LiveSession, @dap_testkit.ScriptedTransport) {
     deadline: None,
     inspection: InspectionState::new(),
     capabilities: {},
+    functions: FunctionState::new(@debugger.DebugContext::empty()),
   }
   (session, transport)
 }

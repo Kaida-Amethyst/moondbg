@@ -31,21 +31,21 @@ async fn DebugExecution::family_command(
   self : DebugExecution,
   command : String,
 ) -> String? {
-  let seq = self.dispatcher.send_request("evaluate", {
-    "expression": command,
-    "context": "repl",
-  })
-  guard self.wait_for_response(seq, "evaluate") is Some(response) else {
-    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
-      "lldb-dap exited during family breakpoint operation",
-    )
-  }
-  lldb_command_result(response)
+  self.function_driver().command(command)
 }
 
 ///|
 async fn DebugExecution::change_family(
   self : DebugExecution,
+  id : LldbBreakpointId,
+  operation : String,
+) -> Unit {
+  self.function_driver().change(id, operation)
+}
+
+///|
+async fn FunctionBreakpointDriver::change(
+  self : FunctionBreakpointDriver,
   id : LldbBreakpointId,
   operation : String,
 ) -> Unit {
@@ -59,7 +59,7 @@ async fn DebugExecution::change_family(
         "invalid family operation",
       )
   }
-  guard self.family_command("breakpoint \{operation} \{number}") is Some(result) &&
+  guard self.command("breakpoint \{operation} \{number}") is Some(result) &&
     result.trim() == expected else {
     raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
       "LLDB did not confirm family breakpoint \{operation}",

@@ -370,30 +370,10 @@ async fn DebugExecution::configure_family_function_breakpoint(
   self : DebugExecution,
   breakpoint : LogicalFunctionBreakpoint,
 ) -> Unit {
-  guard breakpoint.selector is @debugger.MoonBitFunctionFamily(base) else {
+  guard breakpoint.selector is @debugger.MoonBitFunctionFamily(_) else {
     return
   }
-  let seq = self.dispatcher.send_request("evaluate", {
-    "expression": function_family_breakpoint_command(base),
-    "context": "repl",
-  })
-  guard self.wait_for_response(seq, "evaluate") is Some(response) else {
-    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
-      "lldb-dap exited before creating the function family breakpoint",
-    )
-  }
-  guard lldb_command_result(response) is Some(result) else {
-    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
-      response
-      .message()
-      .unwrap_or("lldb-dap rejected the function family breakpoint"),
-    )
-  }
-  guard LldbCreatedBreakpoint::parse(result) is Some(created) else {
-    raise @debugger.BreakpointSyncError::BreakpointSyncUncertain(
-      "lldb-dap returned an unrecognized LLDB breakpoint result",
-    )
-  }
+  let created = self.function_driver().install(breakpoint.selector)
   let handle = FamilyHandle::{
     id: LldbBreakpointId(created.id),
     enabled: true,

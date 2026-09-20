@@ -189,24 +189,7 @@ pub async fn DebugSession::add_function_breakpoint(
   guard phase is Ready || phase is Stopped else {
     raise OperationNotAllowed(state=phase, action="add function breakpoint")
   }
-  let current_package = self.debug_context.current_package()
-  let (package_name, function_name, entry_point) = match request {
-    CurrentPackageFunction(function_name) =>
-      (current_package, function_name, function_name == "main")
-    ImportedPackageFunction(package_alias, function_name) =>
-      (
-        self.debug_context.package_for_alias(package_alias),
-        function_name,
-        false,
-      )
-  }
-  let selector = if entry_point {
-    ExactPhysicalFunction("moonbit_main")
-  } else {
-    MoonBitFunctionFamily(
-      @name_mangle.mangle_top_level_function_base(package_name, function_name),
-    )
-  }
+  let selector = self.debug_context.resolve_function(request)
   let breakpoint = FunctionBreakpoint::new(
     self.next_breakpoint_id,
     request.display_name(),

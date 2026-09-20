@@ -119,7 +119,7 @@ async fn LivePeer::initialize_launch(
     capabilities
     is {
       "supportsConfigurationDoneRequest": True,
-      "supportsFunctionBreakpoints": False,
+      "supportsFunctionBreakpoints": True,
       ..
     },
   )

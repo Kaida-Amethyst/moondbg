@@ -1,12 +1,14 @@
 ///|
 priv enum LiveInput {
   Client(String?)
-  Prepared(Result[Json, String])
+  Prepared(Result[PreparedLaunch, String])
   BuildOutput(String, String)
   Adapter(Json)
   Failed(String)
   InspectRead(Int, String, Json, @async.Queue[Json])
   InspectDone(Int, Result[Array[@lldb_dap.VariableNode], String])
+  FunctionRead(String, Json, @async.Queue[Json])
+  FunctionDone(Result[Array[Json], String])
 }
 
 ///|
@@ -16,6 +18,7 @@ priv struct PendingRequest {
   deadline : Int64
   execution_revision : Int
   inspection_reply : @async.Queue[Json]?
+  function_reply : @async.Queue[Json]?
 }
 
 ///|
@@ -40,6 +43,7 @@ priv struct LiveSession {
   mut deadline : Int64?
   inspection : InspectionState
   mut capabilities : Json
+  functions : FunctionState
 }
 
 ///|
@@ -54,6 +58,7 @@ async fn LiveSession::request(
   command : String,
   arguments : Json,
   inspection_reply? : @async.Queue[Json]? = None,
+  function_reply? : @async.Queue[Json]? = None,
 ) -> Unit {
   let seq = self.next_seq
   self.next_seq += 1
@@ -63,6 +68,7 @@ async fn LiveSession::request(
     deadline: @async.now() + 15000,
     execution_revision: self.execution_revision,
     inspection_reply,
+    function_reply,
   })
   self.transport.send_message({
     "seq": seq,

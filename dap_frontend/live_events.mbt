@@ -32,6 +32,10 @@ async fn LiveSession::on_adapter(
         raise LiveError("Unexpected lldb-dap response.")
       }
       self.pending.remove(raw.to_int())
+      if pending.function_reply is Some(reply) {
+        (reply.try_put(message) catch { _ => false }) |> ignore
+        return
+      }
       if pending.inspection_reply is Some(reply) {
         (reply.try_put(message) catch { _ => false }) |> ignore
         return
@@ -158,10 +162,17 @@ async fn LiveSession::on_adapter(
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = true
-          send_client(
-            writer,
-            self.client.event(name, self.pause_stop_body(body)),
-          )
+          let stop = self.pause_stop_body(body)
+          if self.functions.active is Some(_) {
+            // A running target can hit a newly created breakpoint before its
+            // installation reply. Publish the BP IDs before its stop event.
+            self.functions.stops.push(stop)
+          } else {
+            send_client(
+              writer,
+              self.client.event(name, self.function_stop_body(stop)),
+            )
+          }
         }
         "continued" if !self.ended && !self.exited => {
           self.invalidate_inspection(writer)
@@ -170,12 +181,14 @@ async fn LiveSession::on_adapter(
           send_client(writer, self.client.event(name, body))
         }
         "terminated" => {
+          self.cancel_functions(writer, "Session terminated.")
           self.invalidate_inspection(writer)
           if self.finish() is Some(event) {
             send_client(writer, event)
           }
         }
         "exited" => {
+          self.cancel_functions(writer, "Program exited.")
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.exited = true
@@ -183,7 +196,13 @@ async fn LiveSession::on_adapter(
           self.stopped = false
           send_client(writer, self.client.event(name, body))
         }
-        "output" | "process" | "thread" | "breakpoint" =>
+        "breakpoint" =>
+          if self.functions.active is Some(_) {
+            self.functions.events.push(body)
+          } else {
+            self.function_event(writer, body)
+          }
+        "output" | "process" | "thread" =>
           send_client(writer, self.client.event(name, body))
         // Never forward capabilities that this frontend has not implemented.
         _ => ()

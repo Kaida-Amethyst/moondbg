@@ -33,6 +33,17 @@ async fn LiveSession::on_client(
   message : Json,
 ) -> Unit {
   let (seq, command, arguments) = self.client.read_request(message)
+  self.handle_live_request(writer, seq, command, arguments)
+}
+
+///|
+async fn LiveSession::handle_live_request(
+  self : LiveSession,
+  writer : &@io.Writer,
+  seq : Int,
+  command : String,
+  arguments : Json,
+) -> Unit {
   if command == "disconnect" {
     guard !self.closing else {
       send_client(
@@ -46,6 +57,7 @@ async fn LiveSession::on_client(
       return
     }
     self.closing = true
+    self.cancel_functions(writer, "Session disconnected.")
     self.invalidate_inspection(writer)
     self.deadline = Some(@async.now() + 3000)
     self.cancel_launch(writer, "Launch cancelled by client.")
@@ -63,7 +75,48 @@ async fn LiveSession::on_client(
     )
     return
   }
+  // Preserve client order around asynchronous breakpoint replacement. Stop
+  // and inspection remain responsive; execution cannot outrun installation.
+  if self.functions.active is Some(_) &&
+    (
+      command == "setFunctionBreakpoints" ||
+      command == "configurationDone" ||
+      resumes_execution(command)
+    ) {
+    guard self.functions.deferred.length() < 64 else {
+      send_client(
+        writer,
+        self.client.response(
+          seq,
+          command,
+          error=Some(
+            "Too many requests pending function breakpoint installation.",
+          ),
+        ),
+      )
+      return
+    }
+    self.functions.deferred.push((seq, command, arguments))
+    return
+  }
   match command {
+    "setFunctionBreakpoints" if self.ready && !self.ended => {
+      let points = function_points(arguments) catch {
+        error => {
+          send_client(
+            writer,
+            self.client.response(
+              seq,
+              command,
+              error=Some(launch_error_message(error)),
+            ),
+          )
+          return
+        }
+      }
+      self.functions.active = Some(seq)
+      self.functions.jobs.put(points)
+    }
     "threads" if self.ended =>
       send_client(
         writer,

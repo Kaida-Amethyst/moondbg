@@ -1,0 +1,5 @@
+import {
+  "Kaida-Amethyst/moondbg-dwarf-probe/dap_function_util" @util,
+}
+
+pkgtype(kind: "executable")

@@ -1,7 +1,7 @@
 # moondbg 的 VS Code 调试
 
 这一版由 VS Code 启动 `$MOON_HOME/bin/moondbg --dap`，再由 moondbg 启动 lldb-dap。
-支持按包自动构建或直接调试预编译 native 程序，以及行断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
+支持按包自动构建或直接调试预编译 native 程序，以及行断点、函数断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
 暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
@@ -77,12 +77,32 @@ Watch 中 `point.x` 应变成 `30`。试完恢复为 `3`。如果故意引入编
 
 配置位于 `testdata/dwarf_probe/.vscode/launch.json`。`program` 是可执行文件绝对路径，
 可使用 `${workspaceFolder}`；`cwd` 是程序工作目录，省略时使用可执行文件所在目录。
-不需要配置 lldb 的命令脚本；函数断点暂不通过 VS Code 暴露。
+不需要配置 lldb 的命令脚本；函数断点的使用方式见下一节。
 
 扩展使用普通 JavaScript，没有 npm 依赖，不需要 `npm install` 或编译。
 无需安装 VSIX、发布到 Marketplace，或卸载现有 MoonBit 扩展。
 
 ## 更新到本阶段
+
+### 函数断点试用
+
+1. 在仓库根目录执行 `moon build --target native -g .`，确认 `$MOON_HOME/bin/moondbg`
+   指向该产物。重开扩展开发窗口，在“运行和调试”顶部选择
+   **moondbg：函数断点试用（dap_functions）**。这个配置按包自动构建。
+2. 展开左侧 **BREAKPOINTS / 断点**，点击 **Add Function Breakpoint / 添加函数断点**。
+   也可按 `Cmd+Shift+P`，搜索 `Add Function Breakpoint`。输入 `main`，回车，再按 F5。
+   应停在 `dap_functions/main.mbt` 的 main 内。
+3. 用同样方式添加 `foo`、`@util.foo` 和 `identity`。继续运行，应依次停在当前包的 foo、
+   `dap_function_util/util.mbt` 的 foo，以及 identity 的 Int 和 Double 两个实例。
+   泛型实例共用一个函数断点，验证消息显示匹配的落点数量。
+4. 取消勾选某个函数断点，后续调用不再被它打断；重新勾选恢复。右键删除只移除对应函数断点，
+   不影响源码中的行断点。再次 F5 开始新会话时，VS Code 会重新发送保留的断点列表。
+5. 添加 `missing` 或 `@unknown.foo`，应显示未验证并给出原因，不应中断整个调试会话。
+
+名称始终按**启动包**解释，不随当前栈帧或打开的文件变化。跨包使用启动包 `moon.pkg` 中的别名；
+不要求用户输入完整包名或 mangled symbol。当前只支持顶层函数，不支持方法名、条件、命中次数条件。
+`program` 模式没有包元数据，只支持 `main`；其他函数名会明确提示改用 `package` 模式。
+这些名字填在函数断点面板里，**不是**在 Debug Console 输入 `b foo`。
 
 ### 单步和暂停试用
 
@@ -311,6 +331,7 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_control_wbtest.mbt --no-
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_variables_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_evaluate_wbtest.mbt --no-parallelize
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_build_wbtest.mbt --no-parallelize
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/dap_functions_wbtest.mbt --no-parallelize
 ```
 
 Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit 门控实际启动仓库本次构建的 moondbg，
@@ -327,7 +348,7 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
 - `launch` 发出 `initialized`，继续接收配置请求，不阻塞等待自身响应。
 - 收到 `configurationDone` 后回复配置和启动请求，再发成功 `output` 与 `terminated`。
 - 不发送虚假的 `process`、`stopped` 或 `exited`；`threads` 返回空数组。
-- 编辑器已有的行断点返回未验证；不支持的请求返回失败响应。
+- 编辑器已有的行断点、函数断点返回未验证；不支持的请求返回失败响应。
 - `disconnect` 回复后退出；提前断开取消尚未完成的 launch，不输出成功提示。
 - EOF 退出；握手读取超过 15 秒无进展时报错退出。`terminated` 后最多等待 3 秒断开，
   避免客户端忘记断开时留下 adapter。
@@ -341,6 +362,12 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
   当前仅接受本机路径及从 1 开始的行列号。
 - `launch` 验证 `package`/`program`/`cwd`，按包启动先异步构建再启动 adapter；收到 LLDB `initialized` 后才接受配置。
   `setBreakpoints` 对每个文件整批替换，空数组清空该文件。实际落点和 verified 状态来自 LLDB。
+- `setFunctionBreakpoints` 按完整列表替换，逐项回复同序的验证结果；无效名称不阻止其他断点。
+  复用 `debugger` 的名字/包别名解析和 `lldb_dap.FunctionBreakpointDriver` 的原生符号匹配。
+  安装在串行任务中执行，底层请求经主循环路由；配置完成、恢复执行等待安装完成，disconnect 不等待。
+  若底层修改结果无法确认，结束会话，不让程序带着未知断点继续运行。
+  LLDB 的 target breakpoint ID 在其 DAP hitBreakpointIds 中仍是同一 ID；函数与行断点共用这个
+  编号空间，不使用 DAP 请求序号充当断点 ID。已删除函数断点的迟到事件不会重新创建 UI 条目。
 - 客户端输入和 adapter 输入分别由后台任务读取，进入有界队列，由同一个循环分派状态和写消息。
   启动/继续/单步的响应与随后发生的 stopped、output、exited 事件独立，因此运行期间仍能处理 pause 和 disconnect。
 - `next`/`stepIn`/`stepOut` 使用 LLDB 默认源码单步；`pause` 只发送暂停请求，收到 stopped
@@ -374,5 +401,8 @@ CLI 和 DAP 共用 `launch/`，其中私有 `--build-worker` 子进程在 POSIX 
 
 设置 `MOONDBG_TEST_BUILD_PACKAGE=1` 可让同一真实 VS Code 集成测试通过 `package` 启动，
 并检查构建成功输出早于 initialized，以及随后断点、变量、求值和退出仍可用。
+
+`test/functions-host.js` 是函数断点的真实扩展宿主验收入口（同样用 `--extensionTestsPath` 指定），
+验证 FunctionBreakpoint API 的添加、删除、取消勾选、重新启用、跨包函数及泛型两种实例命中。
 
 DAP 时序依据：[Debug Adapter Protocol overview](https://microsoft.github.io/debug-adapter-protocol/overview)。

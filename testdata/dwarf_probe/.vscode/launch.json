@@ -46,6 +46,13 @@
       "name": "moondbg：自动构建试用（dap_variables）",
       "package": "${workspaceFolder}/dap_variables",
       "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "type": "moondbg",
+      "request": "launch",
+      "name": "moondbg：函数断点试用（dap_functions）",
+      "package": "${workspaceFolder}/dap_functions",
+      "internalConsoleOptions": "openOnSessionStart"
     }
   ]
 }

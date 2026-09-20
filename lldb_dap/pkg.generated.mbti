@@ -15,6 +15,18 @@ pub suberror VariableEvaluationError {
 }
 
 // Types and methods
+pub struct FunctionBreakpointDriver {
+  // private fields
+}
+pub async fn FunctionBreakpointDriver::install(Self, @debugger.FunctionBreakpointSelector) -> InstalledFunctionBreakpoint
+pub fn FunctionBreakpointDriver::new(async (String, Json) -> @dap.DapResponse) -> Self
+pub async fn FunctionBreakpointDriver::remove(Self, Int) -> Unit
+
+pub struct InstalledFunctionBreakpoint {
+  id : Int
+  location_count : Int
+}
+
 pub struct LldbDapBackend {
   // private fields
 }

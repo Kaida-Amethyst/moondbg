@@ -44,6 +44,11 @@ pub suberror DebugSessionError {
 } derive(@debug.Debug)
 pub fn DebugSessionError::to_repr(Self) -> @debug.Repr
 
+pub suberror FunctionNameError {
+  FunctionNameError(String)
+} derive(@debug.Debug)
+pub fn FunctionNameError::to_repr(Self) -> @debug.Repr
+
 pub(all) suberror StackSnapshotError {
   InvalidLogicalThreadIndex(Int)
   InvalidPhysicalFrameIndex(Int)
@@ -173,6 +178,7 @@ pub fn DebugContext::current_package(Self) -> String raise DebugContextError
 pub fn DebugContext::empty() -> Self
 pub fn DebugContext::new(String, Array[(String, String)]) -> Self raise DebugContextError
 pub fn DebugContext::package_for_alias(Self, StringView) -> String raise DebugContextError
+pub fn DebugContext::resolve_function(Self, FunctionBreakpointRequest) -> FunctionBreakpointSelector raise
 
 pub struct DebugOutput {
   // private fields
@@ -289,6 +295,7 @@ pub fn FunctionBreakpointRequest::display_name(Self) -> String
 pub fn FunctionBreakpointRequest::equal(Self, Self) -> Bool
 pub fn FunctionBreakpointRequest::imported(String, String) -> Self
 pub fn FunctionBreakpointRequest::not_equal(Self, Self) -> Bool
+pub fn FunctionBreakpointRequest::parse(StringView) -> Self raise
 pub fn FunctionBreakpointRequest::to_repr(Self) -> @debug.Repr
 
 pub enum FunctionBreakpointSelector {

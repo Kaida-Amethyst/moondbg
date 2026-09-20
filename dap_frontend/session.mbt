@@ -149,7 +149,7 @@ fn ConnectionSession::handle_request(
     return [
       self.response(seq, command, body={
         "supportsConfigurationDoneRequest": true,
-        "supportsFunctionBreakpoints": false,
+        "supportsFunctionBreakpoints": true,
         "supportsConditionalBreakpoints": false,
         "supportsEvaluateForHovers": true,
         "supportsTerminateRequest": false,
@@ -213,7 +213,7 @@ fn ConnectionSession::handle_request(
         self.event("terminated", {}),
       ]
     }
-    "setBreakpoints" => {
+    "setBreakpoints" | "setFunctionBreakpoints" => {
       guard arguments is { "breakpoints": Array(points), .. } else {
         return [
           self.response(

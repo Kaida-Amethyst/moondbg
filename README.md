@@ -4,8 +4,10 @@ MoonBit native 程序的 REPL 调试器，通过 `lldb-dap` 调试，不依赖 P
 
 VS Code 调试及逐步操作说明见 [扩展 README](extensions/vscode/README.md)。
 从本仓库根目录选择“运行 moondbg 扩展（开发窗口）”，再在新窗口选择“moondbg：自动构建试用（dap_variables）”。
-支持预编译 native 程序的行断点、调用栈、单步、继续、暂停、局部变量树、悬停、Watch、调试控制台只读访问路径求值、输出和停止。
+支持 native 程序的行断点、函数断点、调用栈、单步、继续、暂停、局部变量树、悬停、Watch、调试控制台只读访问路径求值、输出和停止。
 支持按包 F5 自动构建，也保留直接调试预编译程序。求值支持 `point.x`、`arr[0].x` 等变量路径；暂不支持算术、函数调用或赋值。
+函数断点面板支持 `main`、启动包的 `foo` 和 `@alias.foo`，泛型函数匹配所有已生成实例。
+普通函数名需要 `package` 启动上下文；预编译 `program` 模式仅支持 `main`。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
 ## 命令行使用

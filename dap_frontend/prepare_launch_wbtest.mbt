@@ -33,9 +33,15 @@ async test "preparation streams output but does not claim initialized before suc
       output,
     ) => {
       output("stderr", "编译诊断\n")
-      { "program": "/built/program" }
+      {
+        arguments: { "program": "/built/program" },
+        context: @debugger.DebugContext::empty(),
+      }
     })
-    assert_eq(args, Some(Json({ "program": "/built/program" })))
+    assert_true(
+      args
+      is Some({ arguments: { "program": String("/built/program"), .. }, .. }),
+    )
   })
   assert_true(
     messages
@@ -80,9 +86,12 @@ async test "disconnect and EOF cancel preparation and wait for its cleanup" {
           ),
         )
         blocker.get()
-        { "program": "/must-not-run" }
+        {
+          arguments: { "program": "/must-not-run" },
+          context: @debugger.DebugContext::empty(),
+        }
       })
-      assert_eq(result, None)
+      assert_true(result is None)
       assert_eq(cleanup, ["cancelled"])
     })
     assert_true(client.closed)
@@ -118,12 +127,12 @@ async test "build failures report diagnostics and failed launch without a live s
   let inbox : @async.Queue[LiveInput] = @async.Queue(kind=Blocking(16))
   defer inbox.close()
   let messages = capture_messages(writer => {
-    assert_eq(
+    assert_true(
       await_preparation(writer, client, 2, {}, inbox, prepare=(_, output) => {
         output("stderr", "missing_value\n")
         raise LiveError("build failed")
-      }),
-      None,
+      })
+      is None,
     )
   })
   assert_true(

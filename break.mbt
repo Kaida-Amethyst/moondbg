@@ -18,38 +18,11 @@ priv enum BreakCommandTarget {
 
 ///|
 fn parse_function_break_target(arguments : StringView) -> CommandParseResult {
-  guard !arguments.contains(" ") && !arguments.contains("\t") else {
-    return invalid_command("function breakpoint must be one function name")
+  let request = @debugger.FunctionBreakpointRequest::parse(arguments) catch {
+    @debugger.FunctionNameError(message) => return invalid_command(message)
+    error => return invalid_command(@debug.to_string(error))
   }
-  if arguments.has_prefix("@") {
-    guard arguments[1:].split_once(".") is Some((package_alias, function_name)) &&
-      package_alias != "" &&
-      function_name != "" &&
-      !function_name.contains(".") &&
-      !function_name.contains("@") else {
-      return invalid_command(
-        "cross-package function must use @<alias>.<function>",
-      )
-    }
-    return parsed_command(CommandBreak::{
-      target: FunctionBreakTarget(
-        @debugger.FunctionBreakpointRequest::imported(
-          package_alias.to_owned(),
-          function_name.to_owned(),
-        ),
-      ),
-    })
-  }
-  guard !arguments.contains(".") && !arguments.contains("@") else {
-    return invalid_command(
-      "function breakpoint must use <function> or @<alias>.<function>",
-    )
-  }
-  parsed_command(CommandBreak::{
-    target: FunctionBreakTarget(
-      @debugger.FunctionBreakpointRequest::current(arguments.to_owned()),
-    ),
-  })
+  parsed_command(CommandBreak::{ target: FunctionBreakTarget(request), })
 }
 
 ///|

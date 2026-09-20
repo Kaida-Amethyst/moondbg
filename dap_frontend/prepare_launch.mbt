@@ -1,4 +1,10 @@
 ///|
+priv struct PreparedLaunch {
+  arguments : Json
+  context : @debugger.DebugContext
+}
+
+///|
 fn launch_error_message(error : Error) -> String {
   match error {
     LiveError(message) | @launch.LaunchError(message) => message
@@ -10,7 +16,7 @@ fn launch_error_message(error : Error) -> String {
 async fn prepare_launch(
   arguments : Json,
   output : async (String, String) -> Unit,
-) -> Json {
+) -> PreparedLaunch {
   validate_launch_options(arguments)
   guard arguments is Object(fields) else {
     raise LiveError("Expected launch arguments")
@@ -20,7 +26,12 @@ async fn prepare_launch(
   guard has_package != has_program else {
     raise LiveError("Specify exactly one of launch.package and launch.program")
   }
-  guard has_package else { return launch_arguments(arguments) }
+  guard has_package else {
+    return {
+      arguments: launch_arguments(arguments),
+      context: @debugger.DebugContext::empty(),
+    }
+  }
   guard fields.get("package") is Some(String(directory)) &&
     directory.has_prefix("/") else {
     raise LiveError("launch.package must be an absolute package directory path")
@@ -40,7 +51,10 @@ async fn prepare_launch(
   if !live_fields.contains("cwd") {
     live_fields.set("cwd", Json(prepared.working_directory))
   }
-  launch_arguments(Json(live_fields))
+  {
+    arguments: launch_arguments(Json(live_fields)),
+    context: prepared.debug_context,
+  }
 }
 
 ///|
@@ -86,8 +100,8 @@ async fn await_preparation(
   launch_seq : Int,
   arguments : Json,
   inbox : @async.Queue[LiveInput],
-  prepare? : async (Json, async (String, String) -> Unit) -> Json = prepare_launch,
-) -> Json? {
+  prepare? : async (Json, async (String, String) -> Unit) -> PreparedLaunch = prepare_launch,
+) -> PreparedLaunch? {
   // Group teardown waits for cancellation cleanup before returning to the
   // caller, including all build worker processes. No 15s build deadline.
   @async.with_task_group(group => {

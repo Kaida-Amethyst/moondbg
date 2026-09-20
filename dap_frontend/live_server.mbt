@@ -9,7 +9,7 @@ async fn serve_live(
   writer : &@io.Writer,
   client : ConnectionSession,
   launch_seq : Int,
-  launch_args : Json,
+  prepared : PreparedLaunch,
 ) -> Unit {
   @async.with_task_group(group => {
     let transport = @dap.open_transport(group, find_adapter()) catch {
@@ -45,12 +45,18 @@ async fn serve_live(
       deadline: Some(@async.now() + 15000),
       inspection: InspectionState::new(),
       capabilities: {},
+      functions: FunctionState::new(prepared.context),
     }
     defer session.inspection.jobs.close()
     let inspection_task = group.spawn(no_wait=true, () => {
       session.inspect_worker(inbox)
     })
     defer inspection_task.cancel()
+    defer session.functions.jobs.close()
+    let function_task = group.spawn(no_wait=true, () => {
+      session.function_worker(inbox)
+    })
+    defer function_task.cancel()
     let adapter_task = group.spawn(no_wait=true, () => {
       try {
         for ;; {
@@ -108,7 +114,7 @@ async fn serve_live(
           Client(Some(text)) => session.on_client(writer, @json.parse(text))
           Client(None) => break
           Adapter(message) =>
-            session.on_adapter(writer, message, launch_seq, launch_args)
+            session.on_adapter(writer, message, launch_seq, prepared.arguments)
           Failed(message) => {
             if session.ended {
               break
@@ -125,10 +131,24 @@ async fn serve_live(
             }
           InspectDone(seq, result) =>
             session.complete_inspection(writer, seq, result)
+          FunctionRead(command, args, reply) =>
+            if session.closing || session.ended {
+              reply.close(
+                error=LiveError(
+                  "Session ended during function breakpoint update",
+                ),
+              )
+            } else {
+              session.request(0, command, args, function_reply=Some(reply))
+            }
+          FunctionDone(result) => session.complete_functions(writer, result)
         }
       }
     } catch {
       error => {
+        session.cancel_functions(writer, @debug.to_string(error)) catch {
+          _ => ()
+        }
         session.invalidate_inspection(writer) catch {
           _ => ()
         }

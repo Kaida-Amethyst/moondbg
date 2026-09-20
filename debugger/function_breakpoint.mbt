@@ -22,6 +22,68 @@ pub fn FunctionBreakpointRequest::current(
 }
 
 ///|
+pub suberror FunctionNameError {
+  FunctionNameError(String)
+} derive(Debug)
+
+///|
+pub extend FunctionNameError with @debug.Debug::{to_repr}
+
+///|
+pub fn FunctionBreakpointRequest::parse(
+  text : StringView,
+) -> FunctionBreakpointRequest raise {
+  guard !text.is_empty() &&
+    !text.iter().any(ch => ch is (' ' | '\t' | '\r' | '\n')) else {
+    raise FunctionNameError("function breakpoint must be one function name")
+  }
+  if text.strip_prefix("@") is Some(rest) {
+    guard rest.split_once(".") is Some((package_alias, name)) &&
+      !package_alias.is_empty() &&
+      !name.is_empty() &&
+      !name.contains(".") &&
+      !name.contains("@") else {
+      raise FunctionNameError(
+        "cross-package function must use @<alias>.<function>",
+      )
+    }
+    return ImportedPackageFunction(package_alias.to_owned(), name.to_owned())
+  }
+  guard !text.contains(".") && !text.contains("@") else {
+    raise FunctionNameError(
+      "function breakpoint must use <function> or @<alias>.<function>",
+    )
+  }
+  CurrentPackageFunction(text.to_owned())
+}
+
+///|
+/// Resolve aliases from build metadata, never from the editor's current file.
+/// The native entry symbol is known even for a bare executable launch.
+pub fn DebugContext::resolve_function(
+  self : DebugContext,
+  request : FunctionBreakpointRequest,
+) -> FunctionBreakpointSelector raise {
+  match request {
+    CurrentPackageFunction("main") => ExactPhysicalFunction("moonbit_main")
+    CurrentPackageFunction(name) =>
+      MoonBitFunctionFamily(
+        @name_mangle.mangle_top_level_function_base(
+          self.current_package(),
+          name,
+        ),
+      )
+    ImportedPackageFunction(package_alias, name) =>
+      MoonBitFunctionFamily(
+        @name_mangle.mangle_top_level_function_base(
+          self.package_for_alias(package_alias),
+          name,
+        ),
+      )
+  }
+}
+
+///|
 pub fn FunctionBreakpointRequest::imported(
   package_alias : String,
   function_name : String,
