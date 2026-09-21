@@ -22,6 +22,7 @@ fn live_test_session() -> (LiveSession, @dap_testkit.ScriptedTransport) {
     inspection: InspectionState::new(),
     capabilities: {},
     functions: FunctionState::new(@debugger.DebugContext::empty()),
+    panic: PanicState::new([]),
   }
   (session, transport)
 }

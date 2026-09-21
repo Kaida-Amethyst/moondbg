@@ -376,6 +376,13 @@ Node 测试检查启动路径、清单、命令注册与环境错误；MoonBit �
   若底层修改结果无法确认，结束会话，不让程序带着未知断点继续运行。
   LLDB 的 target breakpoint ID 在其 DAP hitBreakpointIds 中仍是同一 ID；函数与行断点共用这个
   编号空间，不使用 DAP 请求序号充当断点 ID。已删除函数断点的迟到事件不会重新创建 UI 条目。
+- 开发版 CLI 提供默认开启的 `moonbit-panic` 异常过滤器。`setExceptionBreakpoints`
+  只管理独立的内部 runtime 断点，空 filters 删除它，不改变信号处理策略；连接验证模式返回未验证。
+  与函数断点更新共用配置/恢复执行的串行边界，但断开始终可用。不把未知条件静默当无条件处理。
+  实际停住后读取原始栈顶，复用 REPL 的精确符号/停止原因识别规则，再发送 `reason: exception`。
+  项目归属来自共享 `launch` 的生产源码元数据；保留栈顺序，将非项目 frame 标记为 `subtle`，
+  由 VS Code 选择最近的用户 frame。预编译模式缺少项目元数据时明确提示手动选择。
+  内部栈查询同样绑定 stop epoch，迟到结果不能覆盖继续/退出状态。
 - 客户端输入和 adapter 输入分别由后台任务读取，进入有界队列，由同一个循环分派状态和写消息。
   启动/继续/单步的响应与随后发生的 stopped、output、exited 事件独立，因此运行期间仍能处理 pause 和 disconnect。
 - `next`/`stepIn`/`stepOut` 使用 LLDB 默认源码单步；`pause` 只发送暂停请求，收到 stopped
@@ -414,3 +421,10 @@ CLI 和 DAP 共用 `launch/`，其中私有 `--build-worker` 子进程在 POSIX 
 验证 FunctionBreakpoint API 的添加、删除、取消勾选、重新启用、跨包函数及泛型两种实例命中。
 
 DAP 时序依据：[Debug Adapter Protocol overview](https://microsoft.github.io/debug-adapter-protocol/overview)。
+
+`test/panic-host.js` 验证真实 VS Code 的默认异常过滤器请求、自动选中的 `activeStackItem`、
+源码编辑器位置、变量与 Watch，以及关闭内部停点和断开。通过 `--extensionTestsPath` 指定，
+工作区使用 `testdata/dwarf_probe`，`MOONDBG_VSCODE_TEST_RESULT` 指定验收记录；请使用隔离的
+`--user-data-dir`，避免改变日常工作区的断点开关状态。
+自动选帧依据 [VS Code Thread.getTopStackFrame](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)：
+exception 停止时跳过弱化 frame，而非更改栈顺序或把用户源码附到 runtime frame 上。

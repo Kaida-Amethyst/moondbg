@@ -99,6 +99,16 @@ CLI 新版发布到 Mooncakes 后可再次执行 `moon install Kaida-Amethyst/mo
 - **预编译程序**：可用 `"program": "绝对路径/program.exe"` 替换 `package`；两者只能选一个。
   程序需带完整调试信息。此模式不重新构建，函数断点仅支持 `main`。
 
+## MoonBit panic（需要开发版 CLI）
+
+新版 moondbg CLI 在 **运行和调试 → 断点** 面板提供默认开启的 **MoonBit panic**。
+无需设置源码断点，panic 时会停止并优先定位最近的项目源码 frame，支持变量、Watch 和完整调用栈。
+此功能由 CLI 提供，已有扩展无需重新安装；旧版 CLI 不显示此开关。
+
+取消勾选只关闭内部 panic 停点，不影响普通断点，也不关闭 LLDB 的 SIGABRT 停止行为。
+只报告 panic，不推断 runtime 未提供的具体原因。变量不可用时如实报告；直接调试预编译 exe
+缺少项目源码上下文时，会提示手动在调用栈选择 frame。
+
 ## 已知限制与排错
 
 - 暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、会话内 restart、条件断点、

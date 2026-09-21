@@ -154,7 +154,14 @@ fn ConnectionSession::handle_request(
         "supportsEvaluateForHovers": true,
         "supportsTerminateRequest": false,
         "supportsRestartRequest": false,
-        "exceptionBreakpointFilters": [],
+        "exceptionBreakpointFilters": [
+          {
+            "filter": "moonbit-panic",
+            "label": "MoonBit panic",
+            "default": true,
+            "description": "Stop at MoonBit panic before process exit. Disabling this does not disable SIGABRT stops.",
+          },
+        ],
       }),
     ]
   }
@@ -231,13 +238,22 @@ fn ConnectionSession::handle_request(
       [self.response(seq, command, body={ "breakpoints": rejected })]
     }
     "setExceptionBreakpoints" => {
-      guard arguments is { "filters": Array([]), .. } else {
+      let enabled = panic_filter(arguments) catch {
+        error =>
+          return [
+            self.response(seq, command, error=Some(launch_error_message(error))),
+          ]
+      }
+      if enabled {
         return [
-          self.response(
-            seq,
-            command,
-            error=Some("Exception breakpoints are not supported."),
-          ),
+          self.response(seq, command, body={
+            "breakpoints": [
+              {
+                "verified": false,
+                "message": "Connection test only; no program is loaded.",
+              },
+            ],
+          }),
         ]
       }
       [self.response(seq, command, body={ "breakpoints": [] })]

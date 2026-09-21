@@ -8,6 +8,7 @@ import {
 }
 
 // Values
+pub fn panic_stop_reason(String, String?) -> String
 
 // Errors
 pub suberror VariableEvaluationError {
@@ -19,6 +20,7 @@ pub struct FunctionBreakpointDriver {
   // private fields
 }
 pub async fn FunctionBreakpointDriver::install(Self, @debugger.FunctionBreakpointSelector) -> InstalledFunctionBreakpoint
+pub async fn FunctionBreakpointDriver::install_panic(Self) -> InstalledFunctionBreakpoint
 pub fn FunctionBreakpointDriver::new(async (String, Json) -> @dap.DapResponse) -> Self
 pub async fn FunctionBreakpointDriver::remove(Self, Int) -> Unit
 

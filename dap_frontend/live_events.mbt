@@ -32,6 +32,14 @@ async fn LiveSession::on_adapter(
         raise LiveError("Unexpected lldb-dap response.")
       }
       self.pending.remove(raw.to_int())
+      if pending.panic_reply is Some(reply) {
+        (reply.try_put(message) catch { _ => false }) |> ignore
+        return
+      }
+      if pending.stop_context is Some(stop) {
+        self.complete_panic_stop(writer, pending, stop, message)
+        return
+      }
       if pending.function_reply is Some(reply) {
         (reply.try_put(message) catch { _ => false }) |> ignore
         return
@@ -63,6 +71,7 @@ async fn LiveSession::on_adapter(
         _ => {}
       }
       if command == "stackTrace" && body is { "stackFrames": Array(frames), .. } {
+        self.panic.present_frames(pending.arguments, frames)
         for frame in frames {
           if frame is Object(fields) && fields.get("name") is Some(String(name)) {
             let rendered = @name_mangle.demangle_top_level_function(name).source_name() catch {
@@ -159,22 +168,21 @@ async fn LiveSession::on_adapter(
           send_client(writer, self.client.event(name, body))
         }
         "stopped" if !self.ended && !self.exited && !self.closing => {
+          self.panic.thread = None
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = true
           let stop = self.pause_stop_body(body)
-          if self.functions.active is Some(_) {
+          if self.functions.active is Some(_) || self.panic.active is Some(_) {
             // A running target can hit a newly created breakpoint before its
             // installation reply. Publish the BP IDs before its stop event.
             self.functions.stops.push(stop)
           } else {
-            send_client(
-              writer,
-              self.client.event(name, self.function_stop_body(stop)),
-            )
+            self.publish_stop(writer, stop)
           }
         }
         "continued" if !self.ended && !self.exited => {
+          self.panic.thread = None
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = false
@@ -188,6 +196,7 @@ async fn LiveSession::on_adapter(
           }
         }
         "exited" => {
+          self.panic.thread = None
           self.cancel_functions(writer, "Program exited.")
           self.invalidate_inspection(writer)
           self.execution_revision += 1
@@ -197,7 +206,7 @@ async fn LiveSession::on_adapter(
           send_client(writer, self.client.event(name, body))
         }
         "breakpoint" =>
-          if self.functions.active is Some(_) {
+          if self.functions.active is Some(_) || self.panic.active is Some(_) {
             self.functions.events.push(body)
           } else {
             self.function_event(writer, body)

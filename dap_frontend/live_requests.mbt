@@ -77,9 +77,10 @@ async fn LiveSession::handle_live_request(
   }
   // Preserve client order around asynchronous breakpoint replacement. Stop
   // and inspection remain responsive; execution cannot outrun installation.
-  if self.functions.active is Some(_) &&
+  if (self.functions.active is Some(_) || self.panic.active is Some(_)) &&
     (
       command == "setFunctionBreakpoints" ||
+      command == "setExceptionBreakpoints" ||
       command == "configurationDone" ||
       resumes_execution(command)
     ) {
@@ -139,23 +140,32 @@ async fn LiveSession::handle_live_request(
       }
       self.request(seq, command, checked)
     }
-    "setExceptionBreakpoints" if self.ready && !self.ended =>
-      if arguments is { "filters": Array([]), .. } {
-        send_client(
-          writer,
-          self.client.response(seq, command, body={ "breakpoints": [] }),
-        )
-      } else {
-        send_client(
-          writer,
-          self.client.response(
-            seq,
-            command,
-            error=Some("Exception breakpoints are not supported."),
-          ),
-        )
+    "setExceptionBreakpoints" if self.ready && !self.ended => {
+      let enabled = panic_filter(arguments) catch {
+        error => {
+          send_client(
+            writer,
+            self.client.response(
+              seq,
+              command,
+              error=Some(launch_error_message(error)),
+            ),
+          )
+          return
+        }
       }
+      self.panic.active = Some(seq)
+      self.panic.jobs.put(enabled)
+    }
     "configurationDone" if self.ready && !self.configured && !self.ended => {
+      if !self.panic.configured {
+        // Clients normally send filters before configurationDone. If omitted,
+        // honor our advertised default without installing before their choice.
+        self.functions.deferred.push((seq, command, arguments))
+        self.panic.active = Some(0)
+        self.panic.jobs.put(true)
+        return
+      }
       self.configured = true
       self.deadline = None
       self.request(seq, command, {})

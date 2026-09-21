@@ -9,6 +9,8 @@ priv enum LiveInput {
   InspectDone(Int, Result[Array[@lldb_dap.VariableNode], String])
   FunctionRead(String, Json, @async.Queue[Json])
   FunctionDone(Result[Array[Json], String])
+  PanicRead(String, Json, @async.Queue[Json])
+  PanicDone(Result[@lldb_dap.InstalledFunctionBreakpoint?, String])
 }
 
 ///|
@@ -19,6 +21,9 @@ priv struct PendingRequest {
   execution_revision : Int
   inspection_reply : @async.Queue[Json]?
   function_reply : @async.Queue[Json]?
+  panic_reply : @async.Queue[Json]?
+  stop_context : Json?
+  arguments : Json
 }
 
 ///|
@@ -44,6 +49,7 @@ priv struct LiveSession {
   inspection : InspectionState
   mut capabilities : Json
   functions : FunctionState
+  panic : PanicState
 }
 
 ///|
@@ -59,6 +65,8 @@ async fn LiveSession::request(
   arguments : Json,
   inspection_reply? : @async.Queue[Json]? = None,
   function_reply? : @async.Queue[Json]? = None,
+  panic_reply? : @async.Queue[Json]? = None,
+  stop_context? : Json? = None,
 ) -> Unit {
   let seq = self.next_seq
   self.next_seq += 1
@@ -69,6 +77,9 @@ async fn LiveSession::request(
     execution_revision: self.execution_revision,
     inspection_reply,
     function_reply,
+    panic_reply,
+    stop_context,
+    arguments,
   })
   self.transport.send_message({
     "seq": seq,

@@ -46,6 +46,7 @@ async fn serve_live(
       inspection: InspectionState::new(),
       capabilities: {},
       functions: FunctionState::new(prepared.context),
+      panic: PanicState::new(prepared.project_sources),
     }
     defer session.inspection.jobs.close()
     let inspection_task = group.spawn(no_wait=true, () => {
@@ -57,6 +58,9 @@ async fn serve_live(
       session.function_worker(inbox)
     })
     defer function_task.cancel()
+    defer session.panic.jobs.close()
+    let panic_task = group.spawn(no_wait=true, () => session.panic_worker(inbox))
+    defer panic_task.cancel()
     let adapter_task = group.spawn(no_wait=true, () => {
       try {
         for ;; {
@@ -142,6 +146,15 @@ async fn serve_live(
               session.request(0, command, args, function_reply=Some(reply))
             }
           FunctionDone(result) => session.complete_functions(writer, result)
+          PanicRead(command, args, reply) =>
+            if session.closing || session.ended {
+              reply.close(
+                error=LiveError("Session ended during panic breakpoint update"),
+              )
+            } else {
+              session.request(0, command, args, panic_reply=Some(reply))
+            }
+          PanicDone(result) => session.complete_panic(writer, result)
         }
       }
     } catch {

@@ -2,6 +2,7 @@
 priv struct PreparedLaunch {
   arguments : Json
   context : @debugger.DebugContext
+  project_sources : Array[String]
 }
 
 ///|
@@ -30,6 +31,7 @@ async fn prepare_launch(
     return {
       arguments: launch_arguments(arguments),
       context: @debugger.DebugContext::empty(),
+      project_sources: [],
     }
   }
   guard fields.get("package") is Some(String(directory)) &&
@@ -54,6 +56,7 @@ async fn prepare_launch(
   {
     arguments: launch_arguments(Json(live_fields)),
     context: prepared.debug_context,
+    project_sources: prepared.project_sources,
   }
 }
 

@@ -95,11 +95,11 @@ quit
 
 ## 开发与验证
 
-### REPL panic 停点（开发版本）
+### panic 停点（开发版本）
 
 当前源码中的 REPL 会在 `moonbit_panic` 入口自动停止，显示 `MoonBit panic`。
 这是内部停点，不占用用户断点编号，也不受 `delete` / `disable` 影响。
-此功能尚未接入 VS Code，也不包含在上面的 `vscode-v0.1.1` release 中。
+VS Code 也支持此停点，需要本仓库的新 CLI；上面的 release 所对应的旧 CLI 尚不包含此功能。
 
 在构建本仓库 CLI 后可试用：
 
@@ -121,6 +121,17 @@ panic 时自动选择最近的项目源码 frame，跳过 core 与第三方依�
 要验证跳过 core 的 `abort` frame，在同一示例项目运行 `moondbg panic_context`，输入
 `run`、`locals`、`p value`、`bt --all`。预期停在项目的 `panic_context_lib/fail.mbt:4`，
 当前测试工具链下可看到 `value = 42`，而不是停在 core 的 `abort.mbt`。
+
+VS Code 中打开 `testdata/dwarf_probe`，再打开 `panic_context/main.mbt`，按 F5。
+**运行和调试 → 断点** 面板会出现默认勾选的 **MoonBit panic**。无需源码断点，程序会以
+`MoonBit panic` 原因停止，自动定位 `panic_context_lib/fail.mbt:4`；变量面板可看到 `value = 42`，
+Watch 或调试控制台可直接输入 `value`（不带 REPL 的 `p`）。完整调用栈仍可手动展开、选择。
+非项目 frame 只作弱化显示，不删除、重排或伪造位置。缺少项目源码上下文时会明确提示手动选择 frame。
+
+取消勾选只删除 moondbg 的内部 panic 断点，不影响源码/函数断点，也不关闭 LLDB 自身的
+SIGABRT 停止行为。再次勾选可重新启用；VS Code 会记住你的选择，因此“默认开启”不覆盖手动选择。
+想重新 F5 调试当前包时，先切回 `panic_context/main.mbt`，不要停留在 library 包的源码标签页。
+此开关由 CLI 的 DAP capabilities 提供，已有 moondbg 扩展无需重装；结束旧会话后启动新会话即可。
 
 ### 构建和验收
 

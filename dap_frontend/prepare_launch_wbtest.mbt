@@ -36,6 +36,7 @@ async test "preparation streams output but does not claim initialized before suc
       {
         arguments: { "program": "/built/program" },
         context: @debugger.DebugContext::empty(),
+        project_sources: [],
       }
     })
     assert_true(
@@ -89,6 +90,7 @@ async test "disconnect and EOF cancel preparation and wait for its cleanup" {
         {
           arguments: { "program": "/must-not-run" },
           context: @debugger.DebugContext::empty(),
+          project_sources: [],
         }
       })
       assert_true(result is None)

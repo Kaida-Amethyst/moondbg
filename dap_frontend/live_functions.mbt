@@ -183,21 +183,7 @@ async fn LiveSession::complete_functions(
       "breakpoints": points,
     }),
   )
-  for event in self.functions.events {
-    self.function_event(writer, event)
-  }
-  self.functions.events.clear()
-  for stop in self.functions.stops {
-    send_client(
-      writer,
-      self.client.event("stopped", self.function_stop_body(stop)),
-    )
-  }
-  self.functions.stops.clear()
-  while self.functions.active is None && self.functions.deferred.length() > 0 {
-    let (seq, command, arguments) = self.functions.deferred.remove(0)
-    self.handle_live_request(writer, seq, command, arguments)
-  }
+  self.drain_breakpoint_updates(writer)
 }
 
 ///|
@@ -206,6 +192,19 @@ async fn LiveSession::cancel_functions(
   writer : &@io.Writer,
   message : String,
 ) -> Unit {
+  if self.panic.active is Some(seq) {
+    self.panic.active = None
+    if seq > 0 {
+      send_client(
+        writer,
+        self.client.response(
+          seq,
+          "setExceptionBreakpoints",
+          error=Some(message),
+        ),
+      )
+    }
+  }
   if self.functions.active is Some(seq) {
     self.functions.active = None
     send_client(
@@ -223,6 +222,9 @@ async fn LiveSession::cancel_functions(
     if request.function_reply is Some(reply) {
       reply.close(error=LiveError(message))
     }
+    if request.panic_reply is Some(reply) {
+      reply.close(error=LiveError(message))
+    }
   }
 }
 
@@ -232,6 +234,10 @@ async fn LiveSession::function_event(
   writer : &@io.Writer,
   body : Json,
 ) -> Unit {
+  if body is { "breakpoint": { "id": Number(id, ..), .. }, .. } &&
+    self.panic.owned.contains(id.to_int()) {
+    return
+  }
   if body is { "breakpoint": { "id": Number(id, ..), .. }, .. } &&
     self.functions.owned.contains(id.to_int()) {
     // Do not recreate removed UI entries or expose LLDB's single-location
