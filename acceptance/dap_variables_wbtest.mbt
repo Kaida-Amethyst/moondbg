@@ -123,11 +123,18 @@ async test "DAP variable trees inspect frames structs arrays enum payloads and i
       is { "value": String("6"), .. },
     )
     let list = named_variable(locals, "list")
-    assert_true(list is { "value": String("Cons"), .. }, msg=list.stringify())
+    assert_true(
+      list is { "value": String(value), .. } &&
+      value.has_prefix("Cons(3, Cons(2, "),
+      msg=list.stringify(),
+    )
     let payload = peer.children_of(list)
     assert_true(named_variable(payload, ".0") is { "value": String("3"), .. })
     let tail = named_variable(payload, ".1")
-    assert_true(tail is { "value": String("Cons"), .. })
+    assert_true(
+      tail is { "value": String(value), .. } &&
+      value.has_prefix("Cons(2, Cons(1, "),
+    )
     let next = peer.children_of(tail)
     assert_true(named_variable(next, ".0") is { "value": String("2"), .. })
     let last = peer.children_of(named_variable(next, ".1"))

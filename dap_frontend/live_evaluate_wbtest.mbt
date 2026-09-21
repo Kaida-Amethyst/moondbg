@@ -74,3 +74,65 @@ async test "evaluate uses the requested frame in all contexts and invalidates qu
   assert_true(session.inspection.pending.is_empty())
   assert_true(session.inspection.references.is_empty())
 }
+
+///|
+async test "inspection errors identify a rejected memory read during explicit range access" {
+  let inspector = @lldb_dap.VariableInspector::new(
+    (command, args) => {
+      let body : Json = match command {
+        "scopes" =>
+          { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+        "variables" if args is { "variablesReference": Number(101, ..), .. } =>
+          {
+            "variables": [
+              {
+                "name": "body",
+                "type": "unsigned short *",
+                "value": "0x1000",
+                "variablesReference": 0,
+              },
+            ],
+          }
+        "variables" =>
+          {
+            "variables": [
+              {
+                "name": "text",
+                "type": "String",
+                "value": "0x1000",
+                "variablesReference": 101,
+              },
+            ],
+          }
+        "readMemory" => {}
+        _ => fail(command)
+      }
+      guard @dap.classify_message({
+          "type": "response",
+          "seq": 1,
+          "request_seq": 1,
+          "command": command,
+          "success": command != "readMemory",
+          "message": "unmapped address",
+          "body": body,
+        })
+        is @dap.Response(response) else {
+        fail("response")
+      }
+      response
+    },
+    () => Some(1),
+    { "supportsReadMemoryRequest": true },
+  )
+  let message = try {
+    inspector.tree_evaluate(
+      10,
+      @debugger.VariablePath::root("text").with_range(0, 1),
+    )
+    |> ignore
+    fail("expected a failed memory read")
+  } catch {
+    error => inspection_error_message(error)
+  }
+  assert_eq(message, "Memory read failed: unmapped address")
+}

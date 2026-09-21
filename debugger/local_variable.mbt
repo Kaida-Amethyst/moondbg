@@ -33,6 +33,7 @@ pub extend LocalCompactValue with @debug.Debug::{to_repr}
 pub(all) enum LocalVariableAvailability {
   LocalVariableAvailable(LocalCompactValue)
   LocalVariableUnavailable
+  LocalVariableFailure(VariableLookupFailure)
   LocalVariableAmbiguous
 } derive(Eq, Debug)
 

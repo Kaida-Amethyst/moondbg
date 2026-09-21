@@ -383,6 +383,7 @@ pub fn LocalScopeAvailability::to_repr(Self) -> @debug.Repr
 pub(all) enum LocalVariableAvailability {
   LocalVariableAvailable(LocalCompactValue)
   LocalVariableUnavailable
+  LocalVariableFailure(VariableLookupFailure)
   LocalVariableAmbiguous
 } derive(Eq, @debug.Debug)
 pub fn LocalVariableAvailability::equal(Self, Self) -> Bool
@@ -538,9 +539,10 @@ pub struct VariableEnumSnapshot {
 } derive(Eq, @debug.Debug)
 pub fn VariableEnumSnapshot::constructor_name(Self) -> String
 pub fn VariableEnumSnapshot::equal(Self, Self) -> Bool
-pub fn VariableEnumSnapshot::new(String, Array[VariableEnumPayload]) -> Self raise VariableSnapshotError
+pub fn VariableEnumSnapshot::new(String, Array[VariableEnumPayload], preview? : String) -> Self raise VariableSnapshotError
 pub fn VariableEnumSnapshot::not_equal(Self, Self) -> Bool
 pub fn VariableEnumSnapshot::payload(Self) -> ReadOnlyArray[VariableEnumPayload]
+pub fn VariableEnumSnapshot::preview(Self) -> String?
 pub fn VariableEnumSnapshot::to_repr(Self) -> @debug.Repr
 
 pub enum VariableLookupFailure {
@@ -550,11 +552,16 @@ pub enum VariableLookupFailure {
   VariableIndexAccessOnNonCollection(String, Int, String?)
   VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
+  VariableReportedUnavailable(String, String)
+  VariableMemoryReadFailed(String, String)
   VariableInspectionFailed(String, String)
 } derive(Eq, @debug.Debug)
 pub fn VariableLookupFailure::equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::inspection_failed(String, String) -> Self
+pub fn VariableLookupFailure::memory_read_failed(String, String) -> Self
 pub fn VariableLookupFailure::message(Self) -> String
 pub fn VariableLookupFailure::not_equal(Self, Self) -> Bool
+pub fn VariableLookupFailure::reported_unavailable(String, String) -> Self
 pub fn VariableLookupFailure::requested_path(Self) -> String
 pub fn VariableLookupFailure::to_repr(Self) -> @debug.Repr
 
@@ -563,6 +570,7 @@ pub enum VariableLookupResult {
   VariableLookupFailed(VariableLookupFailure)
 } derive(Eq, @debug.Debug)
 pub fn VariableLookupResult::equal(Self, Self) -> Bool
+pub fn VariableLookupResult::failed(VariableLookupFailure) -> Self
 pub fn VariableLookupResult::field_access_on_non_struct(String, String, String?) -> Self
 pub fn VariableLookupResult::field_not_found(String, String) -> Self
 pub fn VariableLookupResult::found(VariableSnapshot) -> Self

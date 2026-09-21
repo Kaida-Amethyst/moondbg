@@ -210,8 +210,8 @@ async test "tree locals keep unavailable entries and failed layouts do not hide 
   let nodes = inspector.tree_locals(10)
   assert_eq(nodes.length(), 3)
   assert_eq(nodes[0].value, "3")
-  assert_eq(nodes[1].value, "<unavailable>")
-  assert_true(nodes[2].value.has_prefix("<unavailable:"))
+  assert_eq(nodes[1].value, "<unavailable: <variable not available>>")
+  assert_true(nodes[2].value.contains("FixedArray has no body field"))
   assert_eq(nodes[2].indexed_children, 0)
 }
 
@@ -219,6 +219,99 @@ async test "tree locals keep unavailable entries and failed layouts do not hide 
 priv struct TreeTestState {
   mut frame : Int
   mut epoch : Int
+}
+
+///|
+async test "tree read errors preserve memory and availability reasons without poisoning the stop" {
+  let inspector = VariableInspector::new(
+    (command, args) => {
+      if command == "readMemory" {
+        guard @dap.classify_message({
+            "type": "response",
+            "seq": 1,
+            "request_seq": 1,
+            "command": command,
+            "success": false,
+            "message": "unmapped address",
+          })
+          is @dap.Response(response) else {
+          fail("response")
+        }
+        return response
+      }
+      let body : Json = match command {
+        "scopes" =>
+          { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+        "variables" =>
+          match json_int_field(args, "variablesReference") {
+            Some(100) =>
+              {
+                "variables": [
+                  {
+                    "name": "arr",
+                    "type": "FixedArray[Int]",
+                    "value": "0x1000",
+                    "variablesReference": 101,
+                  },
+                  {
+                    "name": "gone",
+                    "type": "Int",
+                    "value": "<error: register is unavailable>",
+                    "variablesReference": 0,
+                  },
+                  {
+                    "name": "good",
+                    "type": "Int",
+                    "value": "42",
+                    "variablesReference": 0,
+                  },
+                ],
+              }
+            Some(101) =>
+              {
+                "variables": [
+                  {
+                    "name": "body",
+                    "type": "int *",
+                    "value": "0x1000",
+                    "variablesReference": 0,
+                  },
+                ],
+              }
+            _ => fail(args.stringify())
+          }
+        _ => fail(command)
+      }
+      tree_reply(command, body)
+    },
+    () => Some(1),
+    { "supportsReadMemoryRequest": true },
+  )
+  let nodes = inspector.tree_locals(10)
+  assert_eq(nodes.map(node => node.value), [
+    "<Memory read failed for 'arr': unmapped address>", "<unavailable: <error: register is unavailable>>",
+    "42",
+  ])
+  for
+    (path, reason) in [
+      ("gone", "lldb-dap reported <error: register is unavailable>"),
+      (
+        "missing", "Cannot distinguish an out-of-scope variable from missing debug information.",
+      ),
+    ] {
+    let message = try {
+      inspector.tree_evaluate(10, @debugger.VariablePath::root(path)) |> ignore
+      fail("expected a failed path")
+    } catch {
+      VariableEvaluationError(message) => message
+      error => raise error
+    }
+    assert_true(message.contains(reason), msg=message)
+  }
+  assert_eq(
+    inspector.tree_evaluate(10, @debugger.VariablePath::root("good")).value,
+    "42",
+  )
 }
 
 ///|

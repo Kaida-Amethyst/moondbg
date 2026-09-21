@@ -31,7 +31,7 @@ pub fn VariableNode::evaluate_name(self : VariableNode) -> String? {
 }
 
 ///|
-/// Resolve only a parsed read-only path, then describe one level. Descendants
+/// Resolve only a parsed read-only path, then return a bounded preview. Descendants
 /// reuse the same tree locators and paging as the Locals view.
 pub async fn VariableInspector::tree_evaluate(
   self : VariableInspector,

@@ -18,6 +18,11 @@ pub suberror BufferInspectionError {
 } derive(@debug.Debug)
 pub fn BufferInspectionError::to_repr(Self) -> @debug.Repr
 
+pub suberror MemoryReadError {
+  MemoryReadError(String)
+} derive(@debug.Debug)
+pub fn MemoryReadError::to_repr(Self) -> @debug.Repr
+
 pub suberror VariableEvaluationError {
   VariableEvaluationError(String)
 } derive(@debug.Debug)

@@ -74,27 +74,7 @@ async fn VariableInspector::read_buffer_memory(
   offset : Int,
   count : Int,
 ) -> Bytes {
-  guard json_bool_field(self.capabilities, "supportsReadMemoryRequest") ==
-    Some(true) else {
-    raise BufferInspectionError("lldb-dap does not support readMemory")
-  }
-  // A negative adapter reply means this value cannot be read, not that the
-  // transport failed. Errors while awaiting a reply still propagate normally.
-  let response = self.request_allow_failure("readMemory", {
-    "memoryReference": pointer,
-    "offset": offset,
-    "count": count,
-  })
-  let _ = validate_response(response, "readMemory") catch {
-    RequestFailed(message~, ..) =>
-      raise BufferInspectionError("Memory read failed: \{message}")
-    error => raise error
-  }
-  decode_memory_reply(response.body(), count) catch {
-    InvalidIndexedCollectionValue(message) =>
-      raise BufferInspectionError("Memory read failed: \{message}")
-    error => raise error
-  }
+  self.read_memory(pointer, offset, count)
 }
 
 ///|

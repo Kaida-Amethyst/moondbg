@@ -37,7 +37,7 @@ async test "REPL inspects optimized boxed and nested Options using the compiler 
       ("p values.unsigned.0", " = 4294967295"),
       ("p values.absent", "None"),
       ("p values.absent.0", "None has 0 positional member"),
-      ("p values.point", "Some(Point)"),
+      ("p values.point", "Some(Point { x: 3, y: 4 })"),
       ("p values.point.0.x", " = 3"),
       ("p values.no_point", "None"),
       ("p values.no_point.0", "None has 0 positional member"),
@@ -94,7 +94,7 @@ async test "DAP Option children Watch and stop lifetime share one representation
     guard peer.top_frame(thread) is { "id": id, .. } else { fail("frame") }
     let some = peer.evaluate_path(id, "values.integer")
     assert_true(
-      some is { "result": String("Some"), "type": String("Option[Int]"), .. },
+      some is { "result": String("Some(7)"), "type": String("Option[Int]"), .. },
     )
     let payload = named_variable(peer.children_of(some), ".0")
     assert_true(

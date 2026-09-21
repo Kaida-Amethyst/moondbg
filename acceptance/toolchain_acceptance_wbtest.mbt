@@ -229,7 +229,7 @@ async test "development toolchain recursively prints MoonBit structs" {
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"p dx\r"))
   assert_true(
-    process.expect(b"Variable 'dx' is unavailable at the current location."),
+    process.expect(b"Variable 'dx' is unavailable: lldb-dap reported "),
   )
   assert_true(process.expect(b"(moondbg) "))
 
@@ -267,7 +267,7 @@ async test "development toolchain recursively prints MoonBit structs" {
   }
   assert_true(process.write(b"p dx1\r"))
   assert_true(
-    process.expect(b"Variable 'dx1' is unavailable at the current location."),
+    process.expect(b"Variable 'dx1' is unavailable: lldb-dap reported "),
   )
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"quit\r"))
@@ -413,7 +413,7 @@ async test "development toolchain shallowly prints an active boxed enum" {
   for _ in 0..<2 {
     assert_true(process.write(b"p list\r"))
     assert_true(process.expect(b"list: List"))
-    assert_true(process.expect(b"Cons(3, List)"))
+    assert_true(process.expect(b"Cons(3, Cons(2, List { "))
     assert_true(process.expect(b"(moondbg) "))
   }
   assert_true(process.write(b"quit\r"))
@@ -582,12 +582,12 @@ async test "development toolchain navigates stack frames and caller locals" {
   assert_true(process.expect(b"stack_support.ordinary_frame"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"locals\r"))
-  assert_true(process.expect(b"shadowed_value: Int = <unavailable>"))
+  assert_true(process.expect(b"shadowed_value: Int = <unavailable:"))
   assert_true(process.expect(b"(moondbg) "))
   assert_true(process.write(b"p shadowed_value\r"))
   assert_true(
     process.expect(
-      b"Variable 'shadowed_value' is unavailable at the current location.",
+      b"Variable 'shadowed_value' is unavailable: lldb-dap reported ",
     ),
   )
   assert_true(process.expect(b"(moondbg) "))

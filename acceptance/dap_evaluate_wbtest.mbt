@@ -98,7 +98,10 @@ async test "DAP evaluate supports hover watch console paths expandable values an
       is { "value": String("1000"), "evaluateName": String("fixed[999]"), .. },
     )
     let list = peer.evaluate_path(top, "list")
-    assert_true(list is { "result": String("Cons"), .. })
+    assert_true(
+      list is { "result": String(value), .. } &&
+      value.has_prefix("Cons(3, Cons(2, "),
+    )
     let payload = peer.children_of(list)
     assert_true(named_variable(payload, ".0") is { "value": String("3"), .. })
     assert_true(

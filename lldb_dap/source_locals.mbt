@@ -29,12 +29,25 @@ async fn VariableInspector::source_locals(
     } else {
       match self.evaluate_shadowed_root(identity, frame_id, name) {
         DapVariableResolved(variable) => variable
+        DapVariableResolutionFailed(@debugger.VariableLookupFailed(failure)) =>
+          {
+            ..first,
+            name,
+            type_name: unavailable_shadowed_local_summary(name, [first, ..rest]).type_name(),
+            value: match failure {
+              @debugger.VariableReportedUnavailable(_, reason) =>
+                "<error: \{reason}>"
+              _ => "<error: \{failure.message()}>"
+            },
+            variables_reference: 0,
+          }
         DapVariableResolutionFailed(_) =>
           {
             ..first,
             name,
             type_name: unavailable_shadowed_local_summary(name, [first, ..rest]).type_name(),
             value: "<variable not available>",
+            variables_reference: 0,
           }
       }
     }

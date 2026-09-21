@@ -1,6 +1,7 @@
 ///|
 fn inspection_error_message(error : Error) -> String {
   match error {
+    @lldb_dap.MemoryReadError(message) => "Memory read failed: \{message}"
     LiveError(message)
     | @lldb_dap.VariableEvaluationError(message)
     | @lldb_dap.BufferInspectionError(message) => message

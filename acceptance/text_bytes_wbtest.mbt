@@ -138,7 +138,9 @@ async test "DAP shares text summaries range evaluation paging and stale referenc
     let result = named_variable(fields, "result")
     assert_true(
       result
-      is { "type": String("Result[Point, String]"), "value": String("Err"), .. },
+      is { "type": String("Result[Point, String]"), "value": String(value), .. } &&
+      value.has_prefix("Err(") &&
+      value.contains("错误\\nmessage"),
       msg=result.stringify(),
     )
     assert_true(

@@ -55,7 +55,7 @@ async fn VariableInspector::describe_node(
     access,
   }
   guard variable.is_available() else {
-    return { ..base, value: "<unavailable>", }
+    return { ..base, value: "<unavailable: \{variable.value}>", }
   }
   try {
     if variable.buffer_kind() is Some(_) {
@@ -81,11 +81,7 @@ async fn VariableInspector::describe_node(
     if self.positional_members(identity, variable) is Some((kind, children)) {
       return {
         ..base,
-        value: if variable.is_tuple_type() {
-          base.type_name.unwrap_or("tuple")
-        } else {
-          kind
-        },
+        value: self.positional_summary(identity, variable, kind, children),
         named_children: children.length(),
       }
     }
@@ -93,7 +89,7 @@ async fn VariableInspector::describe_node(
     let children = self.load_variables(identity, variable.variables_reference)
     {
       ..base,
-      value: base.type_name.unwrap_or(variable.value),
+      value: self.value_summary(identity, variable),
       named_children: children.length(),
     }
   } catch {
@@ -102,7 +98,11 @@ async fn VariableInspector::describe_node(
         raise error
       }
       self.ensure_variable_identity(identity)
-      { ..base, value: "<unavailable: \{@debug.to_string(error)}>", }
+      let message = match inspection_failure(variable.name, error) {
+        Some(failure) => failure.message()
+        None => @debug.to_string(error)
+      }
+      { ..base, value: "<\{message}>", }
     }
   }
 }
@@ -190,7 +190,7 @@ async fn VariableInspector::resolve_tree_node(
 
 ///|
 /// Returns a bounded slice. Scalars are read as one contiguous memory range;
-/// aggregates are inspected one level only, without materializing descendants.
+/// Aggregates retain their full child counts and get bounded automatic previews.
 pub async fn VariableInspector::tree_children(
   self : VariableInspector,
   frame_id : Int,

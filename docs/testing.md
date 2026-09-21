@@ -53,6 +53,11 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance --no-parallelize
 上述常规验收不执行尚未合入编译器的 Option view 联调用例；该组还需要显式设置
 `MOONDBG_OPTION_VIEW_ACCEPTANCE=1`。契约、限制与恢复步骤见 [Option view 留痕](option_view.md)。
 
+`acceptance/value_summaries_wbtest.mbt` 验证 REPL/DAP 的有界嵌套摘要、截断后主动探查
+及完整的展开入口；默认单测另覆盖读取失败类别、Unicode 字符预算和失效暂停状态。
+预算及试用步骤见 [变量摘要](value_summary.md)。这组使用 stable 已支持的自定义 enum，
+不依赖待合入的 Option 编译器契约。
+
 默认待测程序为仓库 `_build/native/debug/build/moondbg.exe`；使用其他构建目录时，设置
 `MOONDBG_ACCEPTANCE_EXECUTABLE=/绝对路径/moondbg.exe`。验收检查 `MOON_HOME` 中的
 `moon`、`moonc` 存在且可执行、编译器支持 `-g -O0`，以及 `moon run` 支持

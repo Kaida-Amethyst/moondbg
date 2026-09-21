@@ -138,7 +138,8 @@ async test "buffer read failures and resumed epochs never become empty content" 
       false
     } catch {
       StaleVariableResult(..) => mode == "stale"
-      BufferInspectionError(_) => mode != "stale"
+      MemoryReadError(_) => mode != "stale" && mode != "unsupported"
+      InvalidIndexedCollectionValue(_) => mode == "unsupported"
       error => raise error
     }
     assert_true(failed, msg=mode)

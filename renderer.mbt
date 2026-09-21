@@ -352,7 +352,9 @@ fn append_enum_lines(
 ) -> Unit {
   let prefix = " ".repeat(indentation)
   let payload = enum_value.payload().map(enum_payload_text)
-  let rendered = if payload is [] {
+  let rendered = if enum_value.preview() is Some(preview) {
+    preview
+  } else if payload is [] {
     enum_value.constructor_name()
   } else {
     "\{enum_value.constructor_name()}(\{payload.join(", ")})"
@@ -477,6 +479,11 @@ fn local_summary_line(variable : @debugger.LocalVariableSnapshot) -> String {
   let prefix = "  \{variable.name()}\{local_type_suffix(variable.type_name())}"
   match variable.availability() {
     @debugger.LocalVariableUnavailable => "\{prefix} = <unavailable>"
+    @debugger.LocalVariableFailure(
+      @debugger.VariableReportedUnavailable(_, reason)
+    ) => "\{prefix} = <unavailable: \{reason}>"
+    @debugger.LocalVariableFailure(failure) =>
+      "\{prefix} = <\{failure.message()}>"
     @debugger.LocalVariableAmbiguous => "\{prefix} = <ambiguous binding>"
     @debugger.LocalVariableAvailable(value) =>
       match value {

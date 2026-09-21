@@ -139,9 +139,7 @@ async fn VariableInspector::resolve_position(
     )
   }
   guard child.is_available() else {
-    return DapVariableResolutionFailed(
-      @debugger.VariableLookupResult::unavailable(path),
-    )
+    return DapVariableResolutionFailed(reported_unavailable(path, child.value))
   }
   DapVariableResolved(child)
 }

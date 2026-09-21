@@ -37,9 +37,7 @@ fn DapVariable::matches_lookup_name(self : DapVariable, name : String) -> Bool {
 
 ///|
 fn DapVariable::is_available(self : DapVariable) -> Bool {
-  !self.value.has_prefix("<error:") &&
-  self.value != "<variable not available>" &&
-  self.value != "<unavailable>"
+  self.unavailable_reason() is None
 }
 
 ///|
@@ -69,7 +67,7 @@ fn DapVariable::source_type_name(self : DapVariable) -> String? {
 ///|
 priv enum DapVariableSelection {
   DapVariableSelected(DapVariable)
-  DapVariableUnavailable
+  DapVariableUnavailable(String)
   DapVariableAmbiguous
   DapVariableMissing
 }
@@ -88,7 +86,7 @@ fn Array::select_root_variable(
     [] => DapVariableMissing
     [variable] if variable.is_available() =>
       DapVariableSelected({ ..variable, name, })
-    [_] => DapVariableUnavailable
+    [variable] => DapVariableUnavailable(variable.value)
     [_, _, ..] => DapVariableAmbiguous
   }
 }
@@ -103,7 +101,7 @@ fn Array::select_field_variable(
     if variable.is_available() {
       return DapVariableSelected(variable)
     }
-    return DapVariableUnavailable
+    return DapVariableUnavailable(variable.value)
   }
   DapVariableMissing
 }
@@ -726,12 +724,19 @@ async fn VariableInspector::read_memory(
     Some(true) else {
     raise InvalidIndexedCollectionValue("lldb-dap does not support readMemory")
   }
-  let response = self.request("readMemory", {
+  let response = self.request_allow_failure("readMemory", {
     "memoryReference": memory_reference,
     "offset": offset,
     "count": count,
   })
-  decode_memory_reply(response.body(), count)
+  let _ = validate_response(response, "readMemory") catch {
+    RequestFailed(message~, ..) => raise MemoryReadError(message)
+    error => raise error
+  }
+  decode_memory_reply(response.body(), count) catch {
+    InvalidIndexedCollectionValue(message) => raise MemoryReadError(message)
+    error => raise error
+  }
 }
 
 ///|
@@ -1004,8 +1009,8 @@ async fn VariableInspector::resolve_indexed_element(
     element_name,
   )
   guard evaluated.is_available() else {
-    raise InvalidIndexedElementValue(
-      "indexed element '\{element_name}' is unavailable at the current location",
+    return DapVariableResolutionFailed(
+      reported_unavailable(element_name, evaluated.value),
     )
   }
   guard !evaluated.is_moonbit_struct_type() || evaluated.variables_reference > 0 else {
@@ -1187,7 +1192,10 @@ async fn VariableInspector::materialize_enum_members(
   direct_payload : Array[DapVariable],
 ) -> @debugger.VariableSnapshot {
   let payload_by_position : Map[Int, @debugger.VariableEnumPayload] = Map([])
-  for child in direct_payload {
+  // The full source members remain accessible through positional lookup. This
+  // snapshot only retains a bounded prefix plus the shared automatic preview.
+  let ordered = ordered_position_members(direct_payload)
+  for child in ordered[:ordered.length().min(SUMMARY_MEMBERS)] {
     let position = direct_enum_payload_position(child.name)
     guard position < direct_payload.length() &&
       payload_by_position.get(position) is None else {
@@ -1195,21 +1203,18 @@ async fn VariableInspector::materialize_enum_members(
         "active enum payload repeats or exceeds position \{position}",
       )
     }
-    let payload = if child.buffer_kind() is Some(_) {
-      let layout = self.buffer_layout(identity, child)
-      let preview = self.buffer_preview(identity, layout, None)
-      @debugger.VariableEnumPayload::scalar(
-        position,
-        layout.kind.type_name(),
-        preview.summary(),
-      )
-    } else {
+    let payload = if child.is_available() {
       direct_enum_payload(child, position)
+    } else {
+      @debugger.VariableEnumPayload::aggregate(
+        position,
+        child.source_type_name().unwrap_or("value"),
+      )
     }
     payload_by_position.set(position, payload)
   }
   let payload : Array[@debugger.VariableEnumPayload] = []
-  for position in 0..<direct_payload.length() {
+  for position in 0..<ordered.length().min(SUMMARY_MEMBERS) {
     guard payload_by_position.get(position) is Some(element) else {
       raise InvalidEnumValue(
         "active enum payload is missing position \{position}",
@@ -1217,7 +1222,14 @@ async fn VariableInspector::materialize_enum_members(
     }
     payload.push(element)
   }
-  let enum_value = @debugger.VariableEnumSnapshot::new(variant_name, payload) catch {
+  let preview = self.positional_summary(
+    identity, variable, variant_name, ordered,
+  )
+  let enum_value = @debugger.VariableEnumSnapshot::new(
+    variant_name,
+    payload,
+    preview~,
+  ) catch {
     error => raise InvalidEnumValue(@debug.to_string(error))
   }
   @debugger.VariableSnapshot::enum_value(
@@ -1241,8 +1253,8 @@ async fn VariableInspector::active_enum_variant(
 
 ///|
 /// Reads only the enum descriptor while preserving request/protocol failures.
-/// Compact locals can therefore downgrade an invalid descriptor without
-/// accidentally hiding an adapter request failure.
+/// Compact locals preserve invalid descriptors and adapter failures as explicit
+/// inspection errors rather than opaque values.
 async fn VariableInspector::active_enum_variant_raw(
   self : VariableInspector,
   variants : Array[DapEnumVariant],
@@ -1317,13 +1329,16 @@ async fn VariableInspector::evaluate_shadowed_root(
   self.ensure_variable_identity(identity)
   guard response.success() else {
     return DapVariableResolutionFailed(
-      @debugger.VariableLookupResult::unavailable(name),
+      reported_unavailable(
+        name,
+        response.message().unwrap_or("evaluate failed without a reason"),
+      ),
     )
   }
   let evaluated = parse_root_evaluate_response(response.body(), name)
   guard evaluated.is_available() else {
     return DapVariableResolutionFailed(
-      @debugger.VariableLookupResult::unavailable(name),
+      reported_unavailable(name, evaluated.value),
     )
   }
   if evaluated.variables_reference > 0 {
@@ -1339,25 +1354,44 @@ async fn VariableInspector::compact_local_variable(
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> @debugger.LocalVariableSnapshot {
+  self.compact_local_variable_inner(identity, variable) catch {
+    error => {
+      self.ensure_variable_identity(identity)
+      guard inspection_failure(variable.source_local_name(), error)
+        is Some(failure) else {
+        raise error
+      }
+      @debugger.LocalVariableSnapshot::new(
+        variable.source_local_name(),
+        variable.source_type_name(),
+        @debugger.LocalVariableFailure(failure),
+      )
+    }
+  }
+}
+
+///|
+async fn VariableInspector::compact_local_variable_inner(
+  self : VariableInspector,
+  identity : VariableCacheIdentity,
+  variable : DapVariable,
+) -> @debugger.LocalVariableSnapshot {
   let name = variable.source_local_name()
   let source_type = variable.source_type_name()
   guard variable.is_available() else {
     return @debugger.LocalVariableSnapshot::new(
       name,
       source_type,
-      @debugger.LocalVariableUnavailable,
+      @debugger.LocalVariableFailure(
+        @debugger.VariableLookupFailure::reported_unavailable(
+          name,
+          variable.value,
+        ),
+      ),
     )
   }
   if variable.buffer_kind() is Some(_) {
-    let snapshot = self.buffer_snapshot(identity, variable, name, None) catch {
-      BufferInspectionError(_) =>
-        return @debugger.LocalVariableSnapshot::new(
-          name,
-          source_type,
-          @debugger.LocalVariableUnavailable,
-        )
-      error => raise error
-    }
+    let snapshot = self.buffer_snapshot(identity, variable, name, None)
     return @debugger.LocalVariableSnapshot::new(
       name,
       source_type,
@@ -1366,15 +1400,7 @@ async fn VariableInspector::compact_local_variable(
   }
   if variable.is_moonbit_array_candidate() ||
     variable.is_moonbit_fixed_array_candidate() {
-    let layout = self.load_indexed_collection_layout(identity, variable) catch {
-      InvalidIndexedCollectionValue(_) =>
-        return @debugger.LocalVariableSnapshot::new(
-          name,
-          source_type,
-          @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
-        )
-      error => raise error
-    }
+    let layout = self.load_indexed_collection_layout(identity, variable)
     guard layout is Some(layout) else {
       return @debugger.LocalVariableSnapshot::new(
         name,
@@ -1401,15 +1427,7 @@ async fn VariableInspector::compact_local_variable(
     )
   }
   if variable.is_option_type() {
-    let members = self.positional_members(identity, variable) catch {
-      VariableEvaluationError(_) | InvalidEnumValue(_) =>
-        return @debugger.LocalVariableSnapshot::new(
-          name,
-          source_type,
-          @debugger.LocalVariableUnavailable,
-        )
-      error => raise error
-    }
+    let members = self.positional_members(identity, variable)
     guard members is Some((kind, _)) else {
       return @debugger.LocalVariableSnapshot::new(
         name,
@@ -1425,26 +1443,10 @@ async fn VariableInspector::compact_local_variable(
   }
   if variable.variables_reference > 0 {
     let children = self.load_variables(identity, variable.variables_reference)
-    let enum_layout = detect_dap_enum_layout(children) catch {
-      InvalidEnumValue(_) =>
-        return @debugger.LocalVariableSnapshot::new(
-          name,
-          source_type,
-          @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
-        )
-      error => raise error
-    }
+    let enum_layout = detect_dap_enum_layout(children)
     match enum_layout {
       DapEnum(variants) => {
-        let active = self.active_enum_variant_raw(variants) catch {
-          InvalidIndexedCollectionValue(_) | InvalidEnumValue(_) =>
-            return @debugger.LocalVariableSnapshot::new(
-              name,
-              source_type,
-              @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
-            )
-          error => raise error
-        }
+        let active = self.active_enum_variant_raw(variants)
         return @debugger.LocalVariableSnapshot::new(
           name,
           source_type,
@@ -1508,6 +1510,7 @@ async fn VariableInspector::materialize_variable(
   depth : Int,
   budget : VariableMaterializationBudget,
 ) -> @debugger.VariableSnapshot {
+  guard variable.is_available() else { return variable.snapshot() }
   guard budget.take_node() else {
     return @debugger.VariableSnapshot::truncated(
       variable.name,
@@ -1621,10 +1624,8 @@ async fn VariableInspector::resolve_root_variable(
       .load_variables(identity, scope.variables_reference)
       .select_root_variable(name) {
       DapVariableSelected(variable) => return DapVariableResolved(variable)
-      DapVariableUnavailable =>
-        return DapVariableResolutionFailed(
-          @debugger.VariableLookupResult::unavailable(name),
-        )
+      DapVariableUnavailable(reason) =>
+        return DapVariableResolutionFailed(reported_unavailable(name, reason))
       DapVariableAmbiguous =>
         return self.evaluate_shadowed_root(identity, frame_id, name)
       DapVariableMissing => ()
@@ -1696,9 +1697,9 @@ async fn VariableInspector::resolve_variable_path(
             variable = child
             owner = "\{owner}.\{field}"
           }
-          DapVariableUnavailable =>
+          DapVariableUnavailable(reason) =>
             return DapVariableResolutionFailed(
-              @debugger.VariableLookupResult::unavailable("\{owner}.\{field}"),
+              reported_unavailable("\{owner}.\{field}", reason),
             )
           DapVariableAmbiguous =>
             return DapVariableResolutionFailed(
@@ -1777,13 +1778,16 @@ async fn DebugExecution::find_variable(
   let result = self
     .variable_inspector()
     .find_variable_inner(identity, frame_id, path) catch {
-      BufferInspectionError(message) | VariableEvaluationError(message) =>
-        @debugger.VariableLookupResult::inspection_failed(
-          path.display_name(),
-          message,
-        )
-      error =>
-        raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+      error => {
+        if @async.is_cancellation_error(error) {
+          raise error
+        }
+        match inspection_failure(path.display_name(), error) {
+          Some(failure) => @debugger.VariableLookupResult::failed(failure)
+          None =>
+            raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
+        }
+      }
     }
   guard self.machine.current_stop_epoch() == Some(epoch) &&
     self.variable_cache.is_current(identity) else {

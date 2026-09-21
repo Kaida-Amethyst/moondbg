@@ -203,7 +203,7 @@ pub fn IndexedCollectionSnapshot::is_complete(
 ///|
 /// One direct payload slot in an active MoonBit enum constructor.
 ///
-/// The position is retained explicitly for a future PayloadIndex lookup step.
+/// The position is source-facing; this snapshot is not used to resolve paths.
 /// A missing scalar value means the payload is represented by its source type
 /// only; it does not mean that adapter children remain available.
 pub struct VariableEnumPayload {
@@ -254,6 +254,7 @@ pub fn VariableEnumPayload::scalar_value(self : VariableEnumPayload) -> String? 
 pub struct VariableEnumSnapshot {
   priv constructor_name : String
   priv payload : Array[VariableEnumPayload]
+  priv preview : String?
 } derive(Eq, Debug)
 
 ///|
@@ -266,6 +267,7 @@ pub extend VariableEnumSnapshot with @debug.Debug::{to_repr}
 pub fn VariableEnumSnapshot::new(
   constructor_name : String,
   payload : Array[VariableEnumPayload],
+  preview? : String,
 ) -> VariableEnumSnapshot raise VariableSnapshotError {
   guard constructor_name.trim() != "" else {
     raise InvalidEnumConstructor(constructor_name)
@@ -284,7 +286,13 @@ pub fn VariableEnumSnapshot::new(
       )
     }
   }
-  { constructor_name, payload: payload.copy(), }
+  { constructor_name, payload: payload.copy(), preview, }
+}
+
+///|
+/// Bounded automatic presentation; never used to resolve paths or evaluate conditions.
+pub fn VariableEnumSnapshot::preview(self : VariableEnumSnapshot) -> String? {
+  self.preview
 }
 
 ///|
@@ -295,6 +303,8 @@ pub fn VariableEnumSnapshot::constructor_name(
 }
 
 ///|
+/// A bounded payload prefix. The preview carries any omission marker; explicit
+/// positional lookup re-reads the source value, not this presentation snapshot.
 pub fn VariableEnumSnapshot::payload(
   self : VariableEnumSnapshot,
 ) -> ReadOnlyArray[VariableEnumPayload] {
@@ -440,6 +450,8 @@ pub enum VariableLookupFailure {
   VariableIndexAccessOnNonCollection(String, Int, String?)
   VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
+  VariableReportedUnavailable(String, String)
+  VariableMemoryReadFailed(String, String)
   VariableInspectionFailed(String, String)
 } derive(Eq, Debug)
 
@@ -460,6 +472,8 @@ pub fn VariableLookupFailure::requested_path(
     VariableIndexAccessOnNonCollection(owner, index, _) => "\{owner}[\{index}]"
     VariableIndexOutOfBounds(owner, index, _) => "\{owner}[\{index}]"
     VariableUnavailable(path) => path
+    VariableReportedUnavailable(path, _) | VariableMemoryReadFailed(path, _) =>
+      path
     VariableInspectionFailed(path, _) => path
   }
 }
@@ -528,6 +542,37 @@ pub fn VariableLookupResult::index_out_of_bounds(
 ///|
 pub fn VariableLookupResult::unavailable(path : String) -> VariableLookupResult {
   VariableLookupFailed(VariableUnavailable(path))
+}
+
+///|
+pub fn VariableLookupResult::failed(
+  failure : VariableLookupFailure,
+) -> VariableLookupResult {
+  VariableLookupFailed(failure)
+}
+
+///|
+pub fn VariableLookupFailure::reported_unavailable(
+  path : String,
+  reason : String,
+) -> VariableLookupFailure {
+  VariableReportedUnavailable(path, reason)
+}
+
+///|
+pub fn VariableLookupFailure::memory_read_failed(
+  path : String,
+  reason : String,
+) -> VariableLookupFailure {
+  VariableMemoryReadFailed(path, reason)
+}
+
+///|
+pub fn VariableLookupFailure::inspection_failed(
+  path : String,
+  reason : String,
+) -> VariableLookupFailure {
+  VariableInspectionFailed(path, reason)
 }
 
 ///|

@@ -433,7 +433,7 @@ test "variable lookup failures render stable MoonBit-oriented messages" {
     variable_lookup_failure_message(
       test_lookup_failure(@debugger.VariableLookupResult::not_found("missing")),
     ),
-    "Variable 'missing' was not found in the current frame.",
+    "Variable 'missing' was not found in the current frame. Cannot distinguish an out-of-scope variable from missing debug information.",
   )
   assert_eq(
     variable_lookup_failure_message(

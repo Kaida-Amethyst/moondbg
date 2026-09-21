@@ -27,7 +27,7 @@ async test "REPL inspects tuples active enum payloads and mixed positional paths
       ("p pair", ".0: Int = 42"),
       ("p pair.0", "pair.0: Int = 42"),
       ("p pair.1", "\"tuple🙂\""),
-      ("p result", "Ok(Point)"),
+      ("p result", "Ok(Point { x: 3, y: 4 })"),
       ("p result.0", "x: Int = 3"),
       ("p result.0.x", "result.0.x: Int = 3"),
       ("p values.nested.0.1.y", " = 20"),
@@ -94,7 +94,11 @@ async test "DAP expansion and Watch share positional rules and refresh the activ
     let result = peer.evaluate_path(id, "result")
     assert_true(
       result
-      is { "result": String("Ok"), "type": String("Result[Point, String]"), .. },
+      is {
+        "result": String("Ok(Point { x: 3, y: 4 })"),
+        "type": String("Result[Point, String]"),
+        ..
+      },
     )
     let point = named_variable(peer.children_of(result), ".0")
     let x = named_variable(peer.children_of(point), "x")
@@ -156,7 +160,11 @@ async test "DAP expansion and Watch share positional rules and refresh the activ
     |> ignore
     guard peer.top_frame(thread) is { "id": fresh, .. } else { fail("frame") }
     let current = peer.evaluate_path(fresh, "values.changing")
-    assert_true(current is { "result": String("Err"), .. })
+    assert_true(
+      current is { "result": String(value), .. } &&
+      value.has_prefix("Err(") &&
+      value.contains("changed🙂"),
+    )
     let payload = named_variable(peer.children_of(current), ".0")
     assert_true(
       payload

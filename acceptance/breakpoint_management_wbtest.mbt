@@ -228,10 +228,10 @@ async test "T07 family all locations zero handles and selected frame survive man
   // The current toolchain reports caller locals as unavailable before management.
   // Preserve that observation; the selected top frame's value remains readable.
   breakpoint_command(process, "p second", [
-    "Variable 'second' is unavailable at the current location.",
+    "Variable 'second' is unavailable: lldb-dap reported ",
   ])
   breakpoint_command(process, "locals", [
-    "Locals:", "second: Int = <unavailable>",
+    "Locals:", "second: Int = <unavailable:",
   ])
   breakpoint_command(process, "disable 4", ["Breakpoint 4 disabled."])
   breakpoint_command(process, "enable 4", [
@@ -239,10 +239,10 @@ async test "T07 family all locations zero handles and selected frame survive man
   ])
   breakpoint_command(process, "bt", ["* #1 [moonbit] main"])
   breakpoint_command(process, "p second", [
-    "Variable 'second' is unavailable at the current location.",
+    "Variable 'second' is unavailable: lldb-dap reported ",
   ])
   breakpoint_command(process, "locals", [
-    "Locals:", "second: Int = <unavailable>",
+    "Locals:", "second: Int = <unavailable:",
   ])
   breakpoint_command(process, "list", ["second_int"])
   breakpoint_command(process, "frame 0", ["Selected frame #0:"])

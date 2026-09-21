@@ -1414,7 +1414,8 @@ fn boxed_enum_variable_script() -> Array[@dap_testkit.ScriptedInput] {
         },
       ],
     }),
-    scripted_response(1917, 16, "variables", {
+    scripted_response(2900, 16, "variables", { "variables": [] }),
+    scripted_response(1917, 17, "variables", {
       "variables": [
         {
           "name": "__moonbit_enum_marker",
@@ -1443,8 +1444,8 @@ fn boxed_enum_variable_script() -> Array[@dap_testkit.ScriptedInput] {
         },
       ],
     }),
-    scripted_response(1918, 17, "readMemory", { "data": "AgAAQA==" }),
-    scripted_response(1919, 18, "variables", {
+    scripted_response(1918, 18, "readMemory", { "data": "AgAAQA==" }),
+    scripted_response(1919, 19, "variables", {
       "variables": [
         { "name": ".1", "type": "int", "value": "2", "variablesReference": 0 },
         {
@@ -1455,7 +1456,7 @@ fn boxed_enum_variable_script() -> Array[@dap_testkit.ScriptedInput] {
         },
       ],
     }),
-    scripted_response(1920, 19, "variables", {
+    scripted_response(1920, 20, "variables", {
       "variables": [
         {
           "name": "opaque",
@@ -2384,7 +2385,12 @@ async test "P5 locals isolate reused references by frame and cache materialized 
       answer.availability(),
       @debugger.LocalVariableAvailable(@debugger.LocalScalar("10")),
     )
-    assert_true(future.availability() is @debugger.LocalVariableUnavailable)
+    assert_true(
+      future.availability()
+      is @debugger.LocalVariableFailure(
+        @debugger.VariableReportedUnavailable("future", _)
+      ),
+    )
     assert_eq(shadowed.name(), "shadowed_value")
     assert_eq(
       shadowed.availability(),
@@ -2653,9 +2659,14 @@ async test "P5 locals summarize collections structs and enums without recursive 
       ),
     )
     assert_eq(broken.type_name(), Some("FixedArray[Int]"))
-    assert_eq(
-      broken.availability(),
-      @debugger.LocalVariableAvailable(@debugger.LocalOpaque),
+    assert_true(
+      broken.availability()
+      is @debugger.LocalVariableFailure(
+        @debugger.VariableInspectionFailed(
+          "broken",
+          "FixedArray has no body field"
+        )
+      ),
     )
     assert_eq(point.type_name(), Some("Point"))
     assert_eq(
@@ -2720,8 +2731,7 @@ async test "P5 compact aggregate summaries do not hide adapter request failures"
       fail("scripted aggregate failure should retain a stopped execution")
     }
     execution.variable_cache.select_frame(epoch, 0)
-    let failed = try {
-      execution
+    let summary = execution
       .variable_inspector()
       .compact_local_variable(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
@@ -2733,14 +2743,15 @@ async test "P5 compact aggregate summaries do not hide adapter request failures"
           evaluate_name: Some("broken"),
         },
       )
-      |> ignore
-      false
-    } catch {
-      RequestFailed(command="variables", message="layout request failed") =>
-        true
-      _ => false
-    }
-    assert_true(failed)
+    assert_true(
+      summary.availability()
+      is @debugger.LocalVariableFailure(
+        @debugger.VariableInspectionFailed(
+          "broken",
+          "lldb-dap variables failed: layout request failed"
+        )
+      ),
+    )
     assert_eq(transport.remaining_inputs(), 0)
   })
 }
@@ -3711,7 +3722,7 @@ test "lldb-dap variable lookup defers duplicate shadow bindings to evaluation" {
     fail("the unavailable arr should be parsed")
   }
   assert_true(
-    unavailable_only.select_root_variable("arr") is DapVariableUnavailable,
+    unavailable_only.select_root_variable("arr") is DapVariableUnavailable(_),
   )
 }
 
@@ -3918,7 +3929,10 @@ async test "lldb-dap resolves field paths lazily with precise failures and epoch
         @debugger.VariablePath::with_fields("line1", ["end", "x"]),
       )
       is @debugger.VariableLookupFailed(
-        @debugger.VariableUnavailable("line1.end")
+        @debugger.VariableReportedUnavailable(
+          "line1.end",
+          "<error: variable not available>"
+        )
       ),
     )
     assert_true(
@@ -4435,17 +4449,19 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
     }
     execution.variable_cache.select_frame(epoch, 0)
     let message = try {
-      execution
-      .variable_inspector()
-      .find_variable_inner(
-        VariableCacheIdentity::{ epoch, frame_index: 0, },
-        150,
-        @debugger.VariablePath::new("arr", [
-          @debugger.VariablePathStep::Index(0),
-        ]),
-      )
-      |> ignore
-      fail("indexed path failure script should reject its element")
+      let result = execution
+        .variable_inspector()
+        .find_variable_inner(
+          VariableCacheIdentity::{ epoch, frame_index: 0, },
+          150,
+          @debugger.VariablePath::new("arr", [
+            @debugger.VariablePathStep::Index(0),
+          ]),
+        )
+      guard result is @debugger.VariableLookupFailed(failure) else {
+        fail("indexed path failure script should reject its element")
+      }
+      failure.message()
     } catch {
       InvalidIndexedElementValue(message) => message
       error => fail("unexpected indexed path error: \{@debug.to_string(error)}")
@@ -4479,14 +4495,16 @@ async test "lldb-dap reports stable indexed evaluate and protocol failures" {
   assert_true(malformed_memory.contains("malformed indexed element memory"))
   let unavailable = indexed_path_failure_message(UnavailableEvaluate)
   assert_true(unavailable.contains("arr[0]"))
-  assert_true(unavailable.contains("unavailable at the current location"))
+  assert_true(
+    unavailable.contains("lldb-dap reported <variable not available>"),
+  )
   let unexpandable = indexed_path_failure_message(UnexpandableEvaluate)
   assert_true(unexpandable.contains("arr[0]"))
   assert_true(unexpandable.contains("no expandable value"))
 }
 
 ///|
-async test "lldb-dap materializes only the active enum constructor shallowly" {
+async test "lldb-dap materializes the active enum constructor with a bounded preview" {
   @async.with_task_group(async fn(group) {
     let transport = @dap_testkit.ScriptedTransport::new(
       boxed_enum_variable_script(),
@@ -4564,11 +4582,11 @@ async test "lldb-dap materializes only the active enum constructor shallowly" {
     assert_eq(sent.filter_map(sent_command), [
       "initialize", "launch", "configurationDone", "stackTrace", "scopes", "variables",
       "variables", "readMemory", "variables", "variables", "readMemory", "variables",
-      "variables", "readMemory", "variables", "variables", "readMemory", "variables",
-      "variables",
+      "variables", "readMemory", "variables", "variables", "variables", "readMemory",
+      "variables", "variables",
     ])
     assert_false(sent.any(message => sent_command(message) == Some("evaluate")))
-    assert_false(
+    assert_true(
       sent.any(message => {
         message
         is { "arguments": { "variablesReference": Number(439, ..), .. }, .. }
@@ -4617,7 +4635,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
       ("illegal_tag", "does not end in a decimal tag"),
       ("bad_pointer", "malformed payload pointer"),
       ("duplicate_marker", "exactly one moonbit.enum marker"),
-      ("unreadable", "failed to read boxed enum descriptor"),
+      ("unreadable", "partially read"),
     ]
     for _, case in cases {
       let (name, expected) = case
@@ -4633,6 +4651,7 @@ async test "lldb-dap rejects malformed enum protocol instead of guessing" {
         false
       } catch {
         InvalidEnumValue(message) => message.contains(expected)
+        MemoryReadError(_) => name == "unreadable"
         _ => false
       }
       assert_true(rejected)
