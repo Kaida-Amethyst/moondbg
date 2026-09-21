@@ -1,4 +1,43 @@
 ///|
+async test "REPL break if creates conditioned file and current-frame line breakpoints" {
+  guard toolchain_acceptance_enabled() else { return }
+  toolchain_acceptance_mutex.acquire()
+  defer toolchain_acceptance_mutex.release()
+  let (_, moondbg) = require_toolchain()
+  let fixture = "\{@fs.realpath(".")}/testdata/dwarf_probe"
+  let process = @pty_testkit.PtyProcess::spawn_debug(
+    moondbg,
+    fixture,
+    package_name="conditional",
+  )
+  defer process.close()
+  breakpoint_expect(process, "(moondbg) ", "startup")
+  breakpoint_command(process, "b conditional/main.mbt:4 if i = 7", [
+    "Use == for equality",
+  ])
+  breakpoint_command(process, "breakpoints", ["No breakpoints."])
+  breakpoint_command(process, "b conditional/main.mbt:4 if i == 7", [
+    "Breakpoint 1 pending", "condition: i == 7",
+  ])
+  breakpoint_command(process, "run", ["Stopped (breakpoint)"])
+  breakpoint_command(process, "p i", ["i:", " = 7"])
+  breakpoint_command(process, "disable 1", ["Breakpoint 1 disabled."])
+  breakpoint_command(process, "b main if i == 9", [
+    "Conditions currently support only line breakpoints",
+  ])
+  breakpoint_command(process, "break 4 if i == 9", [
+    "Breakpoint 2 verified", "condition: i == 9",
+  ])
+  breakpoint_command(process, "c", ["Stopped (breakpoint)"])
+  breakpoint_command(process, "p i", ["i:", " = 9"])
+  breakpoint_command(process, "run", ["Stopped (breakpoint)"])
+  breakpoint_command(process, "p i", ["i:", " = 9"])
+  breakpoint_command(process, "condition 2", ["condition cleared"])
+  breakpoint_command(process, "c", ["Process exited normally (code 0)."])
+  breakpoint_quit(process)
+}
+
+///|
 async test "REPL conditional line breakpoint filters loop and preserves edits on rerun" {
   guard toolchain_acceptance_enabled() else { return }
   toolchain_acceptance_mutex.acquire()

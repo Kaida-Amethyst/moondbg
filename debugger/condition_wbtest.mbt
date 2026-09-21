@@ -49,3 +49,30 @@ async test "conditions survive disabled and restarted executions and invalid edi
   assert_eq(session.condition_text(1), None)
   assert_eq(backend.breakpoints[0].condition(), None)
 }
+
+///|
+async test "source creation includes its condition in the first backend synchronization" {
+  let backend = RecordingBackend::new()
+  let session = DebugSession::new("/tmp/program", backend)
+  let condition = @expression.IntCondition::parse("i == 7")
+  let first = session.add_source_breakpoint(
+    "/tmp/main.mbt",
+    4,
+    condition=Some(condition),
+  )
+  assert_eq(first.id(), 1)
+  assert_eq(
+    session.breakpoint_configuration().sources()[0].condition(),
+    Some(condition),
+  )
+  session.run() |> ignore
+  let before = backend.syncs
+  let second = session.add_source_breakpoint(
+    "/tmp/main.mbt",
+    5,
+    condition=Some(condition),
+  )
+  assert_eq(second.id(), 2)
+  assert_eq(backend.syncs, before + 1)
+  assert_eq(backend.breakpoints[1].condition(), Some(condition))
+}

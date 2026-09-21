@@ -18,15 +18,9 @@ fn SourceBreakpoint::new(
   source_path : String,
   requested_line : Int,
   display_path? : String = source_path,
+  condition? : @expression.IntCondition? = None,
 ) -> SourceBreakpoint {
-  {
-    id,
-    source_path,
-    requested_line,
-    display_path,
-    enabled: true,
-    condition: None,
-  }
+  { id, source_path, requested_line, display_path, enabled: true, condition, }
 }
 
 ///|

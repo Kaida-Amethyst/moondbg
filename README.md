@@ -74,13 +74,14 @@ moondbg conditional
 以上 `moondbg` 须指向本次构建；也可直接使用仓库内 `_build/native/debug/build/moondbg.exe` 的绝对路径。
 
 ```text
-(moondbg) b conditional/main.mbt:4
-(moondbg) condition 1 i == 7
+(moondbg) b conditional/main.mbt:4 if i == 7
 (moondbg) run
 (moondbg) p i
 ```
 
-预期只在 `i = 7` 的那轮停住。`condition 1 i >= 8` 修改条件，`condition 1` 清除条件；
+预期只在 `i = 7` 的那轮停住。`b` 和 `break` 均支持 `if` 后缀，暂停后也可用
+`b 4 if i == 7` 在当前选中 frame 的源码设置条件断点；函数断点暂不支持条件。
+条件会在创建时一起安装，语法错误不会创建断点。`condition 1 i >= 8` 修改条件，`condition 1` 清除条件；
 `breakpoints` 显示条件。无效修改不会覆盖原条件；条件随 disable/enable 和再次 run 保留。
 
 VS Code 打开 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行 `println(i)` 左侧

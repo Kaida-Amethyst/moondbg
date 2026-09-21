@@ -224,12 +224,33 @@ test "P7 registry resolves every fixed alias through command specs" {
 }
 
 ///|
+async test "invalid inline conditions do not create breakpoints or consume IDs" {
+  let context = framework_test_context()
+  for
+    command in [
+      "b break.mbt:4 if i = 7", "b break.mbt:4 if", "b main if i == 7",
+    ] {
+    assert_true(context.registry.parse_line(command) is RegistryInvalid(_))
+    assert_eq(context.session.breakpoints().length(), 0)
+  }
+  let result = execute_framework_command(context, "b break.mbt:4 if i == 7")
+  assert_true(
+    result.events
+    is [
+      BreakpointPendingPresentation(1, _, 4),
+      ConditionChangedPresentation(1, Some("i == 7")),
+    ],
+  )
+  assert_eq(context.session.breakpoints()[0].condition, Some("i == 7"))
+}
+
+///|
 test "P5 help metadata is derived from registry order" {
   let entries = default_command_registry().help_entries()
   assert_eq(entries.length(), 20)
-  assert_eq(entries[0].usage, "break <location>")
+  assert_eq(entries[0].usage, "break <location> [if <condition>]")
   assert_eq(entries[0].aliases, ["b"])
-  assert_eq(entries[0].alias_usage(), "b <location>")
+  assert_eq(entries[0].alias_usage(), "b <location> [if <condition>]")
   assert_eq(
     entries[0].summary,
     "Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
@@ -251,7 +272,7 @@ test "P5 human help renderer preserves existing column layout" {
   let entries = default_command_registry().help_entries()
   assert_eq(
     format_help_entry(entries[0]),
-    "  break <location>     b <location>     Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
+    "  break <location> [if <condition>]  b <location> [if <condition>]  Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
   )
   assert_eq(
     format_help_entry(entries[19]),

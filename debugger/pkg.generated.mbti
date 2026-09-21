@@ -205,7 +205,7 @@ pub struct DebugSession {
   // private fields
 }
 pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
-pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String) -> BreakpointSnapshot
+pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String, condition? : @expression.IntCondition?) -> BreakpointSnapshot
 pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
 pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
 pub fn DebugSession::close(Self) -> Unit

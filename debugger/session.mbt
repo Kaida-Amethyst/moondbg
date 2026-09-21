@@ -165,6 +165,7 @@ pub async fn DebugSession::add_source_breakpoint(
   source_path : String,
   line : Int,
   display_path? : String = source_path,
+  condition? : @expression.IntCondition? = None,
 ) -> BreakpointSnapshot {
   let phase = self.application.phase
   guard phase is Ready || phase is Stopped else {
@@ -175,6 +176,7 @@ pub async fn DebugSession::add_source_breakpoint(
     source_path,
     line,
     display_path~,
+    condition~,
   )
   self.next_breakpoint_id += 1
   self.source_breakpoints.push(breakpoint)
