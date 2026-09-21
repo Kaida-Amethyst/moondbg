@@ -65,6 +65,9 @@ moon install Kaida-Amethyst/moondbg
 ```
 
 在 MoonBit 项目目录中运行 `moondbg <包目录>`，例如 `moondbg main`。
+CLI 未设置 `MOON_HOME` 时默认使用 `$HOME/.moon`；显式设置则严格使用该目录，
+即使无效也不会回退。解析后的 `MOON_HOME` 会传给构建子进程，不修改 shell 环境。
+VS Code 扩展仍按 `moondbg.moonHome` 设置或其进程的 `MOON_HOME` 选择工具链。
 也支持包的项目内相对名称和完整包名。目标必须是支持 native 的可执行包；library 包会被拒绝。
 启动时调用 `$MOON_HOME/bin/moon check` 获取包信息，再调用
 `moon run --build-only --target native -g` 构建目标，自动传入包名和 import alias。
@@ -91,6 +94,28 @@ quit
 显式指定 `--current-package` 时，整套显式包名和 alias 会替代自动上下文，不会合并。
 
 ## 开发与验证
+
+### REPL panic 停点（开发版本）
+
+当前源码中的 REPL 会在 `moonbit_panic` 入口自动停止，显示 `MoonBit panic`。
+这是内部停点，不占用用户断点编号，也不受 `delete` / `disable` 影响。
+此功能尚未接入 VS Code，也不包含在上面的 `vscode-v0.1.1` release 中。
+
+在构建本仓库 CLI 后可试用：
+
+```sh
+cd testdata/dwarf_probe
+moondbg panic_stop
+```
+
+无需设置断点，直接输入 `run`。停止后用 `bt` 查看 MoonBit 调用栈，
+`bt --all` 显示包括 runtime 在内的完整栈，`quit` 退出。
+`breakpoints` 仍显示 `No breakpoints.`。
+这一步沿用现有源码 frame 选择方式，尚未新增 panic 专用的项目 frame 选择策略。
+变量可能因编译器调试信息限制而不可用；只报告 panic，不推断越界等具体原因。
+继续执行将完成原来的终止流程，可能随后因 SIGABRT 再次停止，并不恢复正常运行。
+
+### 构建和验收
 
 开发工具链要求见 [AGENTS.md](AGENTS.md)。先选择工具链并构建 moondbg：
 

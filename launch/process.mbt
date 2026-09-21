@@ -5,14 +5,40 @@ extern "C" fn start_build_group() -> Int = "moondbg_build_group_start"
 extern "C" fn cancel_build_group(pid : Int) -> Unit = "moondbg_build_group_cancel"
 
 ///|
-async fn selected_moon() -> String {
-  guard @env.get_env_var("MOON_HOME") is Some(home) && home.has_prefix("/") else {
-    raise LaunchError("MOON_HOME must be an absolute toolchain directory")
+fn resolve_moon_home(
+  moon_home : String?,
+  user_home : String?,
+) -> String raise LaunchFailure {
+  match moon_home {
+    Some(home) => {
+      guard home.has_prefix("/") else {
+        raise LaunchError(
+          "MOON_HOME must be an absolute toolchain directory (explicit value: '\{home}')",
+        )
+      }
+      home
+    }
+    None => {
+      guard user_home is Some(home) && home.has_prefix("/") else {
+        raise LaunchError(
+          "MOON_HOME is unset and HOME is missing or not absolute; set MOON_HOME to your MoonBit toolchain directory",
+        )
+      }
+      "\{home}/.moon"
+    }
   }
+}
+
+///|
+async fn selected_moon_home() -> String {
+  let home = resolve_moon_home(
+    @env.get_env_var("MOON_HOME"),
+    @env.get_env_var("HOME"),
+  )
   for tool in ["moon", "moonc"] {
     validate_executable("\{home}/bin/\{tool}") |> ignore
   }
-  "\{home}/bin/moon"
+  home
 }
 
 ///|
@@ -27,7 +53,10 @@ pub async fn run_worker(arguments : Array[String]) -> Int {
       "Unable to isolate build processes (package builds require POSIX)",
     )
   }
-  @process.run(selected_moon(), arguments, inherit_env=true)
+  let home = selected_moon_home()
+  @process.run("\{home}/bin/moon", arguments, inherit_env=true, extra_env={
+    "MOON_HOME": home,
+  })
 }
 
 ///|
@@ -93,7 +122,8 @@ async fn run_moon(
   output~ : async (String, String) -> Unit,
   isolated? : Bool = true,
 ) -> String {
-  let moon = selected_moon()
+  let home = selected_moon_home()
+  let moon = "\{home}/bin/moon"
   guard @env.args() is [entry, ..] else {
     raise LaunchError("Missing executable entry")
   }
@@ -119,6 +149,7 @@ async fn run_moon(
       },
       cwd=project,
       inherit_env=true,
+      extra_env={ "MOON_HOME": home },
       stdin=input,
       stdout=out,
       stderr=err,

@@ -34,6 +34,9 @@ You can browse and install extra skills here:
 ## 开发工具链环境
 
 moondbg 直接调用所选 `$MOON_HOME/bin/moon` 构建目标，不依赖 `moon debug`。
+CLI 在 `MOON_HOME` 未设置时默认选择 `$HOME/.moon`，并将解析后的 `MOON_HOME`
+显式传给构建子进程；显式设置但无效的值仍报错，不回退或修改全局环境。
+此默认规则不改变 VS Code 扩展独立的工具链选择逻辑。
 构建、测试、运行前确认所选工具链，并保证 `moon`、`moonc` 来自同一 `MOON_HOME`。
 用户明确指定的工具链优先；本机可用以下命令选择 stable：
 

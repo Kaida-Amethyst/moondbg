@@ -285,7 +285,13 @@ async fn DebugExecution::build_stop_snapshot(
     raise InvalidMessage({ "stackFrames": [] })
   }
   @debugger.StopSnapshot::new(
-    self.stop_reason,
+    panic_stop_reason(
+      self.stop_reason,
+      match frames {
+        [top, ..] => Some(top.name)
+        [] => None
+      },
+    ),
     frame.snapshot().display_name(),
     frame.source_path,
     frame.line,

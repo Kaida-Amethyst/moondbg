@@ -1,4 +1,35 @@
 ///|
+test "toolchain home defaults only when MOON_HOME is absent" {
+  assert_eq(
+    resolve_moon_home(None, Some("/Users/example")),
+    "/Users/example/.moon",
+  )
+  assert_eq(
+    resolve_moon_home(Some("/custom/moon"), Some("/Users/example")),
+    "/custom/moon",
+  )
+  assert_eq(resolve_moon_home(Some("/custom/moon"), None), "/custom/moon")
+  for home in ["", "relative", "~/.moon"] {
+    let rejected = try {
+      resolve_moon_home(Some(home), Some("/Users/example")) |> ignore
+      false
+    } catch {
+      LaunchError(_) => true
+    }
+    assert_true(rejected)
+  }
+  for home in [None, Some(""), Some("relative")] {
+    let rejected = try {
+      resolve_moon_home(None, home) |> ignore
+      false
+    } catch {
+      LaunchError(_) => true
+    }
+    assert_true(rejected)
+  }
+}
+
+///|
 async test "build output preserves split UTF-8 characters and streams without newlines" {
   let bytes = @utf8.encode("编译🙂done")
   let reader = @io.MemoryReader(writer => {

@@ -4025,7 +4025,16 @@ async test "lldb-dap materializes bounded FixedArray previews and caches the sna
       sent[1] is { "arguments": Object(launch_arguments), .. } &&
       launch_arguments.get("initCommands") is None &&
       launch_arguments.get("preRunCommands")
-      is Some(Array([String("!settings set target.input-path /dev/null")])),
+      is Some(
+        Array(
+          [
+            String("!settings set target.input-path /dev/null"),
+            String(
+              "!breakpoint set --name moonbit_panic --breakpoint-name __moondbg_panic"
+            ),
+          ]
+        )
+      ),
     )
     assert_true(
       sent[7]
