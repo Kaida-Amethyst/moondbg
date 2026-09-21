@@ -77,9 +77,15 @@ async fn VariableInspector::positional_members(
     if variable.is_tuple_type() {
       raise VariableEvaluationError("Tuple debug members are unavailable")
     }
+    if variable.is_option_type() {
+      raise VariableEvaluationError("Option debug members are unavailable")
+    }
     return None
   }
   let children = self.load_variables(identity, variable.variables_reference)
+  if optimized_option_members(variable, children) is Some(members) {
+    return Some(members)
+  }
   match detect_dap_enum_layout(children) {
     DapEnum(variants) => {
       let active = self.active_enum_variant(variants)
@@ -97,7 +103,14 @@ async fn VariableInspector::positional_members(
       }
       Some(("tuple", ordered_position_members(children)))
     }
-    NotDapEnum => None
+    NotDapEnum => {
+      if variable.is_option_type() {
+        raise VariableEvaluationError(
+          "Option debug representation is missing; rebuild with a compiler supporting the Option contract",
+        )
+      }
+      None
+    }
   }
 }
 

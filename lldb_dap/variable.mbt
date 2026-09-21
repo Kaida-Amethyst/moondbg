@@ -37,7 +37,9 @@ fn DapVariable::matches_lookup_name(self : DapVariable, name : String) -> Bool {
 
 ///|
 fn DapVariable::is_available(self : DapVariable) -> Bool {
-  !self.value.has_prefix("<error:") && self.value != "<variable not available>"
+  !self.value.has_prefix("<error:") &&
+  self.value != "<variable not available>" &&
+  self.value != "<unavailable>"
 }
 
 ///|
@@ -108,6 +110,7 @@ fn Array::select_field_variable(
 
 ///|
 fn DapVariable::is_moonbit_struct_type(self : DapVariable) -> Bool {
+  guard !self.is_option_type() else { return false }
   guard self.type_name is Some(type_name) &&
     type_name.strip_suffix(" &") is Some(base) &&
     base.rev_split_once("/") is Some((package_name, struct_name)) else {
@@ -1167,6 +1170,22 @@ async fn VariableInspector::materialize_enum(
   } else {
     []
   }
+  self.materialize_enum_members(
+    identity,
+    variable,
+    active.variant_name,
+    direct_payload,
+  )
+}
+
+///|
+async fn VariableInspector::materialize_enum_members(
+  self : VariableInspector,
+  identity : VariableCacheIdentity,
+  variable : DapVariable,
+  variant_name : String,
+  direct_payload : Array[DapVariable],
+) -> @debugger.VariableSnapshot {
   let payload_by_position : Map[Int, @debugger.VariableEnumPayload] = Map([])
   for child in direct_payload {
     let position = direct_enum_payload_position(child.name)
@@ -1198,10 +1217,7 @@ async fn VariableInspector::materialize_enum(
     }
     payload.push(element)
   }
-  let enum_value = @debugger.VariableEnumSnapshot::new(
-    active.variant_name,
-    payload,
-  ) catch {
+  let enum_value = @debugger.VariableEnumSnapshot::new(variant_name, payload) catch {
     error => raise InvalidEnumValue(@debug.to_string(error))
   }
   @debugger.VariableSnapshot::enum_value(
@@ -1384,6 +1400,29 @@ async fn VariableInspector::compact_local_variable(
       @debugger.LocalVariableAvailable(@debugger.LocalStructure),
     )
   }
+  if variable.is_option_type() {
+    let members = self.positional_members(identity, variable) catch {
+      VariableEvaluationError(_) | InvalidEnumValue(_) =>
+        return @debugger.LocalVariableSnapshot::new(
+          name,
+          source_type,
+          @debugger.LocalVariableUnavailable,
+        )
+      error => raise error
+    }
+    guard members is Some((kind, _)) else {
+      return @debugger.LocalVariableSnapshot::new(
+        name,
+        source_type,
+        @debugger.LocalVariableUnavailable,
+      )
+    }
+    return @debugger.LocalVariableSnapshot::new(
+      name,
+      source_type,
+      @debugger.LocalVariableAvailable(@debugger.LocalEnumConstructor(kind)),
+    )
+  }
   if variable.variables_reference > 0 {
     let children = self.load_variables(identity, variable.variables_reference)
     let enum_layout = detect_dap_enum_layout(children) catch {
@@ -1479,6 +1518,15 @@ async fn VariableInspector::materialize_variable(
   }
   if variable.is_tuple_type() {
     return self.materialize_tuple(identity, variable, depth, budget)
+  }
+  if variable.is_option_type() {
+    guard self.positional_members(identity, variable)
+      is Some((variant_name, members)) else {
+      raise VariableEvaluationError("Option debug members are unavailable")
+    }
+    return self.materialize_enum_members(
+      identity, variable, variant_name, members,
+    )
   }
   if variable.buffer_kind() is Some(_) {
     return self.buffer_snapshot(identity, variable, variable.name, None)

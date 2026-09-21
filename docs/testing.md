@@ -50,6 +50,9 @@ moon build --target native -g .
 MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance --no-parallelize
 ```
 
+上述常规验收不执行尚未合入编译器的 Option view 联调用例；该组还需要显式设置
+`MOONDBG_OPTION_VIEW_ACCEPTANCE=1`。契约、限制与恢复步骤见 [Option view 留痕](option_view.md)。
+
 默认待测程序为仓库 `_build/native/debug/build/moondbg.exe`；使用其他构建目录时，设置
 `MOONDBG_ACCEPTANCE_EXECUTABLE=/绝对路径/moondbg.exe`。验收检查 `MOON_HOME` 中的
 `moon`、`moonc` 存在且可执行、编译器支持 `-g -O0`，以及 `moon run` 支持
@@ -221,6 +224,44 @@ PYTHONDONTWRITEBYTECODE=1 python3 tools/fixed_array_probe.py
 以及两次停点的首尾值。
 
 ## 变更时应运行的层
+
+### Option 调试信息联调
+
+当前默认使用 `set_moon_stable` 选中的工具链，保留 Option 解析代码，但不宣称已支持
+旧产物中被擦除的 Option。`option_values` 的完整验收需要实验编译器的 Option v1 DWARF
+契约；旧编译器生成的裸 Int64/指针无法可靠恢复源 Option 类型。
+两边的改动、契约及后续恢复检查见 [option_view.md](option_view.md)，编译器侧说明为
+`docs/option-debug-info.md`。moondbg 在 `lldb_dap/option.mbt` 识别，不依赖 Python。
+
+只有重新开始编译器联调、确认对应补丁存在时才运行以下命令：
+
+```sh
+source ~/.zshrc
+set_moon_dev
+moon build --target native -g .
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 MOONDBG_OPTION_VIEW_ACCEPTANCE=1 \
+  moon test acceptance/option_values_wbtest.mbt --no-parallelize
+./_build/native/debug/build/moondbg.exe testdata/dwarf_probe/option_values
+```
+
+在 `option_values/main.mbt` 的 `OPTION_READY` 行设置断点并运行，可以使用：
+
+```text
+p argument
+p values.integer
+p values.absent
+p values.point.0.x
+p values.nested.0.0
+p values.inner_none.0
+p values.items[0].0
+```
+
+Some 的复杂载荷保持浅层摘要，例如 `Some(Point)`，用 `.0` 继续探查。
+None 没有 `.0`，访问会报越界，不读取无效引用。VS Code 的变量树、Watch 和
+Debug Console 使用同一规则。继续到 `OPTION_CHANGED` 行后，`values.changing`、
+`changing_int` 和 `changing_point` 均变成 None，旧的 DAP 变量引用失效。
+
+### 按变更选择测试
 
 - 修改 core/session：默认 `moon test`。
 - 修改 command、renderer 或 readline 组装：默认测试并单独运行 PTY suite。
