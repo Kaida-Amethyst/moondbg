@@ -6,7 +6,7 @@ fn conditional_stop() -> Json {
 ///|
 fn bind_test_condition(session : LiveSession) -> Unit raise {
   session.conditions.bindings.replace("/main.mbt", [
-    (10, Some(@expression.IntCondition::parse("i == 7"))),
+    (10, Some(@expression.Condition::parse("i == 7"))),
   ])
 }
 

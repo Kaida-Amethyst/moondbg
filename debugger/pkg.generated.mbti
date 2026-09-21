@@ -205,7 +205,7 @@ pub struct DebugSession {
   // private fields
 }
 pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
-pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String, condition? : @expression.IntCondition?) -> BreakpointSnapshot
+pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String, condition? : @expression.Condition?) -> BreakpointSnapshot
 pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
 pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
 pub fn DebugSession::close(Self) -> Unit
@@ -214,7 +214,7 @@ pub fn DebugSession::condition_text(Self, Int) -> String?
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit
 pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
-pub async fn DebugSession::find_variable(Self, VariablePath) -> VariableLookupResult
+pub async fn DebugSession::find_variable(Self, @expression.VariablePath) -> VariableLookupResult
 pub async fn DebugSession::finish(Self) -> RunOutcome
 pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnapshot]
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
@@ -422,7 +422,7 @@ pub fn RunOutcome::stopped(StopSnapshot) -> Self
 pub struct SourceBreakpoint {
   // private fields
 }
-pub fn SourceBreakpoint::condition(Self) -> @expression.IntCondition?
+pub fn SourceBreakpoint::condition(Self) -> @expression.Condition?
 pub fn SourceBreakpoint::display_path(Self) -> String
 pub fn SourceBreakpoint::enabled(Self) -> Bool
 pub fn SourceBreakpoint::id(Self) -> Int
@@ -570,28 +570,6 @@ pub fn VariableLookupResult::not_found(String) -> Self
 pub fn VariableLookupResult::to_repr(Self) -> @debug.Repr
 pub fn VariableLookupResult::unavailable(String) -> Self
 
-pub struct VariablePath {
-  // private fields
-} derive(Eq, @debug.Debug)
-pub fn VariablePath::display_name(Self) -> String
-pub fn VariablePath::equal(Self, Self) -> Bool
-pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
-pub fn VariablePath::not_equal(Self, Self) -> Bool
-pub fn VariablePath::parse(StringView) -> Self?
-pub fn VariablePath::root(String) -> Self
-pub fn VariablePath::root_name(Self) -> String
-pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
-pub fn VariablePath::to_repr(Self) -> @debug.Repr
-pub fn VariablePath::with_fields(String, Array[String]) -> Self
-
-pub(all) enum VariablePathStep {
-  Field(String)
-  Index(Int)
-} derive(Eq, @debug.Debug)
-pub fn VariablePathStep::equal(Self, Self) -> Bool
-pub fn VariablePathStep::not_equal(Self, Self) -> Bool
-pub fn VariablePathStep::to_repr(Self) -> @debug.Repr
-
 pub struct VariableSnapshot {
   // private fields
 } derive(Eq, @debug.Debug)
@@ -618,6 +596,9 @@ pub fn VariableStructureSnapshot::not_equal(Self, Self) -> Bool
 pub fn VariableStructureSnapshot::to_repr(Self) -> @debug.Repr
 
 // Type aliases
+pub using @expression {type VariablePath}
+
+pub using @expression {type VariablePathStep}
 
 // Traits
 pub(open) trait DebugBackend {
@@ -629,7 +610,7 @@ pub(open) trait DebugBackend {
   async fn step(Self, ThreadSelection) -> RunOutcome
   async fn finish(Self, ThreadSelection) -> RunOutcome
   async fn stack_snapshot(Self, ThreadSelection, StackWindow) -> StackSnapshot
-  async fn find_variable(Self, ThreadSelection, FrameSelection, VariablePath) -> VariableLookupResult
+  async fn find_variable(Self, ThreadSelection, FrameSelection, @expression.VariablePath) -> VariableLookupResult
   async fn local_variables(Self, ThreadSelection, FrameSelection) -> LocalVariablesSnapshot
   fn breakpoint_snapshots(Self) -> Array[BreakpointSnapshot]
   fn function_breakpoint_snapshots(Self) -> Array[FunctionBreakpointSnapshot]

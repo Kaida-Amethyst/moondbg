@@ -7,7 +7,7 @@ priv suberror BreakpointSourceError {
 ///|
 priv struct CommandBreak {
   target : BreakCommandTarget
-  condition : @expression.IntCondition?
+  condition : @expression.Condition?
 }
 
 ///|
@@ -85,7 +85,7 @@ fn CommandBreak::parse(arguments : StringView) -> Result[CommandBreak, String] {
   guard !(target is FunctionBreakTarget(_)) else {
     return Err("Conditions currently support only line breakpoints")
   }
-  let condition = @expression.IntCondition::parse(arguments[offset + 2:].trim()) catch {
+  let condition = @expression.Condition::parse(arguments[offset + 2:].trim()) catch {
     @expression.ConditionError(message) => return Err(message)
   }
   Ok({ target, condition: Some(condition), })
@@ -159,7 +159,7 @@ async fn set_source_breakpoint(
   session : @debugger.DebugSession,
   source : String,
   line : Int,
-  condition~ : @expression.IntCondition?,
+  condition~ : @expression.Condition?,
 ) -> PresentationEvent {
   let canonical_source = resolve_breakpoint_source(source)
   let breakpoint = session.add_source_breakpoint(
@@ -281,8 +281,8 @@ test "break if parses a conditional source location without splitting file names
   )
   for
     input in [
-      "", "if i == 7", "0 if i == 7", "4 if", "4 if   ", "4 if i = 7", "4 if i > other",
-      "4 if i > 0 && j < 1", "4 ifi == 7", "4 if point.x == 7", "main if i == 7",
+      "", "if i == 7", "0 if i == 7", "4 if", "4 if   ", "4 if i = 7", "4 if i > other()",
+      "4 if i > 0 && j < 1", "4 ifi == 7", "4 if point.x + 1 == 7", "main if i == 7",
       "@pkg.foo if i == 7",
     ] {
     assert_true(CommandBreak::parse(input) is Err(_), msg=input)

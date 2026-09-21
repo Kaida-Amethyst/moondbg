@@ -18,7 +18,7 @@ fn condition_command_spec() -> CommandSpec {
       }
       let text = arguments[end:].trim().to_owned()
       if !text.is_empty() {
-        (@expression.IntCondition::parse(text) |> ignore) catch {
+        (@expression.Condition::parse(text) |> ignore) catch {
           @expression.ConditionError(message) => return invalid_command(message)
         }
       }
@@ -58,7 +58,7 @@ test "condition command validates its id and bounded comparison grammar" {
   for
     text in [
       "condition", "condition 0 i > 0", "condition -1", "condition 1 i = 0", "condition 1 i > 0 && j < 0",
-      "condition 1 point.x == 3",
+      "condition 1 point.x == other()",
     ] {
     assert_true(registry.parse_line(text) is RegistryInvalid(_), msg=text)
   }

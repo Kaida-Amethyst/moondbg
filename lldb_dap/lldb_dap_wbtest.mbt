@@ -4264,7 +4264,7 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
       fail("scripted indexed-path execution should stop")
     }
     let arr_element_path = @debugger.VariablePath::new("arr", [
-      @debugger.Index(0),
+      @debugger.VariablePathStep::Index(0),
     ])
     guard session.find_variable(arr_element_path)
       is @debugger.VariableFound(point) &&
@@ -4285,8 +4285,8 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     assert_eq(cached_point, point)
     guard session.find_variable(
         @debugger.VariablePath::new("arr", [
-          @debugger.Index(0),
-          @debugger.Field("x"),
+          @debugger.VariablePathStep::Index(0),
+          @debugger.VariablePathStep::Field("x"),
         ]),
       )
       is @debugger.VariableFound(arr_x) else {
@@ -4297,9 +4297,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
 
     guard session.find_variable(
         @debugger.VariablePath::new("lines", [
-          @debugger.Index(0),
-          @debugger.Field("start"),
-          @debugger.Field("x"),
+          @debugger.VariablePathStep::Index(0),
+          @debugger.VariablePathStep::Field("start"),
+          @debugger.VariablePathStep::Field("x"),
         ]),
       )
       is @debugger.VariableFound(line_x) else {
@@ -4310,9 +4310,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
 
     guard session.find_variable(
         @debugger.VariablePath::new("box", [
-          @debugger.Field("points"),
-          @debugger.Index(0),
-          @debugger.Field("x"),
+          @debugger.VariablePathStep::Field("points"),
+          @debugger.VariablePathStep::Index(0),
+          @debugger.VariablePathStep::Field("x"),
         ]),
       )
       is @debugger.VariableFound(box_x) else {
@@ -4322,7 +4322,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     assert_eq(box_x.value(), "1")
 
     guard session.find_variable(
-        @debugger.VariablePath::new("ints", [@debugger.Index(2)]),
+        @debugger.VariablePath::new("ints", [
+          @debugger.VariablePathStep::Index(2),
+        ]),
       )
       is @debugger.VariableFound(integer) else {
       fail("FixedArray scalar indexing should share the exact path resolver")
@@ -4334,7 +4336,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
 
     assert_true(
       session.find_variable(
-        @debugger.VariablePath::new("arr", [@debugger.Index(3)]),
+        @debugger.VariablePath::new("arr", [
+          @debugger.VariablePathStep::Index(3),
+        ]),
       )
       is @debugger.VariableLookupFailed(
         @debugger.VariableIndexOutOfBounds("arr", 3, 3)
@@ -4342,7 +4346,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     )
     assert_true(
       session.find_variable(
-        @debugger.VariablePath::new("point", [@debugger.Index(0)]),
+        @debugger.VariablePath::new("point", [
+          @debugger.VariablePathStep::Index(0),
+        ]),
       )
       is @debugger.VariableLookupFailed(
         @debugger.VariableIndexAccessOnNonCollection(
@@ -4354,7 +4360,9 @@ async test "lldb-dap resolves precise Array and FixedArray indices with mixed fi
     )
     assert_true(
       session.find_variable(
-        @debugger.VariablePath::new("empty", [@debugger.Index(0)]),
+        @debugger.VariablePath::new("empty", [
+          @debugger.VariablePathStep::Index(0),
+        ]),
       )
       is @debugger.VariableLookupFailed(
         @debugger.VariableIndexOutOfBounds("empty", 0, 0)
@@ -4430,7 +4438,9 @@ async fn indexed_path_failure_message(mode : IndexedPathFailureMode) -> String {
       .find_variable_inner(
         VariableCacheIdentity::{ epoch, frame_index: 0, },
         150,
-        @debugger.VariablePath::new("arr", [@debugger.Index(0)]),
+        @debugger.VariablePath::new("arr", [
+          @debugger.VariablePathStep::Index(0),
+        ]),
       )
       |> ignore
       fail("indexed path failure script should reject its element")

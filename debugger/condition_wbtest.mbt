@@ -54,7 +54,7 @@ async test "conditions survive disabled and restarted executions and invalid edi
 async test "source creation includes its condition in the first backend synchronization" {
   let backend = RecordingBackend::new()
   let session = DebugSession::new("/tmp/program", backend)
-  let condition = @expression.IntCondition::parse("i == 7")
+  let condition = @expression.Condition::parse("i == 7")
   let first = session.add_source_breakpoint(
     "/tmp/main.mbt",
     4,

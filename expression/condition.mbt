@@ -17,26 +17,40 @@ priv enum Comparison {
 } derive(Eq, Debug)
 
 ///|
-/// Round one: one local Int compared to one decimal Int literal. Parsing
-/// never executes code, resolves a variable, or delegates syntax to LLDB.
-pub struct IntCondition {
-  variable : String
-  text : String
-  priv comparison : Comparison
-  priv literal : Int
+pub(all) enum ConditionOperand {
+  PathOperand(VariablePath)
+  IntegerOperand(String)
+  BoolOperand(Bool)
 } derive(Eq, Debug)
 
 ///|
-pub extend IntCondition with Eq::{equal, not_equal}
+pub extend ConditionOperand with Eq::{equal, not_equal}
 
 ///|
-pub extend IntCondition with @debug.Debug::{to_repr}
+pub extend ConditionOperand with @debug.Debug::{to_repr}
 
 ///|
-pub fn IntCondition::parse(
-  input : StringView,
-) -> IntCondition raise ConditionError {
+/// Resolving paths belongs to the debugger. Integer literals acquire the
+/// left path's type; runtime values are never implicitly converted.
+pub struct Condition {
+  left : VariablePath
+  right : ConditionOperand
+  text : String
+  priv comparison : Comparison
+} derive(Eq, Debug)
+
+///|
+pub extend Condition with Eq::{equal, not_equal}
+
+///|
+pub extend Condition with @debug.Debug::{to_repr}
+
+///|
+pub fn Condition::parse(input : StringView) -> Condition raise ConditionError {
   let input = input.trim()
+  guard input.length() <= 8192 else {
+    raise ConditionError("Condition is too long")
+  }
   let split = for index, ch in input.iter2() {
     if ch is ('>' | '<' | '=' | '!') {
       break Some(index)
@@ -46,15 +60,12 @@ pub fn IntCondition::parse(
   }
   guard split is Some(index) else {
     raise ConditionError(
-      "Expected <Int variable> <comparison> <decimal integer>; comparisons: > >= < <= == !=",
+      "Expected <variable path> <comparison> <path or literal>; comparisons: > >= < <= == !=",
     )
   }
-  let variable = input[:index].trim()
-  guard variable is [first, .. rest] &&
-    (first.is_ascii_alphabetic() || first == '_') &&
-    rest.all(ch => ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_') else {
+  guard VariablePath::parse(input[:index].trim()) is Some(left) else {
     raise ConditionError(
-      "Condition requires a simple local variable name (ASCII letters, digits and underscore)",
+      "Invalid left variable path; use point.x or arr[0], without calls or arithmetic",
     )
   }
   let (comparison, operator, value) = match input[index:] {
@@ -69,74 +80,104 @@ pub fn IntCondition::parse(
         "Use == for equality; supported comparisons: > >= < <= == !=",
       )
   }
-  let literal = decimal_int(value.trim())
+  let value = value.trim()
+  let (right, text) = match value {
+    "true" => (BoolOperand(true), "true")
+    "false" => (BoolOperand(false), "false")
+    ['-' | '0'..='9', ..] => {
+      let integer = integer_literal(value)
+      (IntegerOperand(integer), integer)
+    }
+    _ => {
+      guard VariablePath::parse(value) is Some(path) else {
+        raise ConditionError(
+          "Invalid right operand; use a variable path, decimal integer, true or false",
+        )
+      }
+      (PathOperand(path), path.display_name())
+    }
+  }
+  if right is BoolOperand(_) && !(comparison is (Equal | NotEqual)) {
+    raise ConditionError("Bool conditions support only == and !=")
+  }
   {
-    variable: variable.to_owned(),
-    text: "\{variable} \{operator} \{literal}",
+    left,
+    right,
     comparison,
-    literal,
+    text: "\{left.display_name()} \{operator} \{text}",
   }
 }
 
 ///|
-/// Strict decoding of DAP's raw scalar text, after the caller checks its type.
-/// This never parses a REPL rendering or coerces a floating-point value to Int.
-pub fn decimal_int(text : StringView) -> Int raise ConditionError {
-  let digits = match text {
-    ['-', .. rest] => rest
-    _ => text
-  }
-  guard !digits.is_empty() && digits.all(ch => ch is ('0'..='9')) else {
-    raise ConditionError("Expected a signed 32-bit decimal integer")
-  }
-  @string.parse_int(text, base=10) catch {
-    _ => raise ConditionError("Integer is outside the MoonBit Int range")
-  }
-}
-
-///|
-pub fn IntCondition::evaluate(self : IntCondition, value : Int) -> Bool {
-  match self.comparison {
-    Greater => value > self.literal
-    GreaterEqual => value >= self.literal
-    Less => value < self.literal
-    LessEqual => value <= self.literal
-    Equal => value == self.literal
-    NotEqual => value != self.literal
+fn integer_literal(text : StringView) -> String raise ConditionError {
+  decimal_digits(text)
+  try {
+    if text.has_prefix("-") {
+      @string.parse_int64(text, base=10).to_string()
+    } else {
+      @string.parse_uint64(text, base=10).to_string()
+    }
+  } catch {
+    _ =>
+      raise ConditionError(
+        "Integer literal is outside the supported 64-bit range",
+      )
   }
 }
 
 ///|
-test "integer comparison grammar and boundaries" {
-  for
-    (text, value, expected) in [
-      ("i > 5", 7, true),
-      ("i>5", 5, false),
-      ("i>=5", 5, true),
-      ("i<5", 4, true),
-      ("i<=5", 5, true),
-      ("i == -7", -7, true),
-      ("i!=5", 5, false),
-      ("i == -2147483648", -2147483648, true),
-      ("i == 2147483647", 2147483647, true),
-    ] {
-    assert_eq(IntCondition::parse(text).evaluate(value), expected)
+pub fn Condition::literal_value(
+  self : Condition,
+  left : ScalarValue,
+) -> ScalarValue? raise ConditionError {
+  match self.right {
+    PathOperand(_) => None
+    BoolOperand(value) => Some(BoolValue(value))
+    IntegerOperand(text) => {
+      guard !(left is BoolValue(_)) else {
+        raise ConditionError("Cannot compare Bool with an integer literal")
+      }
+      Some(ScalarValue::decode(left.type_name(), text))
+    }
   }
-  for
-    text in [
-      "i = 1", "i > 1.0", "i > 2147483648", "i > -2147483649", "i > 1 && j < 2",
-      "point.x > 1", "arr[0] > 1", "i > other", "i > 0x10", "i > 1; quit", "i >",
-      "i() > 1",
-    ] {
-    assert_true(
-      try {
-        IntCondition::parse(text) |> ignore
-        false
-      } catch {
-        _ => true
-      },
-      msg=text,
-    )
+}
+
+///|
+fn[T : Compare] Comparison::matches(
+  self : Comparison,
+  left : T,
+  right : T,
+) -> Bool {
+  match self {
+    Greater => left > right
+    GreaterEqual => left >= right
+    Less => left < right
+    LessEqual => left <= right
+    Equal => left == right
+    NotEqual => left != right
   }
-  assert_eq(IntCondition::parse("  i  >=  -1  ").text, "i >= -1")
+}
+
+///|
+pub fn Condition::evaluate(
+  self : Condition,
+  left : ScalarValue,
+  right : ScalarValue,
+) -> Bool raise ConditionError {
+  match (left, right) {
+    (IntValue(a), IntValue(b)) => self.comparison.matches(a, b)
+    (UIntValue(a), UIntValue(b)) => self.comparison.matches(a, b)
+    (Int64Value(a), Int64Value(b)) => self.comparison.matches(a, b)
+    (UInt64Value(a), UInt64Value(b)) => self.comparison.matches(a, b)
+    (BoolValue(a), BoolValue(b)) =>
+      match self.comparison {
+        Equal => a == b
+        NotEqual => a != b
+        _ => raise ConditionError("Bool conditions support only == and !=")
+      }
+    _ =>
+      raise ConditionError(
+        "Condition type mismatch: \{left.type_name()} and \{right.type_name()}; implicit conversions are not supported",
+      )
+  }
 }

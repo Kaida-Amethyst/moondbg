@@ -3,7 +3,7 @@ priv struct ConditionJob {
   epoch : Int
   body : Json
   thread : Int
-  expressions : Array[@expression.IntCondition]
+  expressions : Array[@expression.Condition]
 }
 
 ///|
@@ -29,13 +29,13 @@ fn ConditionState::new() -> ConditionState {
 }
 
 ///|
-fn source_condition(point : Json) -> @expression.IntCondition? raise {
+fn source_condition(point : Json) -> @expression.Condition? raise {
   match point {
     { "condition": String(text), .. } =>
       if text.trim().is_empty() {
         None
       } else {
-        Some(@expression.IntCondition::parse(text[:]))
+        Some(@expression.Condition::parse(text[:]))
       }
     { "condition": _, .. } =>
       raise LiveError("Breakpoint condition must be a string.")

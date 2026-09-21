@@ -13,7 +13,7 @@ pub async fn DebugSession::set_condition(
   let condition = if text.trim().is_empty() {
     None
   } else {
-    Some(@expression.IntCondition::parse(text))
+    Some(@expression.Condition::parse(text))
   }
   guard self.source_breakpoints.iter().find_first(point => point.id() == id)
     is Some(_) else {

@@ -9,7 +9,7 @@ pub struct SourceBreakpoint {
   priv requested_line : Int
   priv display_path : String
   priv enabled : Bool
-  priv condition : @expression.IntCondition?
+  priv condition : @expression.Condition?
 }
 
 ///|
@@ -18,7 +18,7 @@ fn SourceBreakpoint::new(
   source_path : String,
   requested_line : Int,
   display_path? : String = source_path,
-  condition? : @expression.IntCondition? = None,
+  condition? : @expression.Condition? = None,
 ) -> SourceBreakpoint {
   { id, source_path, requested_line, display_path, enabled: true, condition, }
 }
@@ -26,7 +26,7 @@ fn SourceBreakpoint::new(
 ///|
 pub fn SourceBreakpoint::condition(
   self : SourceBreakpoint,
-) -> @expression.IntCondition? {
+) -> @expression.Condition? {
   self.condition
 }
 

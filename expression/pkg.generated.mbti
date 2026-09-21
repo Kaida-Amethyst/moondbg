@@ -6,7 +6,6 @@ import {
 }
 
 // Values
-pub fn decimal_int(StringView) -> Int raise ConditionError
 
 // Errors
 pub(all) suberror ConditionError {
@@ -15,16 +14,62 @@ pub(all) suberror ConditionError {
 pub fn ConditionError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
-pub struct IntCondition {
-  variable : String
+pub struct Condition {
+  left : VariablePath
+  right : ConditionOperand
   text : String
   // private fields
 } derive(Eq, @debug.Debug)
-pub fn IntCondition::equal(Self, Self) -> Bool
-pub fn IntCondition::evaluate(Self, Int) -> Bool
-pub fn IntCondition::not_equal(Self, Self) -> Bool
-pub fn IntCondition::parse(StringView) -> Self raise ConditionError
-pub fn IntCondition::to_repr(Self) -> @debug.Repr
+pub fn Condition::equal(Self, Self) -> Bool
+pub fn Condition::evaluate(Self, ScalarValue, ScalarValue) -> Bool raise ConditionError
+pub fn Condition::literal_value(Self, ScalarValue) -> ScalarValue? raise ConditionError
+pub fn Condition::not_equal(Self, Self) -> Bool
+pub fn Condition::parse(StringView) -> Self raise ConditionError
+pub fn Condition::to_repr(Self) -> @debug.Repr
+
+pub(all) enum ConditionOperand {
+  PathOperand(VariablePath)
+  IntegerOperand(String)
+  BoolOperand(Bool)
+} derive(Eq, @debug.Debug)
+pub fn ConditionOperand::equal(Self, Self) -> Bool
+pub fn ConditionOperand::not_equal(Self, Self) -> Bool
+pub fn ConditionOperand::to_repr(Self) -> @debug.Repr
+
+pub(all) enum ScalarValue {
+  BoolValue(Bool)
+  IntValue(Int)
+  UIntValue(UInt)
+  Int64Value(Int64)
+  UInt64Value(UInt64)
+} derive(Eq, @debug.Debug)
+pub fn ScalarValue::decode(String, StringView) -> Self raise ConditionError
+pub fn ScalarValue::equal(Self, Self) -> Bool
+pub fn ScalarValue::not_equal(Self, Self) -> Bool
+pub fn ScalarValue::to_repr(Self) -> @debug.Repr
+pub fn ScalarValue::type_name(Self) -> String
+
+pub struct VariablePath {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn VariablePath::display_name(Self) -> String
+pub fn VariablePath::equal(Self, Self) -> Bool
+pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
+pub fn VariablePath::not_equal(Self, Self) -> Bool
+pub fn VariablePath::parse(StringView) -> Self?
+pub fn VariablePath::root(String) -> Self
+pub fn VariablePath::root_name(Self) -> String
+pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
+pub fn VariablePath::to_repr(Self) -> @debug.Repr
+pub fn VariablePath::with_fields(String, Array[String]) -> Self
+
+pub(all) enum VariablePathStep {
+  Field(String)
+  Index(Int)
+} derive(Eq, @debug.Debug)
+pub fn VariablePathStep::equal(Self, Self) -> Bool
+pub fn VariablePathStep::not_equal(Self, Self) -> Bool
+pub fn VariablePathStep::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

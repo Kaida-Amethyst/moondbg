@@ -306,24 +306,28 @@ test "variable path owns mixed steps and produces a stable display name" {
   fields.clear()
   assert_eq(nested.root_name(), "line1")
   assert_true(
-    nested.steps() is [@debugger.Field("start"), @debugger.Field("x")],
+    nested.steps()
+    is [
+      @debugger.VariablePathStep::Field("start"),
+      @debugger.VariablePathStep::Field("x"),
+    ],
   )
   assert_eq(nested.display_name(), "line1.start.x")
   let steps = [
-    @debugger.Index(0),
-    @debugger.Field("start"),
-    @debugger.Index(12),
-    @debugger.Field("x"),
+    @debugger.VariablePathStep::Index(0),
+    @debugger.VariablePathStep::Field("start"),
+    @debugger.VariablePathStep::Index(12),
+    @debugger.VariablePathStep::Field("x"),
   ]
   let mixed = @debugger.VariablePath::new("lines", steps)
   steps.clear()
   assert_true(
     mixed.steps()
     is [
-      @debugger.Index(0),
-      @debugger.Field("start"),
-      @debugger.Index(12),
-      @debugger.Field("x"),
+      @debugger.VariablePathStep::Index(0),
+      @debugger.VariablePathStep::Field("start"),
+      @debugger.VariablePathStep::Index(12),
+      @debugger.VariablePathStep::Field("x"),
     ],
   )
   assert_eq(mixed.display_name(), "lines[0].start[12].x")

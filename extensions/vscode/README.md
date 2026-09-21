@@ -103,14 +103,20 @@ CLI 新版发布到 Mooncakes 后可再次执行 `moon install Kaida-Amethyst/mo
 
 在源码行号左侧右键 → **添加条件断点 / Add Conditional Breakpoint**，选“表达式”，
 输入 `i == 7`。已有断点可右键编辑；清空表达式恢复无条件断点。
-支持行断点的局部 `Int` 变量与十进制 Int 常量比较：`>`、`>=`、`<`、`<=`、`==`、`!=`。
-变量名暂限 ASCII 字母、数字和下划线；不支持字段、数组下标、变量间比较或函数调用。
+支持行断点的变量路径比较，例如 `point.x > 5`、`arr[0] == 7`、`line.start.x < limit`。
+左右路径复用 Watch/print 的只读语法；支持 `Int`、`UInt`、`Int64`、`UInt64` 的六种比较，
+以及 Bool 的 `==`、`!=`（例如 `ready == true`）。路径之间必须同类型，不隐式混合转换。
+整数常量按左侧类型检查范围，64 位整数不会转成 Double；暂不支持浮点、算术或函数调用。
 
 示例：打开仓库 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行设置 `i == 7`，
 F5 后只在 `i = 7` 的那轮停止。条件变量读取失败会停住并明确报错。
 run/continue 过滤 false 条件；单步保留 LLDB 原有停止，不额外自动继续。
 此功能由 CLI 提供能力声明，更新 CLI 后重新启动调试即可，无需重新安装 VSIX。
-当前发布版的限制仍见下文，第一轮尚不支持函数断点条件、命中次数或 logpoint。
+当前发布版的限制仍见下文，当前尚不支持函数断点条件、命中次数或 logpoint。
+
+路径示例：打开 `testdata/dwarf_probe/conditional_paths/main.mbt`，在第 32 行设置
+`scene.points[0].x == limit`，F5 后 `scene.point.x = 7`。可改为 `ready == true` 或
+`wide == 9007199254740993`，后一种只在 `scene.point.x = 1` 时命中。
 
 ## MoonBit panic（需要开发版 CLI）
 

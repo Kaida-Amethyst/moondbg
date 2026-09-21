@@ -1529,7 +1529,7 @@ async fn VariableInspector::resolve_variable_path(
   let mut owner = path.root_name()
   for step in path.steps() {
     match step {
-      @debugger.Field(field) => {
+      @debugger.VariablePathStep::Field(field) => {
         guard variable.is_moonbit_struct_type() else {
           return DapVariableResolutionFailed(
             @debugger.VariableLookupResult::field_access_on_non_struct(
@@ -1578,7 +1578,7 @@ async fn VariableInspector::resolve_variable_path(
             )
         }
       }
-      @debugger.Index(index) =>
+      @debugger.VariablePathStep::Index(index) =>
         match
           self.resolve_indexed_element(
             identity, frame_id, owner, index, variable,

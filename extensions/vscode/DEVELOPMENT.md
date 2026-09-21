@@ -436,8 +436,11 @@ panic 生命周期回归在 `acceptance/panic_lifecycle_wbtest.mbt` 与
 `ps`、LLDB 与 MoonBit 工具链。清理检查只针对本次测试的确切进程及退出前捕获的子进程 PID，
 不按进程名终止其他会话。真实 VS Code 宿主测试也检查 Stop 后目标 PID 消失。
 
-条件断点第一轮：`expression.IntCondition` 只解析局部 Int 与十进制常量比较；
+条件断点：`expression.Condition` 解析共享变量路径与路径、整数或 Bool 常量的比较；
 `lldb_dap.BreakpointConditions` 关联真实命中 ID，共享 `VariableInspector` 读取类型和值。
+`VariableInspector.read_scalar` 复用字段/数组探查并返回 `expression.ScalarValue`，而非读取变量树的展示字符串。
+当前支持 Bool 与四种整数类型；左右路径严格同类型，整数常量按左侧类型检查范围。
+路径类型/解析器下移到 `expression`，`debugger` 重导出类型；现有 print、Watch、条件均使用同一实现。
 源码 setBreakpoints 的条件保存在前端，发给 LLDB 前删除条件字段；替换请求必须成功后才提交绑定。
 条件探查走后台任务，主循环仍可接收 pause/disconnect；false 时内部 continue 不向 VS Code
 发送虚假的 stopped/continued。显式暂停优先于过滤，迟到求值不能恢复已暂停或关闭的会话。
@@ -446,3 +449,5 @@ panic 生命周期回归在 `acceptance/panic_lifecycle_wbtest.mbt` 与
 `acceptance/conditions_wbtest.mbt` 门控真实 REPL/DAP 循环、动态修改、失败停住、重跑、
 panic、持续 false 条件下的暂停及退出。`test/conditions-host.js` 是对应的真实扩展宿主测试，
 以 `testdata/dwarf_probe` 为工作区，通过 VS Code SourceBreakpoint 条件字段验证只停在 `i = 7`。
+设置 `MOONDBG_TEST_CONDITION_PATHS=1` 验证 `scene.points[0].x == limit`，仅停在 `scene.point.x = 7`。
+`acceptance/condition_paths_wbtest.mbt` 覆盖字段、数组、Bool、64 位精确比较、类型不匹配与读取失败。

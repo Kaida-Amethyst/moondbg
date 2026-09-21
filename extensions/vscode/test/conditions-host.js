@@ -28,34 +28,40 @@ exports.run = async function () {
     },
   });
   const workspace = vscode.workspace.workspaceFolders[0];
-  const source = vscode.Uri.file(path.join(workspace.uri.fsPath, "conditional", "main.mbt"));
+  const paths = process.env.MOONDBG_TEST_CONDITION_PATHS === "1";
+  const packageName = paths ? "conditional_paths" : "conditional";
+  const expression = paths ? "scene.points[0].x == limit" : "i == 7";
+  const watched = paths ? "scene.point.x" : "i";
+  const source = vscode.Uri.file(path.join(workspace.uri.fsPath, packageName, "main.mbt"));
+  const line = paths ? fs.readFileSync(source.fsPath, "utf8").split("\n").findIndex(text => text.includes("let marker = scene.point.x")) : 3;
+  assert.ok(line >= 0);
   const breakpoint = new vscode.SourceBreakpoint(
-    new vscode.Location(source, new vscode.Position(3, 0)), true, "i == 7",
+    new vscode.Location(source, new vscode.Position(line, 0)), true, expression,
   );
   try {
     await vscode.window.showTextDocument(source);
     vscode.debug.addBreakpoints([breakpoint]);
     assert.equal(await vscode.debug.startDebugging(workspace, {
       type: "moondbg", request: "launch", name: "Conditional breakpoint acceptance",
-      package: path.join(workspace.uri.fsPath, "conditional"),
+      package: path.join(workspace.uri.fsPath, packageName),
     }), true);
     const stop = await until(() => received.find(message => message.event === "stopped"));
     assert.equal(stop.body.reason, "breakpoint");
     assert.ok(received.some(message => message.command === "initialize" &&
       message.body.supportsConditionalBreakpoints === true));
     assert.ok(sent.some(message => message.command === "setBreakpoints" &&
-      message.arguments.breakpoints.some(point => point.condition === "i == 7")));
+      message.arguments.breakpoints.some(point => point.condition === expression)));
     session = vscode.debug.activeDebugSession;
     const frame = await until(() => {
       const item = vscode.debug.activeStackItem;
       return item && typeof item.frameId === "number" && item;
     });
     const value = await session.customRequest("evaluate", {
-      frameId: frame.frameId, expression: "i", context: "watch",
+      frameId: frame.frameId, expression: watched, context: "watch",
     });
     assert.equal(value.result, "7");
     const stack = await session.customRequest("stackTrace", { threadId: stop.body.threadId });
-    assert.equal(stack.stackFrames[0].line, 4);
+    assert.equal(stack.stackFrames[0].line, line + 1);
     assert.equal(fs.realpathSync(stack.stackFrames[0].source.path), fs.realpathSync(source.fsPath));
     await session.customRequest("continue", { threadId: stop.body.threadId });
     const exit = await until(() => received.find(message => message.event === "exited"));

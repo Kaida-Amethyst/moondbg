@@ -1,8 +1,8 @@
 ///|
 test "condition bindings retain unrelated stops and use all co-located conditions" {
   let bindings = BreakpointConditions::new()
-  let first = @expression.IntCondition::parse("i == 7")
-  let second = @expression.IntCondition::parse("i < 2")
+  let first = @expression.Condition::parse("i == 7")
+  let second = @expression.Condition::parse("i < 2")
   bindings.replace("/a.mbt", [(1, Some(first)), (2, None)])
   bindings.replace("/b.mbt", [(3, Some(second))])
   assert_eq(
@@ -86,17 +86,20 @@ async test "condition evaluation uses typed raw Int values and never evaluates u
     {},
   )
   let conditions = [
-    @expression.IntCondition::parse("i < 2"),
-    @expression.IntCondition::parse("i == 7"),
+    @expression.Condition::parse("i < 2"),
+    @expression.Condition::parse("i == 7"),
   ]
   assert_eq(inspector.test_conditions(10, conditions), Ok(true))
-  assert_eq(inspector.read_condition_int(10, "min"), -2147483648)
+  assert_eq(
+    inspector.read_scalar(10, @debugger.VariablePath::root("min")),
+    @expression.IntValue(-2147483648),
+  )
   assert_eq(inspector.test_conditions(10, [conditions[0]]), Ok(false))
   for text in ["missing == 0", "double == 7", "gone == 0"] {
     assert_true(
       inspector.test_conditions(10, [
         conditions[1],
-        @expression.IntCondition::parse(text),
+        @expression.Condition::parse(text),
       ])
       is Err(message) &&
       message.contains(text),
@@ -106,4 +109,135 @@ async test "condition evaluation uses typed raw Int values and never evaluates u
   assert_true(
     calls.all(command => command == "scopes" || command == "variables"),
   )
+}
+
+///|
+async test "shared scalar reader traverses fields and rejects stale or non-scalar values" {
+  let mut epoch = Some(1)
+  let inspector = VariableInspector::new(
+    (command, args) => {
+      tree_reply(
+        command,
+        match command {
+          "scopes" =>
+            { "scopes": [{ "name": "Locals", "variablesReference": 100 }] }
+          "variables" =>
+            match json_int_field(args, "variablesReference") {
+              Some(100) =>
+                {
+                  "variables": [
+                    {
+                      "name": "point",
+                      "type": "example/Point &",
+                      "value": "0x123",
+                      "variablesReference": 101,
+                    },
+                    {
+                      "name": "limit",
+                      "type": "unsigned int",
+                      "value": "7",
+                      "variablesReference": 0,
+                    },
+                    {
+                      "name": "flag",
+                      "type": "bool",
+                      "value": "true",
+                      "variablesReference": 0,
+                    },
+                    {
+                      "name": "stale",
+                      "type": "example/Point &",
+                      "value": "0x456",
+                      "variablesReference": 102,
+                    },
+                  ],
+                }
+              Some(101) =>
+                {
+                  "variables": [
+                    {
+                      "name": "x",
+                      "type": "int",
+                      "value": "7",
+                      "variablesReference": 0,
+                    },
+                  ],
+                }
+              Some(102) => {
+                epoch = None
+                {
+                  "variables": [
+                    {
+                      "name": "x",
+                      "type": "int",
+                      "value": "7",
+                      "variablesReference": 0,
+                    },
+                  ],
+                }
+              }
+              _ => fail(args.stringify())
+            }
+          _ => fail(command)
+        },
+      )
+    },
+    () => epoch,
+    {},
+  )
+  assert_eq(
+    inspector.read_scalar(
+      10,
+      @debugger.VariablePath::with_fields("point", ["x"]),
+    ),
+    @expression.IntValue(7),
+  )
+  assert_eq(
+    inspector.read_scalar(10, @debugger.VariablePath::root("flag")),
+    @expression.BoolValue(true),
+  )
+  for
+    (text, fragment) in [
+      ("point.x == limit", "type mismatch"),
+      ("point == point", "Unsupported"),
+      ("point.x == missing", "missing"),
+      ("point.missing == 0", "missing"),
+    ] {
+    assert_true(
+      inspector.test_conditions(10, [@expression.Condition::parse(text)])
+      is Err(message) &&
+      message.contains(fragment),
+      msg=text,
+    )
+  }
+  assert_true(
+    inspector.test_conditions(10, [@expression.Condition::parse("stale.x == 7")])
+    is Err(_),
+  )
+}
+
+///|
+async test "scalar reader rejects manually constructed invalid paths before backend IO" {
+  let inspector = VariableInspector::new(
+    (command, _) => fail("Unexpected backend request: \{command}"),
+    () => Some(1),
+    {},
+  )
+  for
+    path in [
+      @debugger.VariablePath::root("f()"),
+      @debugger.VariablePath::with_fields("point", ["x + 1"]),
+      @debugger.VariablePath::new("arr", [@debugger.VariablePathStep::Index(-1)]),
+    ] {
+    assert_true(
+      try {
+        inspector.read_scalar(10, path) |> ignore
+        false
+      } catch {
+        @expression.ConditionError(message) =>
+          message == "Invalid variable path"
+        _ => false
+      },
+    )
+  }
 }

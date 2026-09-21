@@ -262,7 +262,13 @@ test "print spec accepts deterministic field and index paths only" {
     fail("a valid field path should be structured")
   }
   assert_eq(path.root_name(), "line")
-  assert_true(path.steps() is [@debugger.Field("start"), @debugger.Field("x")])
+  assert_true(
+    path.steps()
+    is [
+      @debugger.VariablePathStep::Field("start"),
+      @debugger.VariablePathStep::Field("x"),
+    ],
+  )
   assert_eq(path.display_name(), "line.start.x")
   guard parse_variable_path("lines[000].start[12].x") is Some(mixed) else {
     fail("a valid mixed path should be structured")
@@ -270,10 +276,10 @@ test "print spec accepts deterministic field and index paths only" {
   assert_true(
     mixed.steps()
     is [
-      @debugger.Index(0),
-      @debugger.Field("start"),
-      @debugger.Index(12),
-      @debugger.Field("x"),
+      @debugger.VariablePathStep::Index(0),
+      @debugger.VariablePathStep::Field("start"),
+      @debugger.VariablePathStep::Index(12),
+      @debugger.VariablePathStep::Field("x"),
     ],
   )
   assert_eq(mixed.display_name(), "lines[0].start[12].x")

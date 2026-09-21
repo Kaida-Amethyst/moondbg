@@ -3,7 +3,7 @@ priv struct LogicalSourceBreakpoint {
   id : Int
   source_path : String
   requested_line : Int
-  condition : @expression.IntCondition?
+  condition : @expression.Condition?
 } derive(Eq)
 
 ///|
@@ -243,7 +243,7 @@ async fn DebugExecution::configure_source_breakpoints(
     )
   }
   apply_breakpoint_response(self.breakpoint_state, source_breakpoints, response)
-  let bindings : Array[(Int, @expression.IntCondition?)] = []
+  let bindings : Array[(Int, @expression.Condition?)] = []
   for point in source_breakpoints {
     if self.breakpoint_state.outcomes.get(point.id)
       is Some({ dap_id: Some(id), .. }) {

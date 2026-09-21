@@ -47,7 +47,7 @@ VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**
 - 暂不支持 attach、会话内 restart、条件断点、程序参数、环境变量覆盖及交互式 stdin。
   修改代码后重新启动调试；行号与变量可见性仍受编译器 DWARF 和 LLDB 限制。
 
-以上为已发布版本范围；当前源码新增的简单行条件断点见下方“条件断点（开发版本，第一轮）”。
+以上为已发布版本范围；当前源码新增的行条件断点见下方“条件断点（开发版本）”。
 
 VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，本地 VSIX 打包见
 [打包说明](extensions/vscode/PACKAGING.md)。安装后可在普通 VS Code 窗口调试，不需要扩展开发窗口。
@@ -58,9 +58,9 @@ VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，
 普通函数名需要 `package` 启动上下文；预编译 `program` 模式仅支持 `main`。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
-### 条件断点（开发版本，第一轮）
+### 条件断点（开发版本）
 
-当前源码支持 **行断点** 的简单条件，两种前端使用同一套 MoonBit Int 比较逻辑。
+当前源码支持 **行断点** 的简单条件，两种前端使用同一套带类型的标量比较逻辑。
 这不是任意 MoonBit 表达式求值，也不会将条件交给 LLDB 的 C/C++ 表达式求值器。
 
 在仓库根目录构建后体验：
@@ -89,11 +89,32 @@ VS Code 打开 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行 `print
 已有红点可以右键编辑条件。停住后变量面板、悬停或 Watch 可查看 `i = 7`。
 只需更新 CLI，无需重新安装 VSIX；下一次启动调试时会重新读取条件断点能力。
 
-第一轮边界：
+第二轮增加变量路径和类型化比较。可运行 `moondbg conditional_paths`，在第 32 行设置：
 
-- 左侧仅支持当前命中 frame 的简单局部变量名（ASCII 字母、数字、下划线），类型必须为 `Int`。
-- 右侧为十进制 Int 常量（可带负号，范围 -2147483648 到 2147483647）。支持 `>`、`>=`、`<`、`<=`、`==`、`!=`。
-- 暂不支持函数断点条件、成员/下标访问、变量间比较、Double、算术、逻辑组合、命中次数或 logpoint。
+```text
+(moondbg) b conditional_paths/main.mbt:32 if scene.points[0].x == limit
+(moondbg) run
+(moondbg) p scene.point.x
+(moondbg) condition 1 ready == true
+(moondbg) run
+(moondbg) condition 1 wide == 9007199254740993
+(moondbg) run
+```
+
+前两种条件停在 `scene.point.x = 7`；最后一种停在 `scene.point.x = 1`，UInt64 比较不会经过 Double，
+不会把相邻的大整数混淆。还支持 `point.x > 5`、`arr[0] == 7`、`line.start.x < limit`。
+VS Code 在同一文件第 32 行右键编辑条件，填入上述样例条件即可；无需修改扩展或重新安装 VSIX。
+样例中的对象集中放在 `scene` 中，对应路径为 `scene.arr[0]`、`scene.line.start.x` 等。
+
+当前边界：
+
+- 左侧为当前命中 frame 的变量路径；右侧可以是变量路径、十进制整数常量或 `true` / `false`。
+  路径与 `p` 共用语法，支持嵌套字段、数组常量下标及组合；不支持 `arr[i]`、负下标或 enum 位置访问。
+- 支持 `Int`、`UInt`、`Int64`、`UInt64` 的 `>`、`>=`、`<`、`<=`、`==`、`!=`；`Bool` 只支持 `==`、`!=`。
+- 两侧路径必须同类型，不做 Int/UInt、Int/Int64、Bool/Int 等隐式转换。整数常量按左侧类型解析并严格检查范围，
+  例如 `unsigned == 8` 可以，`unsigned == -1` 会报错；`ready == 1` 也会报错。
+  超出 Int64/UInt64 总范围的常量在设置时拒绝，具体左侧类型的越界在命中读取后报告。
+- 暂不支持 Float/Double（需要精确读取契约）、Char、String、对象整体比较、函数断点条件、算术、逻辑组合、命中次数或 logpoint。
 - 条件读取失败（变量不存在、不可用或类型不符）会停住并报告错误，不当成 false。
 - run/continue 在条件为假时自动继续；单步保留 LLDB 的真实停止，不为跳过条件断点而额外继续。
 - panic、信号、主动暂停及同时命中的无条件断点不会被条件过滤隐藏。无法可靠识别命中 ID 时也保留停止。

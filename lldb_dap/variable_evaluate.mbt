@@ -9,8 +9,8 @@ pub suberror VariableEvaluationError {
 pub fn VariableNode::evaluate_name(self : VariableNode) -> String? {
   let steps = self.access.map(step => {
     match step {
-      Member(name) => @debugger.Field(name)
-      Element(index) => @debugger.Index(index)
+      Member(name) => @debugger.VariablePathStep::Field(name)
+      Element(index) => @debugger.VariablePathStep::Index(index)
     }
   })
   let path = @debugger.VariablePath::new(self.root, steps)
@@ -43,8 +43,8 @@ pub async fn VariableInspector::tree_evaluate(
     .iter()
     .map(step => {
       match step {
-        @debugger.Field(name) => Member(name)
-        @debugger.Index(index) => Element(index)
+        @debugger.VariablePathStep::Field(name) => Member(name)
+        @debugger.VariablePathStep::Index(index) => Element(index)
       }
     })
     .collect()
