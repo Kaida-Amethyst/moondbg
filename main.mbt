@@ -49,6 +49,7 @@ fn adapter_preparation_timeout_ms() -> Int {
 async fn run(
   executable : String,
   debug_context : @debugger.DebugContext,
+  project_sources : Array[String],
 ) -> Unit {
   let executable = validate_executable(executable)
   @async.with_task_group(async fn(group) {
@@ -61,6 +62,7 @@ async fn run(
       executable,
       backend.as_debug_backend(),
       debug_context~,
+      project_sources~,
     )
     defer session.close()
     let history = @readline.History::new()
@@ -154,7 +156,7 @@ async fn main {
     } else {
       debug_context
     }
-    run(executable, debug_context)
+    run(executable, debug_context, prepared.project_sources)
   } catch {
     error => {
       let message = match error {

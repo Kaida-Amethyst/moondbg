@@ -39,6 +39,10 @@ fn print_command_spec() -> CommandSpec {
 impl ReplCommand for CommandPrint with fn execute(self, context) {
   let events : Array[PresentationEvent] = []
   let result = context.session.find_variable(self.path) catch {
+    @debugger.NoFrameSelected =>
+      return CommandResult::continuing(events=[
+        FrameSelectionFailurePresentation(CurrentFrameUnavailable),
+      ])
     @debugger.OperationNotAllowed(state~, action~) => {
       events.push(OperationNotAllowedPresentation(state, action))
       return CommandResult::continuing(events~)

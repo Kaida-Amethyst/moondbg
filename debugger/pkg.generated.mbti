@@ -216,7 +216,7 @@ pub fn DebugSession::function_breakpoints(Self) -> Array[FunctionBreakpointSnaps
 pub fn DebugSession::last_stop_snapshot(Self) -> StopSnapshot?
 pub async fn DebugSession::local_variables(Self) -> LocalVariablesSnapshot
 pub async fn DebugSession::manage_breakpoint(Self, Int, BreakpointOperation) -> BreakpointManagementResult
-pub fn DebugSession::new(String, &DebugBackend, debug_context? : DebugContext) -> Self
+pub fn DebugSession::new(String, &DebugBackend, debug_context? : DebugContext, project_sources? : Array[String]) -> Self
 pub async fn DebugSession::next(Self) -> RunOutcome
 pub async fn DebugSession::run(Self) -> RunOutcome
 pub async fn DebugSession::select_frame(Self, Int) -> StackFrameSnapshot raise DebugSessionError
@@ -488,7 +488,8 @@ pub struct StopSnapshot {
 pub fn StopSnapshot::column(Self) -> Int?
 pub fn StopSnapshot::function_name(Self) -> String
 pub fn StopSnapshot::line(Self) -> Int?
-pub fn StopSnapshot::new(String, String, String?, Int?, Int?) -> Self
+pub fn StopSnapshot::new(String, String, String?, Int?, Int?, notice? : String?) -> Self
+pub fn StopSnapshot::notice(Self) -> String?
 pub fn StopSnapshot::reason(Self) -> String
 pub fn StopSnapshot::source_path(Self) -> String?
 

@@ -185,6 +185,9 @@ fn render_stop_header(snapshot : @debugger.StopSnapshot) -> Unit {
   println(
     "Stopped (\{snapshot.reason()}) in \{snapshot.function_name()} at \{stop_location(snapshot)}",
   )
+  if snapshot.notice() is Some(notice) {
+    println(notice)
+  }
 }
 
 ///|

@@ -111,9 +111,16 @@ moondbg panic_stop
 无需设置断点，直接输入 `run`。停止后用 `bt` 查看 MoonBit 调用栈，
 `bt --all` 显示包括 runtime 在内的完整栈，`quit` 退出。
 `breakpoints` 仍显示 `No breakpoints.`。
-这一步沿用现有源码 frame 选择方式，尚未新增 panic 专用的项目 frame 选择策略。
+panic 时自动选择最近的项目源码 frame，跳过 core 与第三方依赖；项目自己的 library 包也属于项目源码。
+显示的位置、`locals` 和 `p` 使用同一个 frame，`bt --all` 保留完整栈及物理编号。
+没有匹配的项目源码 frame 时明确提示，不自动选择依赖代码；可用 `frame <id>` 手动选择。
+直接调试预编译可执行文件时没有项目源码元数据，也会提示手动选择，不根据当前目录猜测。
 变量可能因编译器调试信息限制而不可用；只报告 panic，不推断越界等具体原因。
 继续执行将完成原来的终止流程，可能随后因 SIGABRT 再次停止，并不恢复正常运行。
+
+要验证跳过 core 的 `abort` frame，在同一示例项目运行 `moondbg panic_context`，输入
+`run`、`locals`、`p value`、`bt --all`。预期停在项目的 `panic_context_lib/fail.mbt:4`，
+当前测试工具链下可看到 `value = 42`，而不是停在 core 的 `abort.mbt`。
 
 ### 构建和验收
 

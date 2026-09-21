@@ -1,0 +1,2 @@
+import { "Kaida-Amethyst/moondbg-dwarf-probe/panic_context_lib" @probe }
+options("is-main": true)

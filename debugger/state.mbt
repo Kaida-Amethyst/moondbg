@@ -177,7 +177,9 @@ fn DebugApplicationState::update_stack(
     raise OperationNotAllowed(state=self.phase, action="load stack frames")
   }
   stop.stack = stack
-  if stop.frame is None {
+  // A panic without project context intentionally has no selection. Loading
+  // more frames for `bt --all` must not silently select a core/library frame.
+  if stop.frame is None && stop.snapshot.reason() != "MoonBit panic" {
     stop.frame = stack.default_selection()
   }
 }
@@ -201,6 +203,7 @@ fn DebugApplicationState::accept_stopped(
   self : DebugApplicationState,
   snapshot : StopSnapshot,
   stack : StackSnapshot,
+  selection : FrameSelection?,
 ) -> Unit {
   self.stop_number += 1
   let execution = ExecutionEpoch::new(self.execution_number)
@@ -209,7 +212,7 @@ fn DebugApplicationState::accept_stopped(
     snapshot,
     thread: stack.thread(),
     stack,
-    frame: stack.default_selection(),
+    frame: selection,
   })
   self.phase = Stopped
 }

@@ -22,6 +22,7 @@ pub struct PreparedTarget {
   executable : String
   debug_context : @debugger.DebugContext
   working_directory : String
+  project_sources : Array[String]
 }
 
 // Type aliases

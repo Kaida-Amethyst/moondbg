@@ -18,6 +18,7 @@ pub struct PreparedTarget {
   executable : String
   debug_context : @debugger.DebugContext
   working_directory : String
+  project_sources : Array[String]
 }
 
 ///|
@@ -67,6 +68,7 @@ pub async fn prepare_target(
           executable,
           debug_context: @debugger.DebugContext::empty(),
           working_directory: @fs.realpath("."),
+          project_sources: [],
         }
       }
       Directory => Some(@fs.realpath(target))
@@ -110,6 +112,7 @@ pub async fn prepare_target(
     executable,
     debug_context: @debugger.DebugContext::new(pkg.name, pkg.aliases),
     working_directory: project,
+    project_sources: local_debug_sources(metadata),
   }
 }
 

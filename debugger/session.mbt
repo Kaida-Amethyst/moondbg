@@ -8,6 +8,7 @@ pub struct DebugSession {
   priv mut next_breakpoint_id : Int
   priv backend : &DebugBackend
   priv debug_context : DebugContext
+  priv project_sources : Map[String, Bool]
   priv application : DebugApplicationState
   priv source_sync_results : Map[Int, BreakpointSnapshot]
   priv function_sync_results : Map[Int, FunctionBreakpointSnapshot]
@@ -19,7 +20,12 @@ pub fn DebugSession::new(
   executable : String,
   backend : &DebugBackend,
   debug_context? : DebugContext = DebugContext::empty(),
+  project_sources? : Array[String] = [],
 ) -> DebugSession {
+  let sources : Map[String, Bool] = Map([])
+  for path in project_sources {
+    sources.set(path, true)
+  }
   {
     executable,
     source_breakpoints: [],
@@ -27,6 +33,7 @@ pub fn DebugSession::new(
     next_breakpoint_id: 1,
     backend,
     debug_context,
+    project_sources: sources,
     application: DebugApplicationState::new(),
     source_sync_results: Map([]),
     function_sync_results: Map([]),
@@ -282,13 +289,25 @@ async fn DebugSession::accept_outcome(
           next_state=Ready,
         )
       }
+      let is_panic = snapshot.reason() == "MoonBit panic"
       let stack = for stack = initial {
-        if stack.default_selection() is Some(_) || stack.is_complete() {
+        let found = if is_panic {
+          self.project_sources.is_empty() ||
+          self.panic_project_frame(stack) is Some(_)
+        } else {
+          stack.default_selection() is Some(_)
+        }
+        if found || stack.is_complete() {
           break stack
         }
         continue self.request_stack_extension(stack)
       }
-      let initial_snapshot = match stack.default_selection() {
+      let selection = if is_panic {
+        self.panic_project_frame(stack)
+      } else {
+        stack.default_selection()
+      }
+      let initial_snapshot = match selection {
         Some(selection) =>
           match stack.frame(selection.index()) {
             Some(frame) =>
@@ -301,9 +320,24 @@ async fn DebugSession::accept_outcome(
               )
             None => snapshot
           }
+        None if is_panic =>
+          StopSnapshot::new(
+            snapshot.reason(),
+            "moonbit_panic",
+            None,
+            None,
+            None,
+            notice=Some(
+              if self.project_sources.is_empty() {
+                "Project source context is unavailable; no frame selected. Use 'bt --all' and 'frame <id>' to inspect manually."
+              } else {
+                "No project source frame with a valid source location was found; no frame selected. Use 'bt --all' and 'frame <id>' to inspect manually."
+              },
+            ),
+          )
         None => snapshot
       }
-      self.application.accept_stopped(initial_snapshot, stack)
+      self.application.accept_stopped(initial_snapshot, stack, selection)
       RunOutcome::stopped(initial_snapshot)
     }
     Exited(exit_code) => {
@@ -436,12 +470,14 @@ pub async fn DebugSession::find_variable(
   path : VariablePath,
 ) -> VariableLookupResult {
   guard self.application.phase is Stopped &&
-    self.application.selected_thread() is Some(thread) &&
-    self.application.selected_frame() is Some(frame) else {
+    self.application.selected_thread() is Some(thread) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.application.phase,
       action="inspect a variable",
     )
+  }
+  guard self.application.selected_frame() is Some(frame) else {
+    raise NoFrameSelected
   }
   self.backend.find_variable(thread, frame, path) catch {
     DebugBackendError::BackendFailure(message) =>
@@ -456,12 +492,14 @@ pub async fn DebugSession::local_variables(
   self : DebugSession,
 ) -> LocalVariablesSnapshot {
   guard self.application.phase is Stopped &&
-    self.application.selected_thread() is Some(thread) &&
-    self.application.selected_frame() is Some(frame) else {
+    self.application.selected_thread() is Some(thread) else {
     raise DebugSessionError::OperationNotAllowed(
       state=self.application.phase,
       action="inspect local variables",
     )
+  }
+  guard self.application.selected_frame() is Some(frame) else {
+    raise NoFrameSelected
   }
   self.backend.local_variables(thread, frame) catch {
     DebugBackendError::BackendFailure(message) =>

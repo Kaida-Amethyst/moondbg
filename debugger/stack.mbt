@@ -473,6 +473,7 @@ pub struct StopSnapshot {
   priv source_path : String?
   priv line : Int?
   priv column : Int?
+  priv notice : String?
 }
 
 ///|
@@ -483,8 +484,14 @@ pub fn StopSnapshot::new(
   source_path : String?,
   line : Int?,
   column : Int?,
+  notice? : String? = None,
 ) -> StopSnapshot {
-  { reason, function_name, source_path, line, column, }
+  { reason, function_name, source_path, line, column, notice, }
+}
+
+///|
+pub fn StopSnapshot::notice(self : StopSnapshot) -> String? {
+  self.notice
 }
 
 ///|

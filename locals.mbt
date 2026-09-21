@@ -26,6 +26,10 @@ fn locals_command_spec() -> CommandSpec {
 ///|
 impl ReplCommand for CommandLocals with fn execute(_self, context) {
   let snapshot = context.session.local_variables() catch {
+    @debugger.NoFrameSelected =>
+      return CommandResult::continuing(events=[
+        FrameSelectionFailurePresentation(CurrentFrameUnavailable),
+      ])
     @debugger.OperationNotAllowed(state~, action~) =>
       return CommandResult::continuing(events=[
         OperationNotAllowedPresentation(state, action),

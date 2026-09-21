@@ -1,4 +1,33 @@
 ///|
+/// Only compiler-listed local production sources belong to this project.
+/// Retain both metadata and canonical paths for workspaces opened via symlinks.
+async fn local_debug_sources(text : String) -> Array[String] {
+  guard @json.parse(text) is { "packages": Array(entries), .. } else {
+    raise LaunchError("invalid package metadata")
+  }
+  let sources : Map[String, Bool] = Map([])
+  for entry in entries {
+    guard entry is { "is-third-party": False, "files": Object(files), .. } else {
+      continue
+    }
+    for path, condition in files {
+      guard path.has_suffix(".mbt") &&
+        condition
+        is { "backend": Array(backends), "optlevel": Array(levels), .. } &&
+        backends.contains(Json("Native")) &&
+        levels.contains(Json("Debug")) &&
+        @fs.exists(path) &&
+        @fs.kind(path) is Regular else {
+        continue
+      }
+      sources.set(path, true)
+      sources.set(@fs.realpath(path), true)
+    }
+  }
+  sources.keys().collect()
+}
+
+///|
 async fn check_packages(
   project : String,
   output~ : async (String, String) -> Unit,
