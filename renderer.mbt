@@ -373,19 +373,26 @@ fn append_variable_lines(
   match variable.content() {
     @debugger.VariableLeaf =>
       lines.push("\{prefix}\{label} = \{variable.value()}")
-    @debugger.VariableStructure(structure) => {
+    @debugger.VariableStructure(structure)
+    | @debugger.VariableTuple(structure) => {
+      let (opening, closing) = if variable.content()
+        is @debugger.VariableTuple(_) {
+        ("(", ")")
+      } else {
+        ("{", "}")
+      }
       let children = structure.children()
       if children is [] && !structure.is_truncated() {
-        lines.push("\{prefix}\{label} = {}")
+        lines.push("\{prefix}\{label} = \{opening}\{closing}")
       } else {
-        lines.push("\{prefix}\{label} = {")
+        lines.push("\{prefix}\{label} = \{opening}")
         for child in children {
           append_variable_lines(lines, child, indentation + 2)
         }
         if structure.is_truncated() {
           lines.push("\{prefix}  …")
         }
-        lines.push("\{prefix}}")
+        lines.push("\{prefix}\{closing}")
       }
     }
     @debugger.VariableIndexedCollection(collection) =>

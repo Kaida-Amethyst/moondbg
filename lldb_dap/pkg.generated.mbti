@@ -20,7 +20,8 @@ pub fn BufferInspectionError::to_repr(Self) -> @debug.Repr
 
 pub suberror VariableEvaluationError {
   VariableEvaluationError(String)
-}
+} derive(@debug.Debug)
+pub fn VariableEvaluationError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct BreakpointConditions {

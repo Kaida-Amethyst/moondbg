@@ -305,6 +305,7 @@ pub fn VariableEnumSnapshot::payload(
 pub enum VariableContent {
   VariableLeaf
   VariableStructure(VariableStructureSnapshot)
+  VariableTuple(VariableStructureSnapshot)
   VariableIndexedCollection(IndexedCollectionSnapshot)
   VariableEnum(VariableEnumSnapshot)
 } derive(Eq, Debug)
@@ -337,6 +338,21 @@ pub fn VariableSnapshot::new(
   type_name : String?,
 ) -> VariableSnapshot {
   { name, value, type_name, content: VariableLeaf, }
+}
+
+///|
+pub fn VariableSnapshot::tuple(
+  name : String,
+  type_name : String?,
+  children : Array[VariableSnapshot],
+  truncated~ : Bool,
+) -> VariableSnapshot {
+  {
+    name,
+    value: "",
+    type_name,
+    content: VariableTuple(VariableStructureSnapshot::new(children, truncated)),
+  }
 }
 
 ///|

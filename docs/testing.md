@@ -129,6 +129,21 @@ MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/text_bytes_wbtest.mbt --no-p
 
 真实 VS Code 宿主入口为 `extensions/vscode/test/text-bytes-host.js`。
 
+## tuple / Result 位置成员验收
+
+`lldb_dap/positional_wbtest.mbt` 验证按 `.N` 名称而非 adapter 返回顺序定位、成员缺失/重复拒绝、
+tuple 物化与变量树/Watch 的定位一致性。路径解析覆盖位置、字段、数组下标和终端范围的组合。
+
+```sh
+moon build --target native -g .
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/positional_values_wbtest.mbt --no-parallelize
+```
+
+真实 REPL / DAP 覆盖 tuple、嵌套字段、Result 当前载荷、自定义 enum、空构造器、
+非法位置的非致命错误、Ok → Err 后的新类型、旧引用失效。另覆盖数组元素中的 tuple、
+位置成员中的基本类型数组，以及 LLDB 不支持的位置成员内复合数组的明确失败。
+真实 VS Code 宿主入口为 `extensions/vscode/test/positional-host.js`。
+
 ## 可选 Python 诊断回归
 
 `tools/repl_e2e.py` 与 `tools/fake_dap.py` 暂时保留为可选的跨进程诊断基线，不被任何默认

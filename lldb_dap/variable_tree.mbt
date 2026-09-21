@@ -1,6 +1,7 @@
 ///|
 priv enum TreeAccess {
   Member(String)
+  Position(Int)
   Element(Int)
   BufferRange(Int, Int)
 }
@@ -77,28 +78,23 @@ async fn VariableInspector::describe_node(
         indexed_children: layout.total_length,
       }
     }
+    if self.positional_members(identity, variable) is Some((kind, children)) {
+      return {
+        ..base,
+        value: if variable.is_tuple_type() {
+          base.type_name.unwrap_or("tuple")
+        } else {
+          kind
+        },
+        named_children: children.length(),
+      }
+    }
     guard variable.variables_reference > 0 else { return base }
     let children = self.load_variables(identity, variable.variables_reference)
-    match detect_dap_enum_layout(children) {
-      DapEnum(variants) => {
-        let active = self.active_enum_variant(variants)
-        let payload = if active.payload_reference > 0 {
-          self.load_variables(identity, active.payload_reference)
-        } else {
-          []
-        }
-        {
-          ..base,
-          value: active.variant_name,
-          named_children: payload.length(),
-        }
-      }
-      NotDapEnum =>
-        {
-          ..base,
-          value: base.type_name.unwrap_or(variable.value),
-          named_children: children.length(),
-        }
+    {
+      ..base,
+      value: base.type_name.unwrap_or(variable.value),
+      named_children: children.length(),
     }
   } catch {
     error => {
@@ -132,19 +128,11 @@ async fn VariableInspector::tree_direct_children(
   identity : VariableCacheIdentity,
   variable : DapVariable,
 ) -> Array[DapVariable] {
-  guard variable.variables_reference > 0 else { return [] }
-  let children = self.load_variables(identity, variable.variables_reference)
-  match detect_dap_enum_layout(children) {
-    NotDapEnum => children
-    DapEnum(variants) => {
-      let active = self.active_enum_variant(variants)
-      if active.payload_reference > 0 {
-        self.load_variables(identity, active.payload_reference)
-      } else {
-        []
-      }
-    }
+  if self.positional_members(identity, variable) is Some((_, children)) {
+    return children
   }
+  guard variable.variables_reference > 0 else { return [] }
+  self.load_variables(identity, variable.variables_reference)
 }
 
 ///|
@@ -161,6 +149,14 @@ async fn VariableInspector::resolve_tree_node(
   }
   for variable = root, index = 0; index < node.access.length(); {
     let child = match node.access[index] {
+      Position(position) =>
+        match self.resolve_position(identity, variable, "tree", position) {
+          DapVariableResolved(child) => child
+          DapVariableResolutionFailed(@debugger.VariableLookupFailed(failure)) =>
+            raise VariableEvaluationError(failure.message())
+          DapVariableResolutionFailed(_) =>
+            raise VariableEvaluationError("Positional member is unavailable")
+        }
       BufferRange(_, _) =>
         raise BufferInspectionError("Content ranges are leaves")
       Member(name) => {
@@ -180,6 +176,8 @@ async fn VariableInspector::resolve_tree_node(
             variable,
           ) {
           DapVariableResolved(variable) => variable
+          DapVariableResolutionFailed(@debugger.VariableLookupFailed(failure)) =>
+            raise VariableEvaluationError(failure.message())
           DapVariableResolutionFailed(_) =>
             raise InvalidMessage(Json("Array element is unavailable"))
         }
@@ -291,17 +289,27 @@ pub async fn VariableInspector::tree_children(
                   access,
                 ),
               )
+            DapVariableResolutionFailed(@debugger.VariableLookupFailed(failure)) =>
+              raise VariableEvaluationError(failure.message())
             DapVariableResolutionFailed(_) =>
               raise InvalidIndexedElementValue("Element \{i} is unavailable")
           }
         }
     }
   } else {
-    let children = self.tree_direct_children(identity, variable)
+    let positional = self.positional_members(identity, variable)
+    let children = match positional {
+      Some((_, children)) => children
+      None => self.tree_direct_children(identity, variable)
+    }
     for i in start..<(start + count.min((children.length() - start).max(0))) {
       let child = children[i]
       let access = node.access.copy()
-      access.push(Member(child.name))
+      if positional is Some(_) {
+        access.push(Position(i))
+      } else {
+        access.push(Member(child.name))
+      }
       result.push(self.describe_node(identity, child, node.root, access))
     }
   }

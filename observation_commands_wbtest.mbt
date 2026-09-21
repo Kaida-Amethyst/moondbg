@@ -245,7 +245,8 @@ test "print spec accepts deterministic field and index paths only" {
   for
     valid in [
       "print answer", "p input", "p 结果", "p point.x", "p line.start.x", "p 线段.起点.x1",
-      "p arr[0]", "p arr[00012].x", "p lines[0].start.x", "p matrix[1][2]",
+      "p arr[0]", "p arr[00012].x", "p lines[0].start.x", "p matrix[1][2]", "p arr[0].0",
+      "p pair.0", "p result.0.x",
     ] {
     assert_true(registry.parse_line(valid) is RegistryCommand(_), msg=valid)
   }
@@ -254,7 +255,7 @@ test "print spec accepts deterministic field and index paths only" {
       "p", "print", "p .x", "p x.", "p x..y", "p x .y", "p x. y", "p answer + 1",
       "p point()", "p 42", "p point.2x", "p arr[]", "p arr[-1]", "p arr[+1]", "p arr[ 1]",
       "p arr[1 ]", "p arr[1", "p arr1]", "p arr[1]tail", "p arr[999999999999999999999999999999999999999999]",
-      "p arr[0].0", "p arr[0]..x", "p arr[0].", "p arr [0]", "p arr[0] x",
+      "p arr[0].-1", "p arr[0]..x", "p arr[0].", "p arr [0]", "p arr[0] x",
     ] {
     assert_true(registry.parse_line(invalid) is RegistryInvalid(_), msg=invalid)
   }

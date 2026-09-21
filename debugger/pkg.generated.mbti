@@ -513,6 +513,7 @@ pub fn ThreadSelection::to_repr(Self) -> @debug.Repr
 pub enum VariableContent {
   VariableLeaf
   VariableStructure(VariableStructureSnapshot)
+  VariableTuple(VariableStructureSnapshot)
   VariableIndexedCollection(IndexedCollectionSnapshot)
   VariableEnum(VariableEnumSnapshot)
 } derive(Eq, @debug.Debug)
@@ -586,6 +587,7 @@ pub fn VariableSnapshot::new(String, String, String?) -> Self
 pub fn VariableSnapshot::not_equal(Self, Self) -> Bool
 pub fn VariableSnapshot::to_repr(Self) -> @debug.Repr
 pub fn VariableSnapshot::truncated(String, String, String?, Array[Self]) -> Self
+pub fn VariableSnapshot::tuple(String, String?, Array[Self], truncated~ : Bool) -> Self
 pub fn VariableSnapshot::type_name(Self) -> String?
 pub fn VariableSnapshot::value(Self) -> String
 

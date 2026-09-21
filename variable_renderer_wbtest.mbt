@@ -1,4 +1,23 @@
 ///|
+test "tuple renderer labels positions and preserves truncation" {
+  let tuple = @debugger.VariableSnapshot::tuple(
+    "pair",
+    Some("(Int, Int) &"),
+    [@debugger.VariableSnapshot::new(".0", "42", Some("int"))],
+    truncated=true,
+  )
+  inspect(
+    variable_lines(tuple).join("\n"),
+    content=(
+      #|pair: (Int, Int) = (
+      #|  .0: Int = 42
+      #|  …
+      #|)
+    ),
+  )
+}
+
+///|
 test "struct variable renderer uses MoonBit names and stable nesting" {
   let line = @debugger.VariableSnapshot::expanded(
     "line1",

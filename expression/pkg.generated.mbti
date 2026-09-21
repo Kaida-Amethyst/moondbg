@@ -56,6 +56,7 @@ pub fn VariablePath::without_range(Self) -> Self
 
 pub(all) enum VariablePathStep {
   Field(String)
+  Position(Int)
   Index(Int)
 } derive(Eq, @debug.Debug)
 pub fn VariablePathStep::equal(Self, Self) -> Bool

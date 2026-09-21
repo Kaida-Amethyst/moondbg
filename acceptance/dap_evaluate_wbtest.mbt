@@ -101,11 +101,12 @@ async test "DAP evaluate supports hover watch console paths expandable values an
     assert_true(list is { "result": String("Cons"), .. })
     let payload = peer.children_of(list)
     assert_true(named_variable(payload, ".0") is { "value": String("3"), .. })
-    // Positional enum paths aren't part of the grammar yet: don't advertise one.
-    guard named_variable(payload, ".1") is Object(fields) else {
-      fail("payload")
-    }
-    assert_false(fields.contains("evaluateName"))
+    assert_true(
+      named_variable(payload, ".1") is { "evaluateName": String("list.1"), .. },
+    )
+    assert_true(
+      peer.evaluate_path(top, "list.1.0") is { "result": String("2"), .. },
+    )
     for
       invalid in [
         "missing", "point.missing", "point.x.y", "point[0]", "values[3]", "values[-1]",

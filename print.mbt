@@ -18,7 +18,7 @@ fn parse_print_command(
   }
   guard parse_variable_path(arguments) is Some(path) else {
     return invalid_command(
-      "print only accepts variable paths with fields, non-negative indices, or a terminal [start:end] content range",
+      "print only accepts variable paths with fields, .N positions, non-negative indices, or a terminal [start:end] content range",
     )
   }
   parsed_command(CommandPrint::{ path, })

@@ -950,6 +950,41 @@ async fn VariableInspector::resolve_indexed_element(
     )
   }
   let expression = "\{evaluate_name}[\{index}]"
+  // LLDB emits double-dot evaluateNames for MoonBit positional members.
+  // Such paths are not C expressions; don't submit them to the evaluator or
+  // turn this inspection limitation into a fatal adapter/session failure.
+  if evaluate_name.contains("..") {
+    // Scalar array pages already use this exact memory layout in the tree.
+    // Reuse it for paths so expanding an element and watching it agree.
+    if layout.element_type is @runtime_value.NativeArrayScalar(scalar) &&
+      layout.payload_pointer is PayloadPointer(pointer) {
+      let offset = index.to_int64() * scalar.byte_width().to_int64()
+      guard offset <= 2147483647L else {
+        raise VariableEvaluationError(
+          "Array element offset exceeds supported memory range",
+        )
+      }
+      let bytes = self.read_memory(
+        pointer,
+        offset.to_int(),
+        scalar.byte_width(),
+      )
+      let values = @runtime_value.decode_scalar_payload(scalar, bytes, 1)
+      self.ensure_variable_identity(identity)
+      return DapVariableResolved({
+        name: element_name,
+        value: values[0],
+        type_name: Some(scalar.source_name()),
+        variables_reference: 0,
+        evaluate_name: None,
+      })
+    }
+    return DapVariableResolutionFailed(
+      @debugger.VariableLookupResult::inspection_failed(
+        element_name, "Array element access through a positional member is not supported by this LLDB evaluateName",
+      ),
+    )
+  }
   let response = self.request("evaluate", {
     "expression": expression,
     "frameId": frame_id,
@@ -1442,6 +1477,9 @@ async fn VariableInspector::materialize_variable(
       [],
     )
   }
+  if variable.is_tuple_type() {
+    return self.materialize_tuple(identity, variable, depth, budget)
+  }
   if variable.buffer_kind() is Some(_) {
     return self.buffer_snapshot(identity, variable, variable.name, None)
   }
@@ -1566,6 +1604,15 @@ async fn VariableInspector::resolve_variable_path(
   let mut owner = path.root_name()
   for step in path.steps() {
     match step {
+      @debugger.VariablePathStep::Position(position) =>
+        match self.resolve_position(identity, variable, owner, position) {
+          DapVariableResolved(child) => {
+            variable = child
+            owner = "\{owner}.\{position}"
+          }
+          DapVariableResolutionFailed(result) =>
+            return DapVariableResolutionFailed(result)
+        }
       @debugger.VariablePathStep::Field(field) => {
         guard variable.is_moonbit_struct_type() else {
           return DapVariableResolutionFailed(
@@ -1682,7 +1729,7 @@ async fn DebugExecution::find_variable(
   let result = self
     .variable_inspector()
     .find_variable_inner(identity, frame_id, path) catch {
-      BufferInspectionError(message) =>
+      BufferInspectionError(message) | VariableEvaluationError(message) =>
         @debugger.VariableLookupResult::inspection_failed(
           path.display_name(),
           message,

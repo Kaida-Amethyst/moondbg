@@ -72,11 +72,30 @@ String 显示带引号的内容，保留中文和 emoji，换行、NUL 等控制
   拆开的代理项显示为 `\ud83d` 等转义，不丢失数据。
 - VS Code：展开 String / Bytes 可逐段查看；Watch 和调试控制台使用同样的路径，**不加 `p`**。
   空内容与读取失败分开显示；继续运行后旧的变量引用失效。
-- 类型名保留嵌套结构，例如 `Result[Point, String]`。本轮不新增 Option 识别或 tuple 路径语法。
+- 类型名保留嵌套结构，例如 `Result[Point, String]`。本轮不新增 Option 识别。
 
 试用：从仓库根目录运行 `moondbg testdata/dwarf_probe/text_bytes`，输入 `b inspect_values`、
 `run`，然后查看 `values.text`、`values.bytes`、`values.long_text`、`values.long_bytes`。
 `moondbg` 须指向本次构建；VS Code 在该包的 `let marker = values.text` 行设断点后按 F5。
+
+### tuple、Result 与位置成员（开发版本）
+
+`.N` 从零开始：对 tuple 表示第 N 项，对 enum（包括 Result）表示**当前构造器**的第 N 个载荷。
+例如 `p pair.0`、`p result.0`、`p result.0.x`。REPL 打印 tuple 会列出 `.0`、`.1` 等成员；
+enum 仍先显示浅层摘要，例如 `Ok(Point)`，需要时再显式访问载荷。
+
+VS Code 展开成员、Add to Watch、Watch 与调试控制台使用同一套位置规则，表达式不加 `p`。
+`Empty.0`、越界位置和对普通 struct 使用 `.0` 会明确报错；继续运行后重新识别当前构造器，
+不会沿用旧的载荷或变量引用。不调用 `Debug` trait，也不求值任意 MoonBit 表达式。
+
+试用：`moondbg testdata/dwarf_probe/positional_values`，在该包的 `let marker = pair.0`
+行打断点后 `run`，查看 `pair`、`result.0.x`、`values.choice.1.y`、`items[0].0`。
+在 `POSITIONAL_CHANGED` 行再停住，`values.changing` 会从 `Ok(Point)` 变为 `Err(String)`。
+
+已知限制：tuple/enum 的位置成员内若包含**复合元素数组**，例如 `values.nested.1[0]`，
+当前 LLDB 生成的数组表达式不可用；展开数组与路径读取均报错，不结束调试会话。
+基本类型数组（如 `values.numbers.1[1]`）走已有内存读取，可正常访问。
+命名变量中的复合数组仍支持 `items[0].0`；后续补齐位置成员内的复合数组读取。
 
 ### 条件断点（开发版本）
 

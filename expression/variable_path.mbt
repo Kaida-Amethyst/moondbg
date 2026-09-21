@@ -2,6 +2,7 @@
 /// One backend-independent step in a variable lookup path.
 pub(all) enum VariablePathStep {
   Field(String)
+  Position(Int)
   Index(Int)
 } derive(Eq, Debug)
 
@@ -91,6 +92,7 @@ pub fn VariablePath::display_name(self : VariablePath) -> String {
         output.write_char('.')
         output.write_string(field)
       }
+      Position(index) => output.write_string(".\{index}")
       Index(index) => {
         output.write_char('[')
         output.write_string(index.to_string())

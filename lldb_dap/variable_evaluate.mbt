@@ -1,17 +1,21 @@
 ///|
 pub suberror VariableEvaluationError {
   VariableEvaluationError(String)
-}
+} derive(Debug)
+
+///|
+pub extend VariableEvaluationError with @debug.Debug::{to_repr}
 
 ///|
 /// A source-level expression suitable for Watch, never an LLDB evaluateName.
-/// Omit paths the current grammar cannot express (e.g. enum positional payloads).
+/// The same source positions are used for tuple items and active enum payloads.
 pub fn VariableNode::evaluate_name(self : VariableNode) -> String? {
   let steps = []
   let mut range = None
   for step in self.access {
     match step {
       Member(name) => steps.push(@debugger.VariablePathStep::Field(name))
+      Position(index) => steps.push(@debugger.VariablePathStep::Position(index))
       Element(index) => steps.push(@debugger.VariablePathStep::Index(index))
       BufferRange(start, end) => range = Some((start, end))
     }
@@ -52,6 +56,7 @@ pub async fn VariableInspector::tree_evaluate(
     .map(step => {
       match step {
         @debugger.VariablePathStep::Field(name) => Member(name)
+        @debugger.VariablePathStep::Position(index) => Position(index)
         @debugger.VariablePathStep::Index(index) => Element(index)
       }
     })

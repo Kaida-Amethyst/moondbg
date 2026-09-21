@@ -83,8 +83,13 @@ pub fn VariablePath::parse(arguments : StringView) -> VariablePath? {
     match cursor.peek() {
       Some(b'.') => {
         cursor.offset += 1
-        guard cursor.take_identifier() is Some(field) else { return None }
-        steps.push(Field(field))
+        if cursor.peek() is Some(b'0'..=b'9') {
+          guard cursor.take_number() is Some(position) else { return None }
+          steps.push(Position(position))
+        } else {
+          guard cursor.take_identifier() is Some(field) else { return None }
+          steps.push(Field(field))
+        }
       }
       Some(b'[') => {
         cursor.offset += 1

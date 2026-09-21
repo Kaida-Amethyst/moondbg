@@ -3,6 +3,7 @@ test "condition grammar reuses paths and preserves exact integer literals" {
   for
     (text, canonical) in [
       ("point.x>5", "point.x > 5"),
+      ("pair.0 == 1", "pair.0 == 1"),
       ("arr[00] == fixed[1]", "arr[0] == fixed[1]"),
       ("line.start.x < limit", "line.start.x < limit"),
       ("points[0].x >= -07", "points[0].x >= -7"),
@@ -17,7 +18,7 @@ test "condition grammar reuses paths and preserves exact integer literals" {
   for
     text in [
       "i = 1", "i > 1.0", "i > 1 & j < 2", "i > 0x10", "i > 1; quit", "i >", "i() > 1",
-      "arr[i] == 0", "a.0 == 1", "a + 1 == 2", "ready > true", "x == 18446744073709551616",
+      "arr[i] == 0", "a.-1 == 1", "a + 1 == 2", "ready > true", "x == 18446744073709551616",
       "x == -9223372036854775809", "text[0:1] == 0", "x == text[0:1]",
     ] {
     assert_true(
