@@ -424,6 +424,7 @@ pub enum VariableLookupFailure {
   VariableIndexAccessOnNonCollection(String, Int, String?)
   VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
+  VariableInspectionFailed(String, String)
 } derive(Eq, Debug)
 
 ///|
@@ -443,6 +444,7 @@ pub fn VariableLookupFailure::requested_path(
     VariableIndexAccessOnNonCollection(owner, index, _) => "\{owner}[\{index}]"
     VariableIndexOutOfBounds(owner, index, _) => "\{owner}[\{index}]"
     VariableUnavailable(path) => path
+    VariableInspectionFailed(path, _) => path
   }
 }
 
@@ -510,4 +512,13 @@ pub fn VariableLookupResult::index_out_of_bounds(
 ///|
 pub fn VariableLookupResult::unavailable(path : String) -> VariableLookupResult {
   VariableLookupFailed(VariableUnavailable(path))
+}
+
+///|
+/// A failed read is not a failed debugger session.
+pub fn VariableLookupResult::inspection_failed(
+  path : String,
+  message : String,
+) -> VariableLookupResult {
+  VariableLookupFailed(VariableInspectionFailed(path, message))
 }

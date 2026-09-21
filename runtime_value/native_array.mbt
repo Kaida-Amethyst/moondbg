@@ -101,13 +101,39 @@ fn opaque_source_name(debug_name : String) -> String {
   while name.strip_suffix(" &") is Some(without_reference) {
     name = without_reference.trim()
   }
-  match name {
+  if native_scalar_from_debug_type(name.to_owned()) is Some(scalar) {
+    return scalar.source_name()
+  }
+  let output = StringBuilder()
+  let mut start = 0
+  for index, ch in name.iter2() {
+    if ch is ('[' | ']' | '(' | ')' | ',') {
+      output.write_string(short_type_token(name[start:index]))
+      output.write_char(ch)
+      if ch == ',' {
+        output.write_char(' ')
+      }
+      start = index + 1
+    }
+  }
+  output.write_string(short_type_token(name[start:]))
+  output.to_string()
+}
+
+///|
+fn short_type_token(token : StringView) -> String {
+  let token = token.trim()
+  match token {
     "moonbit_string_t" => "String"
     "moonbit_bytes_t" => "Bytes"
     _ =>
-      match name.rev_split_once("/") {
-        Some((_, short_name)) if short_name != "" => short_name.to_owned()
-        _ => name.to_owned()
+      match token.rev_split_once("/") {
+        Some((_, name)) => name.to_owned()
+        None =>
+          match native_scalar_from_debug_type(token.to_owned()) {
+            Some(scalar) => scalar.source_name()
+            None => token.to_owned()
+          }
       }
   }
 }

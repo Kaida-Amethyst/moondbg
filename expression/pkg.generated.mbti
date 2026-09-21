@@ -45,11 +45,14 @@ pub fn VariablePath::equal(Self, Self) -> Bool
 pub fn VariablePath::new(String, Array[VariablePathStep]) -> Self
 pub fn VariablePath::not_equal(Self, Self) -> Bool
 pub fn VariablePath::parse(StringView) -> Self?
+pub fn VariablePath::range(Self) -> (Int, Int)?
 pub fn VariablePath::root(String) -> Self
 pub fn VariablePath::root_name(Self) -> String
 pub fn VariablePath::steps(Self) -> ReadOnlyArray[VariablePathStep]
 pub fn VariablePath::to_repr(Self) -> @debug.Repr
 pub fn VariablePath::with_fields(String, Array[String]) -> Self
+pub fn VariablePath::with_range(Self, Int, Int) -> Self
+pub fn VariablePath::without_range(Self) -> Self
 
 pub(all) enum VariablePathStep {
   Field(String)

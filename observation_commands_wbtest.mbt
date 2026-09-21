@@ -284,7 +284,10 @@ test "print spec accepts deterministic field and index paths only" {
   )
   assert_eq(mixed.display_name(), "lines[0].start[12].x")
   assert_eq(command.usage, "print <path>")
-  assert_eq(command.summary, "Show a variable, field, or indexed element path")
+  assert_eq(
+    command.summary,
+    "Show a variable path or String/Bytes [start:end] range",
+  )
 }
 
 ///|

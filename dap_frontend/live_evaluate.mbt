@@ -1,7 +1,9 @@
 ///|
 fn inspection_error_message(error : Error) -> String {
   match error {
-    LiveError(message) | @lldb_dap.VariableEvaluationError(message) => message
+    LiveError(message)
+    | @lldb_dap.VariableEvaluationError(message)
+    | @lldb_dap.BufferInspectionError(message) => message
     _ => @debug.to_string(error)
   }
 }
@@ -18,7 +20,7 @@ fn LiveSession::enqueue_evaluate(
   }
   guard @debugger.VariablePath::parse(expression.trim()) is Some(path) else {
     raise LiveError(
-      "Only read-only variable paths are supported, e.g. point.x or arr[0].x. No calls, arithmetic, assignments or REPL commands.",
+      "Only read-only variable paths are supported, e.g. point.x, arr[0].x or text[0:128]. No calls, arithmetic, assignments or REPL commands.",
     )
   }
   // DAP specifies global scope when frameId is absent. Do not silently pick a

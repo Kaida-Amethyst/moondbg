@@ -15,5 +15,7 @@ pub fn VariableLookupFailure::message(
       "Index \{index} is out of bounds for '\{owner}' with length \{total_length}."
     VariableUnavailable(path) =>
       "Variable '\{path}' is unavailable at the current location."
+    VariableInspectionFailed(path, message) =>
+      "Cannot inspect '\{path}': \{message}"
   }
 }

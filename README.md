@@ -58,6 +58,26 @@ VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，
 普通函数名需要 `package` 启动上下文；预编译 `program` 模式仅支持 `main`。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
+### String / Bytes 内容查看（开发版本）
+
+当前源码的 REPL 与 VS Code 共用内存读取和类型显示，不调用 `Debug` trait 或用户代码。
+String 显示带引号的内容，保留中文和 emoji，换行、NUL 等控制字符会转义；Bytes 使用
+`b"\x41\x00\xff"` 这样的十六进制转义。摘要注明原始长度及单位。
+
+- 默认预览 String 的前 128 个 UTF-16 单元、Bytes 的前 32 个字节。String 的自动分页
+  遇到代理对边界会将整对留到下一段，避免拆开 emoji。截断时明确显示实际范围与提示。
+- REPL：`p values.text`、`p values.text[128:256]`、`p values.bytes[32:64]`。
+  范围左闭右开，两个下标均须提供，每次最多读取 1024 个单元；暂不支持数组范围。
+- String 的下标是 **UTF-16 单元**，不是 Unicode 字符数或屏幕列数；显式范围严格按下标读取，
+  拆开的代理项显示为 `\ud83d` 等转义，不丢失数据。
+- VS Code：展开 String / Bytes 可逐段查看；Watch 和调试控制台使用同样的路径，**不加 `p`**。
+  空内容与读取失败分开显示；继续运行后旧的变量引用失效。
+- 类型名保留嵌套结构，例如 `Result[Point, String]`。本轮不新增 Option 识别或 tuple 路径语法。
+
+试用：从仓库根目录运行 `moondbg testdata/dwarf_probe/text_bytes`，输入 `b inspect_values`、
+`run`，然后查看 `values.text`、`values.bytes`、`values.long_text`、`values.long_bytes`。
+`moondbg` 须指向本次构建；VS Code 在该包的 `let marker = values.text` 行设断点后按 F5。
+
 ### 条件断点（开发版本）
 
 当前源码支持 **行断点** 的简单条件，两种前端使用同一套带类型的标量比较逻辑。

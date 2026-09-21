@@ -18,7 +18,7 @@ fn parse_print_command(
   }
   guard parse_variable_path(arguments) is Some(path) else {
     return invalid_command(
-      "print only accepts variable paths with fields and non-negative indices",
+      "print only accepts variable paths with fields, non-negative indices, or a terminal [start:end] content range",
     )
   }
   parsed_command(CommandPrint::{ path, })
@@ -30,7 +30,7 @@ fn print_command_spec() -> CommandSpec {
     "print",
     ["p"],
     "print <path>",
-    "Show a variable, field, or indexed element path",
+    "Show a variable path or String/Bytes [start:end] range",
     parse_print_command,
   )
 }

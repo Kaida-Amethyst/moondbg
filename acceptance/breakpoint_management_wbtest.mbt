@@ -116,10 +116,10 @@ async test "T07 exact and source duplicate management preserves stable ids acros
     "@Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.ordinary",
     source_line=Some(ordinary_line),
   )
-  breakpoint_command(process, "p value", ["value: int = 10"])
+  breakpoint_command(process, "p value", ["value: Int = 10"])
   breakpoint_command(process, "locals", ["Locals:", "value: Int = 10"])
   breakpoint_command(process, "disable 4", ["Breakpoint 4 disabled."])
-  breakpoint_command(process, "p value", ["value: int = 10"])
+  breakpoint_command(process, "p value", ["value: Int = 10"])
   breakpoint_stopped(
     process,
     "continue",
@@ -223,7 +223,7 @@ async test "T07 family all locations zero handles and selected frame survive man
     "@Kaida-Amethyst/moondbg-dwarf-probe/breakpoint_management.identity[Int]",
     source_line=Some(generic_line),
   )
-  breakpoint_command(process, "p value", ["value: int = 21"])
+  breakpoint_command(process, "p value", ["value: Int = 21"])
   breakpoint_command(process, "frame 1", ["Selected frame #1: main"])
   // The current toolchain reports caller locals as unavailable before management.
   // Preserve that observation; the selected top frame's value remains readable.
@@ -246,7 +246,7 @@ async test "T07 family all locations zero handles and selected frame survive man
   ])
   breakpoint_command(process, "list", ["second_int"])
   breakpoint_command(process, "frame 0", ["Selected frame #0:"])
-  breakpoint_command(process, "p value", ["value: int = 21"])
+  breakpoint_command(process, "p value", ["value: Int = 21"])
   breakpoint_stopped(
     process,
     "continue",

@@ -728,7 +728,11 @@ async fn VariableInspector::read_memory(
     "offset": offset,
     "count": count,
   })
-  let body = response.body()
+  decode_memory_reply(response.body(), count)
+}
+
+///|
+fn decode_memory_reply(body : Json, count : Int) -> Bytes raise DapSessionError {
   guard json_string_field(body, "data") is Some(encoded) &&
     json_int_field(body, "unreadableBytes").unwrap_or(0) == 0 else {
     raise InvalidIndexedCollectionValue(
@@ -1137,7 +1141,18 @@ async fn VariableInspector::materialize_enum(
         "active enum payload repeats or exceeds position \{position}",
       )
     }
-    payload_by_position.set(position, direct_enum_payload(child, position))
+    let payload = if child.buffer_kind() is Some(_) {
+      let layout = self.buffer_layout(identity, child)
+      let preview = self.buffer_preview(identity, layout, None)
+      @debugger.VariableEnumPayload::scalar(
+        position,
+        layout.kind.type_name(),
+        preview.summary(),
+      )
+    } else {
+      direct_enum_payload(child, position)
+    }
+    payload_by_position.set(position, payload)
   }
   let payload : Array[@debugger.VariableEnumPayload] = []
   for position in 0..<direct_payload.length() {
@@ -1282,6 +1297,22 @@ async fn VariableInspector::compact_local_variable(
       @debugger.LocalVariableUnavailable,
     )
   }
+  if variable.buffer_kind() is Some(_) {
+    let snapshot = self.buffer_snapshot(identity, variable, name, None) catch {
+      BufferInspectionError(_) =>
+        return @debugger.LocalVariableSnapshot::new(
+          name,
+          source_type,
+          @debugger.LocalVariableUnavailable,
+        )
+      error => raise error
+    }
+    return @debugger.LocalVariableSnapshot::new(
+      name,
+      source_type,
+      @debugger.LocalVariableAvailable(@debugger.LocalScalar(snapshot.value())),
+    )
+  }
   if variable.is_moonbit_array_candidate() ||
     variable.is_moonbit_fixed_array_candidate() {
     let layout = self.load_indexed_collection_layout(identity, variable) catch {
@@ -1411,6 +1442,9 @@ async fn VariableInspector::materialize_variable(
       [],
     )
   }
+  if variable.buffer_kind() is Some(_) {
+    return self.buffer_snapshot(identity, variable, variable.name, None)
+  }
   if variable.is_moonbit_array_candidate() {
     return self.materialize_array(identity, variable)
   }
@@ -1520,6 +1554,9 @@ async fn VariableInspector::resolve_variable_path(
   frame_id : Int,
   path : @debugger.VariablePath,
 ) -> DapVariableResolution {
+  guard path.range() is None else {
+    raise BufferInspectionError("A content range must be resolved as a leaf")
+  }
   let mut variable = match
     self.resolve_root_variable(identity, frame_id, path.root_name()) {
     DapVariableResolved(variable) => variable
@@ -1606,16 +1643,21 @@ async fn VariableInspector::find_variable_inner(
   if self.variable_cache.cached_snapshot(identity, cache_key) is Some(snapshot) {
     return @debugger.VariableLookupResult::found(snapshot)
   }
-  let variable = match self.resolve_variable_path(identity, frame_id, path) {
+  let variable = match
+    self.resolve_variable_path(identity, frame_id, path.without_range()) {
     DapVariableResolved(variable) => variable
     DapVariableResolutionFailed(result) => return result
   }
-  let snapshot = self.materialize_variable_with_limits(
-    identity,
-    variable,
-    MAX_VARIABLE_EXPANSION_DEPTH,
-    MAX_VARIABLE_EXPANSION_NODES,
-  )
+  let snapshot = if path.range() is Some(_) {
+    self.buffer_snapshot(identity, variable, path.display_name(), path.range())
+  } else {
+    self.materialize_variable_with_limits(
+      identity,
+      variable,
+      MAX_VARIABLE_EXPANSION_DEPTH,
+      MAX_VARIABLE_EXPANSION_NODES,
+    )
+  }
   self.variable_cache.store_snapshot(identity, cache_key, snapshot)
   @debugger.VariableLookupResult::found(snapshot)
 }
@@ -1640,6 +1682,11 @@ async fn DebugExecution::find_variable(
   let result = self
     .variable_inspector()
     .find_variable_inner(identity, frame_id, path) catch {
+      BufferInspectionError(message) =>
+        @debugger.VariableLookupResult::inspection_failed(
+          path.display_name(),
+          message,
+        )
       error =>
         raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
     }

@@ -6,12 +6,18 @@ import {
   "Kaida-Amethyst/moondbg/debugger",
   "Kaida-Amethyst/moondbg/expression",
   "moonbitlang/async",
+  "moonbitlang/core/debug",
 }
 
 // Values
 pub fn panic_stop_reason(String, String?) -> String
 
 // Errors
+pub suberror BufferInspectionError {
+  BufferInspectionError(String)
+} derive(@debug.Debug)
+pub fn BufferInspectionError::to_repr(Self) -> @debug.Repr
+
 pub suberror VariableEvaluationError {
   VariableEvaluationError(String)
 }

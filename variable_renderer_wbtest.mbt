@@ -110,7 +110,7 @@ test "scalar and unsupported container rendering remains one line" {
   inspect(variable_lines(scalar).join("\n"), content="answer: Int = 42")
   inspect(
     variable_lines(array).join("\n"),
-    content="arr: moonbit.array_i32 = moonbit.array_i32 @ 0x2000",
+    content="arr: FixedArray[Int] = moonbit.array_i32 @ 0x2000",
   )
 }
 

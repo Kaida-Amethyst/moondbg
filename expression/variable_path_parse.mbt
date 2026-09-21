@@ -58,18 +58,15 @@ fn VariablePathCursor::take_identifier(self : VariablePathCursor) -> String? {
 }
 
 ///|
-fn VariablePathCursor::take_index(self : VariablePathCursor) -> Int? {
-  guard self.peek() == Some(b'[') else { return None }
-  self.offset += 1
+fn VariablePathCursor::take_number(self : VariablePathCursor) -> Int? {
   let start = self.offset
   while self.peek() is Some(byte) && byte >= b'0' && byte <= b'9' {
     self.offset += 1
   }
-  guard start < self.offset && self.peek() == Some(b']') else { return None }
+  guard start < self.offset else { return None }
   let digits = @utf8.decode(self.bytes[start:self.offset].to_owned()) catch {
     _ => return None
   }
-  self.offset += 1
   let parsed = Some(@string.parse_int(digits, base=10)) catch { _ => None }
   guard parsed is Some(index) && index >= 0 else { return None }
   Some(index)
@@ -90,7 +87,21 @@ pub fn VariablePath::parse(arguments : StringView) -> VariablePath? {
         steps.push(Field(field))
       }
       Some(b'[') => {
-        guard cursor.take_index() is Some(index) else { return None }
+        cursor.offset += 1
+        guard cursor.take_number() is Some(index) else { return None }
+        if cursor.peek() == Some(b':') {
+          cursor.offset += 1
+          guard cursor.take_number() is Some(end) &&
+            end >= index &&
+            cursor.peek() == Some(b']') else {
+            return None
+          }
+          cursor.offset += 1
+          guard cursor.is_at_end() else { return None }
+          return Some(VariablePath::new(root, steps).with_range(index, end))
+        }
+        guard cursor.peek() == Some(b']') else { return None }
+        cursor.offset += 1
         steps.push(Index(index))
       }
       _ => return None

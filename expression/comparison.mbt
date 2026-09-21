@@ -45,7 +45,8 @@ fn ScalarComparison::parse(
       "Expected <variable path> <comparison> <path or literal>; comparisons: > >= < <= == !=",
     )
   }
-  guard VariablePath::parse(input[:index].trim()) is Some(left) else {
+  guard VariablePath::parse(input[:index].trim()) is Some(left) &&
+    left.range() is None else {
     raise ConditionError(
       "Invalid left variable path; use point.x or arr[0], without calls or arithmetic",
     )
@@ -71,7 +72,7 @@ fn ScalarComparison::parse(
       (IntegerOperand(integer), integer)
     }
     _ => {
-      guard VariablePath::parse(value) is Some(path) else {
+      guard VariablePath::parse(value) is Some(path) && path.range() is None else {
         raise ConditionError(
           "Invalid right operand; use a variable path, decimal integer, true or false",
         )

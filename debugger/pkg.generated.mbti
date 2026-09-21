@@ -549,6 +549,7 @@ pub enum VariableLookupFailure {
   VariableIndexAccessOnNonCollection(String, Int, String?)
   VariableIndexOutOfBounds(String, Int, Int)
   VariableUnavailable(String)
+  VariableInspectionFailed(String, String)
 } derive(Eq, @debug.Debug)
 pub fn VariableLookupFailure::equal(Self, Self) -> Bool
 pub fn VariableLookupFailure::message(Self) -> String
@@ -566,6 +567,7 @@ pub fn VariableLookupResult::field_not_found(String, String) -> Self
 pub fn VariableLookupResult::found(VariableSnapshot) -> Self
 pub fn VariableLookupResult::index_access_on_non_collection(String, Int, String?) -> Self
 pub fn VariableLookupResult::index_out_of_bounds(String, Int, Int) -> Self
+pub fn VariableLookupResult::inspection_failed(String, String) -> Self
 pub fn VariableLookupResult::not_equal(Self, Self) -> Bool
 pub fn VariableLookupResult::not_found(String) -> Self
 pub fn VariableLookupResult::to_repr(Self) -> @debug.Repr

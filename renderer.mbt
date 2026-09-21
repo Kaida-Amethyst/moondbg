@@ -260,30 +260,9 @@ fn render_frame_selection_failure(failure : FrameSelectionFailure) -> Unit {
 
 ///|
 fn moonbit_variable_type_name(type_name : StringView) -> String {
-  match type_name {
-    "bool" => "Bool"
-    "float" => "Float"
-    "double" => "Double"
-    "int32_t" => "Int"
-    "uint32_t" => "UInt"
-    "int64_t" => "Int64"
-    "uint64_t" => "UInt64"
-    _ => {
-      let base : StringView = match type_name.strip_suffix(" &") {
-        Some(base) => base
-        None =>
-          match type_name.strip_suffix(" *") {
-            Some(base) => base
-            None => type_name
-          }
-      }
-      match base.rev_split_once("/") {
-        Some((package_name, source_name)) if package_name != "" &&
-          source_name != "" => source_name.to_owned()
-        _ => base.to_owned()
-      }
-    }
-  }
+  @runtime_value.source_name_from_debug_type(type_name.to_owned()).unwrap_or(
+    type_name.to_owned(),
+  )
 }
 
 ///|

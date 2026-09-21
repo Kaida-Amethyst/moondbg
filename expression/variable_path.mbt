@@ -19,6 +19,7 @@ pub extend VariablePathStep with @debug.Debug::{to_repr}
 pub struct VariablePath {
   priv root : String
   priv steps : Array[VariablePathStep]
+  priv range : (Int, Int)?
 } derive(Eq, Debug)
 
 ///|
@@ -29,7 +30,7 @@ pub extend VariablePath with @debug.Debug::{to_repr}
 
 ///|
 pub fn VariablePath::root(root : String) -> VariablePath {
-  { root, steps: [], }
+  { root, steps: [], range: None, }
 }
 
 ///|
@@ -38,7 +39,26 @@ pub fn VariablePath::new(
   root : String,
   steps : Array[VariablePathStep],
 ) -> VariablePath {
-  { root, steps: steps.copy(), }
+  { root, steps: steps.copy(), range: None, }
+}
+
+///|
+pub fn VariablePath::with_range(
+  self : VariablePath,
+  start : Int,
+  end : Int,
+) -> VariablePath {
+  { ..self, range: Some((start, end)), }
+}
+
+///|
+pub fn VariablePath::range(self : VariablePath) -> (Int, Int)? {
+  self.range
+}
+
+///|
+pub fn VariablePath::without_range(self : VariablePath) -> VariablePath {
+  { ..self, range: None, }
 }
 
 ///|
@@ -77,6 +97,9 @@ pub fn VariablePath::display_name(self : VariablePath) -> String {
         output.write_char(']')
       }
     }
+  }
+  if self.range is Some((start, end)) {
+    output.write_string("[\{start}:\{end}]")
   }
   output.to_string()
 }

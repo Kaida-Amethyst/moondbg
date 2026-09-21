@@ -18,7 +18,7 @@ test "condition grammar reuses paths and preserves exact integer literals" {
     text in [
       "i = 1", "i > 1.0", "i > 1 & j < 2", "i > 0x10", "i > 1; quit", "i >", "i() > 1",
       "arr[i] == 0", "a.0 == 1", "a + 1 == 2", "ready > true", "x == 18446744073709551616",
-      "x == -9223372036854775809",
+      "x == -9223372036854775809", "text[0:1] == 0", "x == text[0:1]",
     ] {
     assert_true(
       try {

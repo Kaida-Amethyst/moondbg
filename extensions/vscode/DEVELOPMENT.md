@@ -1,5 +1,16 @@
 # moondbg 的 VS Code 调试开发与验收
 
+## String / Bytes 内容查看（开发版本）
+
+打开 `testdata/dwarf_probe/text_bytes/main.mbt`，在 `let marker = values.text` 行设断点后 F5。
+展开 Locals 的 `values`：String / Bytes 显示内容、原始长度与截断范围，长内容继续展开可分段查看。
+Watch 可输入 `values.text[2:4]` 查看 emoji；调试控制台也支持相同路径，不加 `p`。
+范围左闭右开，String 按 UTF-16 单元，Bytes 按字节，每次最多 1024 个单元。
+自动分段不会拆开代理对；显式范围保持精确，落单代理项转义显示。
+
+`test/text-bytes-host.js` 是对应的真实扩展宿主验收入口，工作区为 `testdata/dwarf_probe`。
+它验证内容、分段、Watch 范围、越界错误、泛型类型名以及停止会话；不会修改日常用户配置。
+
 用户安装说明见 [README](README.md)。本文中的扩展开发窗口与仓库软链接仅供开发者使用。
 
 0.1.1 起，`dwarf_probe/.vscode/launch.json` 默认只有“调试当前包”，请打开需要验收的包中的源码再 F5。

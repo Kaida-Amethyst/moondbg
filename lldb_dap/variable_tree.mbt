@@ -2,6 +2,7 @@
 priv enum TreeAccess {
   Member(String)
   Element(Int)
+  BufferRange(Int, Int)
 }
 
 ///|
@@ -56,6 +57,17 @@ async fn VariableInspector::describe_node(
     return { ..base, value: "<unavailable>", }
   }
   try {
+    if variable.buffer_kind() is Some(_) {
+      let layout = self.buffer_layout(identity, variable)
+      let preview = self.buffer_preview(identity, layout, None)
+      return {
+        ..base,
+        value: preview.summary(),
+        type_name: Some(layout.kind.type_name()),
+        indexed_children: layout.length / layout.kind.page_size() +
+        (if layout.length % layout.kind.page_size() == 0 { 0 } else { 1 }),
+      }
+    }
     if self.load_indexed_collection_layout(identity, variable) is Some(layout) {
       let type_name = "\{layout.kind.source_name()}[\{layout.element_type.source_name()}]"
       return {
@@ -149,6 +161,8 @@ async fn VariableInspector::resolve_tree_node(
   }
   for variable = root, index = 0; index < node.access.length(); {
     let child = match node.access[index] {
+      BufferRange(_, _) =>
+        raise BufferInspectionError("Content ranges are leaves")
       Member(name) => {
         let children = self.tree_direct_children(identity, variable)
         guard children.named_child(name) is Some(child) else {
@@ -194,6 +208,38 @@ pub async fn VariableInspector::tree_children(
   let identity = self.tree_identity(frame_id)
   let variable = self.resolve_tree_node(identity, frame_id, node)
   let result = []
+  if variable.buffer_kind() is Some(_) {
+    let layout = self.buffer_layout(identity, variable)
+    let size = layout.kind.page_size()
+    let pages = layout.length / size +
+      (if layout.length % size == 0 { 0 } else { 1 })
+    let count = count.min((pages - start).max(0))
+    for page = start; page < start + count; page = page + 1 {
+      let first = page * size
+      let last = (first.to_int64() + size.to_int64())
+        .min(layout.length.to_int64())
+        .to_int()
+      let preview = self.buffer_preview(
+        identity,
+        layout,
+        Some((first, last)),
+        automatic=true,
+      )
+      let access = node.access.copy()
+      access.push(BufferRange(preview.start, preview.end))
+      result.push({
+        name: "[\{preview.start}:\{preview.end}]",
+        value: preview.summary(),
+        type_name: Some(layout.kind.type_name()),
+        named_children: 0,
+        indexed_children: 0,
+        root: node.root,
+        access,
+      })
+    }
+    self.ensure_variable_identity(identity)
+    return result
+  }
   if self.load_indexed_collection_layout(identity, variable) is Some(layout) {
     let count = count.min((layout.total_length - start).max(0))
     guard count > 0 else { return [] }

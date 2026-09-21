@@ -16,17 +16,27 @@ pub const NATIVE_ENUM_DESCRIPTOR_OFFSET : Int = -4
 
 pub const NATIVE_ENUM_DESCRIPTOR_SIZE : Int = 4
 
+pub fn buffer_kind(String) -> BufferKind?
+
 pub fn decode_boxed_enum_tag(Bytes) -> Int raise NativeValueError
 
 pub fn decode_native_array_capacity(Bytes) -> Int raise NativeValueError
 
 pub fn decode_scalar_payload(NativeScalarType, Bytes, Int) -> Array[String] raise NativeValueError
 
+pub fn is_high_surrogate(Int) -> Bool
+
+pub fn is_low_surrogate(Int) -> Bool
+
 pub fn native_array_element_from_pointer_type(String) -> NativeArrayElementType?
 
 pub fn native_scalar_from_debug_type(String) -> NativeScalarType?
 
+pub fn quote_buffer(BufferKind, Bytes) -> String raise NativeValueError
+
 pub fn source_name_from_debug_type(String) -> String?
+
+pub fn utf16_unit(Bytes, Int) -> Int
 
 pub fn validate_array_length(Int, Int) -> Unit raise NativeValueError
 
@@ -46,6 +56,31 @@ pub fn NativeValueError::not_equal(Self, Self) -> Bool
 pub fn NativeValueError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+pub(all) enum BufferKind {
+  StringBuffer
+  BytesBuffer
+} derive(Eq, @debug.Debug)
+pub fn BufferKind::equal(Self, Self) -> Bool
+pub fn BufferKind::not_equal(Self, Self) -> Bool
+pub fn BufferKind::page_size(Self) -> Int
+pub fn BufferKind::to_repr(Self) -> @debug.Repr
+pub fn BufferKind::type_name(Self) -> String
+pub fn BufferKind::unit_name(Self) -> String
+pub fn BufferKind::width(Self) -> Int
+
+pub struct BufferPreview {
+  kind : BufferKind
+  length : Int
+  start : Int
+  end : Int
+  quoted : String
+} derive(Eq, @debug.Debug)
+pub fn BufferPreview::equal(Self, Self) -> Bool
+pub fn BufferPreview::new(BufferKind, Int, Int, Int, Bytes) -> Self raise NativeValueError
+pub fn BufferPreview::not_equal(Self, Self) -> Bool
+pub fn BufferPreview::summary(Self) -> String
+pub fn BufferPreview::to_repr(Self) -> @debug.Repr
+
 pub struct IndexedPreviewPlan {
   // private fields
 } derive(Eq, @debug.Debug)

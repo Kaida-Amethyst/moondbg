@@ -5,6 +5,7 @@ import {
   "Kaida-Amethyst/moondbg/dap_frontend",
   "Kaida-Amethyst/moondbg/lldb_dap",
   "Kaida-Amethyst/moondbg/render",
+  "Kaida-Amethyst/moondbg/runtime_value",
   "Kaida-Amethyst/readline",
   "moonbitlang/async",
   "moonbitlang/async/fs",

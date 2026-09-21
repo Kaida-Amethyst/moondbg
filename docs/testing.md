@@ -115,6 +115,20 @@ moonc `v0.10.12+2583f1173-nightly`，macOS Apple Silicon / 本机 LLDB。
 验收迁移同时修正了 T-07 对旧 `$...identity|[Int]|` 函数显示格式的断言，
 并用共享互斥避免同步 PTY 等待阻塞同进程的其他异步测试。
 
+## String / Bytes 验收
+
+`runtime_value/buffer_test.mbt` 覆盖 UTF-16、代理对、NUL、控制字符、任意字节、截断元数据及嵌套类型名。
+`lldb_dap/buffer_wbtest.mbt` 验证有界读取、错误范围、不可读内存和过期 epoch，不启动调试进程。
+`acceptance/text_bytes_wbtest.mbt` 使用 `text_bytes` fixture 跑真实 REPL 和 DAP，覆盖空值、
+中文、emoji、NUL、长内容、分段展开、范围求值和继续后旧引用失效：
+
+```sh
+moon build --target native -g .
+MOONDBG_TOOLCHAIN_ACCEPTANCE=1 moon test acceptance/text_bytes_wbtest.mbt --no-parallelize
+```
+
+真实 VS Code 宿主入口为 `extensions/vscode/test/text-bytes-host.js`。
+
 ## 可选 Python 诊断回归
 
 `tools/repl_e2e.py` 与 `tools/fake_dap.py` 暂时保留为可选的跨进程诊断基线，不被任何默认
