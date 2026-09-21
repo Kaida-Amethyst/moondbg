@@ -1,4 +1,9 @@
 ///|
+pub fn panic_continuation_notice() -> String {
+  "Continuing resumes panic termination; it does not recover the program. LLDB may stop again on SIGABRT."
+}
+
+///|
 /// Source ownership is supplied by the build system, not inferred from .mbt
 /// suffixes, a directory prefix, or the function's display name. Keep physical
 /// frame indices and all library/runtime frames intact for manual inspection.

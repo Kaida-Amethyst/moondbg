@@ -44,6 +44,11 @@ struct moondbg_test_pty_process {
   char adapter_pid_path[PATH_MAX];
 };
 
+int32_t moondbg_test_pty_pid(void *value) {
+  const struct moondbg_test_pty_process *process = value;
+  return (int32_t)process->child_pid;
+}
+
 static int64_t moondbg_test_now_ms(void) {
   struct timespec now;
   if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
@@ -490,31 +495,43 @@ static ssize_t moondbg_test_find(
   return -1;
 }
 
-int32_t moondbg_test_pty_expect(
+int32_t moondbg_test_pty_expect_either(
     struct moondbg_test_pty_process *process,
     moonbit_bytes_t expected,
+    moonbit_bytes_t alternative,
     int32_t timeout_ms) {
   const int32_t expected_length = Moonbit_array_length(expected);
+  const int32_t alternative_length = Moonbit_array_length(alternative);
   const int64_t now = moondbg_test_now_ms();
-  if (process->master_fd < 0 || expected_length <= 0 || timeout_ms <= 0 ||
+  if (process->master_fd < 0 || expected_length <= 0 || alternative_length <= 0 || timeout_ms <= 0 ||
       now < 0) {
     return 0;
   }
   const int64_t deadline = now + timeout_ms;
   for (;;) {
-    const ssize_t found = moondbg_test_find(
+    ssize_t found = moondbg_test_find(
         process->pending,
         process->pending_length,
         expected,
         (size_t)expected_length);
+    const ssize_t other = moondbg_test_find(
+        process->pending, process->pending_length, alternative,
+        (size_t)alternative_length);
+    int32_t matched = 1;
+    size_t length = (size_t)expected_length;
+    if (other >= 0 && (found < 0 || other < found)) {
+      found = other;
+      matched = 2;
+      length = (size_t)alternative_length;
+    }
     if (found >= 0) {
-      const size_t consumed = (size_t)found + (size_t)expected_length;
+      const size_t consumed = (size_t)found + length;
       process->pending_length -= consumed;
       memmove(
           process->pending,
           process->pending + consumed,
           process->pending_length);
-      return 1;
+      return matched;
     }
     if (process->pending_length == sizeof(process->pending)) {
       process->pending_length = 0;
@@ -534,6 +551,13 @@ int32_t moondbg_test_pty_expect(
       return 0;
     }
   }
+}
+
+int32_t moondbg_test_pty_expect(
+    struct moondbg_test_pty_process *process,
+    moonbit_bytes_t expected,
+    int32_t timeout_ms) {
+  return moondbg_test_pty_expect_either(process, expected, expected, timeout_ms);
 }
 
 static pid_t moondbg_test_read_adapter_pid(

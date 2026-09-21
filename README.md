@@ -133,6 +133,31 @@ SIGABRT 停止行为。再次勾选可重新启用；VS Code 会记住你的选�
 想重新 F5 调试当前包时，先切回 `panic_context/main.mbt`，不要停留在 library 包的源码标签页。
 此开关由 CLI 的 DAP capabilities 提供，已有 moondbg 扩展无需重装；结束旧会话后启动新会话即可。
 
+#### 继续、重跑和退出验收
+
+`testdata/dwarf_probe` 提供四个独立可执行包：
+
+| 包目录 | 行为 |
+| --- | --- |
+| `panic_stop` | 直接调用 `panic()` |
+| `panic_bounds` | `Array[Int]` 越界访问 |
+| `panic_context` | core `abort` 打印 `panic context example` 后终止 |
+| `panic_normal` | 打印一行并正常退出，不能误报 panic |
+
+REPL 运行 `moondbg panic_bounds`，依次输入 `run`、`c`、`run`、`quit`。
+第一次停在越界访问处；`c` 执行原有终止逻辑，不恢复正常运行；再次 `run` 创建新进程并再次停止。
+当前工具链通常以 code 1 退出，使用 `abort()` 的 runtime 可能随后再停于 `signal SIGABRT`；
+此时可直接 `run` 重跑或 `quit` 清理，不会把该信号标成又一次 MoonBit panic。
+panic 停止时会显示这一区别的提示；正常结束仍显示 code 0。
+
+VS Code 打开对应包的 `main.mbt` 后 F5，保持 **MoonBit panic** 勾选。
+可同时添加 `main` 函数断点和源码行断点；移除普通断点不会移除内部 panic 停点。
+panic 后 F5 继续终止；若遇到 SIGABRT，再次停止时显示真实原因。按红色 Stop 可在两种停点清理程序。
+结束后先切回可执行包的 `main.mbt` 再 F5，启动的是新会话，不是恢复已终止的进程。
+
+自动验收还使用 `testdata/panic_signal/main.c` 强制覆盖 `panic → abort() → SIGABRT`。
+它只是测试替身，不替换 MoonBit runtime；验收会检查重跑/退出前记录的目标、adapter 等子进程已清理。
+
 ### 构建和验收
 
 开发工具链要求见 [AGENTS.md](AGENTS.md)。先选择工具链并构建 moondbg：

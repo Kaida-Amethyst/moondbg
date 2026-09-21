@@ -428,3 +428,10 @@ DAP 时序依据：[Debug Adapter Protocol overview](https://microsoft.github.io
 `--user-data-dir`，避免改变日常工作区的断点开关状态。
 自动选帧依据 [VS Code Thread.getTopStackFrame](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/common/debugModel.ts)：
 exception 停止时跳过弱化 frame，而非更改栈顺序或把用户源码附到 runtime frame 上。
+
+panic 生命周期回归在 `acceptance/panic_lifecycle_wbtest.mbt` 与
+`acceptance/dap_panic_lifecycle_wbtest.mbt`：覆盖直接 panic、越界、带消息 abort、正常结束、
+普通断点共存、继续后的真实 SIGABRT、REPL 重跑与 Stop/quit。
+先构建本仓库 CLI，再设 `MOONDBG_TOOLCHAIN_ACCEPTANCE=1` 运行这两个文件；需要本机 `cc`、
+`ps`、LLDB 与 MoonBit 工具链。清理检查只针对本次测试的确切进程及退出前捕获的子进程 PID，
+不按进程名终止其他会话。真实 VS Code 宿主测试也检查 Stop 后目标 PID 消失。

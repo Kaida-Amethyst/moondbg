@@ -1,4 +1,35 @@
 ///|
+/// PID of this helper's own CLI process, for read-only cleanup verification.
+pub fn PtyProcess::pid(self : PtyProcess) -> Int {
+  native_pid(self.native)
+}
+
+///|
+#borrow(process)
+extern "C" fn native_pid(process : NativePtyProcess) -> Int = "moondbg_test_pty_pid"
+
+///|
+/// Consume the earliest matching fragment: 1 for first, 2 for second, 0 on
+/// timeout/EOF. Supports runtimes which either exit or raise SIGABRT on panic.
+pub fn PtyProcess::expect_either(
+  self : PtyProcess,
+  first : Bytes,
+  second : Bytes,
+  timeout_ms? : Int = 20000,
+) -> Int {
+  native_expect_either(self.native, first, second, timeout_ms)
+}
+
+///|
+#borrow(process, first, second)
+extern "C" fn native_expect_either(
+  process : NativePtyProcess,
+  first : Bytes,
+  second : Bytes,
+  timeout_ms : Int,
+) -> Int = "moondbg_test_pty_expect_either"
+
+///|
 priv type NativePtyProcess
 
 ///|

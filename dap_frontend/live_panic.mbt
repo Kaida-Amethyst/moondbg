@@ -232,7 +232,9 @@ async fn LiveSession::complete_panic_stop(
     copy.set("description", Json("MoonBit panic"))
     copy.set(
       "text",
-      Json("MoonBit panic (runtime supplied no additional details)"),
+      Json(
+        "MoonBit panic (runtime supplied no additional details). \{@debugger.panic_continuation_notice()}",
+      ),
     )
     copy.remove("hitBreakpointIds")
     if !frames.any(frame => self.panic.owns_frame(frame)) {

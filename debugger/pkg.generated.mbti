@@ -6,6 +6,7 @@ import {
 }
 
 // Values
+pub fn panic_continuation_notice() -> String
 
 // Errors
 pub(all) suberror BreakpointSyncError {

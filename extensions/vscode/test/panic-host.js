@@ -38,6 +38,8 @@ exports.run = async function () {
       internalConsoleOptions: "openOnSessionStart",
     }), true);
     const stop = await until(() => received.find(message => message.event === "stopped"));
+    const target = received.find(message => message.event === "process");
+    assert.ok(target && Number.isInteger(target.body.systemProcessId));
     assert.equal(stop.body.reason, "exception");
     assert.equal(stop.body.description, "MoonBit panic");
     assert.ok(sent.some(message => message.command === "setExceptionBreakpoints" &&
@@ -64,6 +66,10 @@ exports.run = async function () {
     await session.customRequest("setExceptionBreakpoints", { filters: [] });
     await vscode.debug.stopDebugging(session);
     await until(() => received.some(message => message.command === "disconnect" && message.success));
+    await until(() => {
+      try { process.kill(target.body.systemProcessId, 0); return false; }
+      catch (error) { if (error.code === "ESRCH") return true; throw error; }
+    });
     passed = true;
   } finally {
     if (session && vscode.debug.activeDebugSession) await vscode.debug.stopDebugging(session);

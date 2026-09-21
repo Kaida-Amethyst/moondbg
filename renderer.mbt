@@ -188,6 +188,9 @@ fn render_stop_header(snapshot : @debugger.StopSnapshot) -> Unit {
   if snapshot.notice() is Some(notice) {
     println(notice)
   }
+  if snapshot.reason() == "MoonBit panic" {
+    println(@debugger.panic_continuation_notice())
+  }
 }
 
 ///|
