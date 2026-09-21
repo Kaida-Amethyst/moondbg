@@ -16,7 +16,7 @@ fn line_breakpoint_arguments(arguments : Json) -> Json raise {
       line == line.to_int().to_double() else {
       raise LiveError("Breakpoint lines must be positive integers.")
     }
-    source_condition(point) |> ignore
+    breakpoint_condition(point) |> ignore
     for key in ["hitCondition", "logMessage", "column"] {
       if point is Object(fields) && fields.contains(key) {
         raise LiveError(
@@ -120,6 +120,7 @@ async fn LiveSession::handle_live_request(
         }
       }
       self.functions.active = Some(seq)
+      self.functions.requested = points
       self.functions.jobs.put(points)
     }
     "threads" if self.ended =>

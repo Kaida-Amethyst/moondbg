@@ -15,26 +15,14 @@ pub fn ConditionError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct Condition {
-  left : VariablePath
-  right : ConditionOperand
   text : String
   // private fields
 } derive(Eq, @debug.Debug)
 pub fn Condition::equal(Self, Self) -> Bool
-pub fn Condition::evaluate(Self, ScalarValue, ScalarValue) -> Bool raise ConditionError
-pub fn Condition::literal_value(Self, ScalarValue) -> ScalarValue? raise ConditionError
+pub async fn Condition::evaluate(Self, async (VariablePath) -> ScalarValue) -> Bool
 pub fn Condition::not_equal(Self, Self) -> Bool
 pub fn Condition::parse(StringView) -> Self raise ConditionError
 pub fn Condition::to_repr(Self) -> @debug.Repr
-
-pub(all) enum ConditionOperand {
-  PathOperand(VariablePath)
-  IntegerOperand(String)
-  BoolOperand(Bool)
-} derive(Eq, @debug.Debug)
-pub fn ConditionOperand::equal(Self, Self) -> Bool
-pub fn ConditionOperand::not_equal(Self, Self) -> Bool
-pub fn ConditionOperand::to_repr(Self) -> @debug.Repr
 
 pub(all) enum ScalarValue {
   BoolValue(Bool)

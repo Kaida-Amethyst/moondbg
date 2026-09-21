@@ -10,7 +10,7 @@
 支持按包自动构建或直接调试预编译 native 程序，以及行断点、函数断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
-暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、函数断点条件、
+暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、
 算术表达式、函数调用或赋值。调试控制台支持只读变量路径（如 `point.x`、`arr[0]`），
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
@@ -451,3 +451,14 @@ panic、持续 false 条件下的暂停及退出。`test/conditions-host.js` 是
 以 `testdata/dwarf_probe` 为工作区，通过 VS Code SourceBreakpoint 条件字段验证只停在 `i = 7`。
 设置 `MOONDBG_TEST_CONDITION_PATHS=1` 验证 `scene.points[0].x == limit`，仅停在 `scene.point.x = 7`。
 `acceptance/condition_paths_wbtest.mbt` 覆盖字段、数组、Bool、64 位精确比较、类型不匹配与读取失败。
+
+组合条件由 `expression.Condition` 的有界语法树处理（最多 8192 字符、256 节点、64 层语法嵌套），
+异步标量读取回调按 `&&` / `||` 的真实短路顺序调用，`!` 只对条件结果取反。
+标量比较继续沿用精确类型规则。同一次命中中的已读取路径可以缓存，但绝不预读未求值分支。
+REPL 函数条件存于逻辑 FunctionBreakpoint；DAP 按完整 setFunctionBreakpoints 回复提交条件绑定，
+普通/泛型函数与源码断点使用同一个命中 ID 表。泛型所有 location 共用条件，不共用实例间的值。
+同名重复请求可以共用物理 ID，但保留全部逻辑条件；其中无条件条目优先保留停止。
+`acceptance/compound_conditions_wbtest.mbt` 覆盖组合、短路、动态修改、重跑、禁用、
+泛型 Int/UInt64/Double 的逐实例处理，以及行断点与函数断点共存。
+真实扩展宿主设置 `MOONDBG_TEST_FUNCTION_CONDITIONS=1` 运行 `test/conditions-host.js`，
+通过 VS Code 原生 FunctionBreakpoint 条件验证组合与短路，不使用 REPL 命令字符串。

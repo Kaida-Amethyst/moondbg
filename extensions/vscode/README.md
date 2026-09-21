@@ -112,7 +112,14 @@ CLI 新版发布到 Mooncakes 后可再次执行 `moon install Kaida-Amethyst/mo
 F5 后只在 `i = 7` 的那轮停止。条件变量读取失败会停住并明确报错。
 run/continue 过滤 false 条件；单步保留 LLDB 原有停止，不额外自动继续。
 此功能由 CLI 提供能力声明，更新 CLI 后重新启动调试即可，无需重新安装 VSIX。
-当前发布版的限制仍见下文，当前尚不支持函数断点条件、命中次数或 logpoint。
+当前发布版的限制仍见下文，当前尚不支持命中次数或 logpoint。
+
+支持括号、`&&`、`||` 和 `!(condition)`，例如 `i >= 3 && i < 8`，采用短路求值。
+函数断点也可右键 **编辑条件**；名称填 `probe`，条件单独填写，不要把 `if` 写进名称。
+打开 `conditional_functions/main.mbt`，给函数 `probe` 设置上述条件，F5 后依次停在 i=3 到 7。
+改为函数 `identity`、条件 `value == 7` 后，重启调试会先停在 Int 的 7，再停在 UInt64 的 7，
+随后 Double 实例会明确报条件类型不支持并保留现场。一个泛型函数条目覆盖全部已生成实例，
+每次只在实际命中的实例和 frame 中读取变量。试用时关闭其他断点。
 
 路径示例：打开 `testdata/dwarf_probe/conditional_paths/main.mbt`，在第 32 行设置
 `scene.points[0].x == limit`，F5 后 `scene.point.x = 7`。可改为 `ready == true` 或

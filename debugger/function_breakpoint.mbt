@@ -137,6 +137,7 @@ pub struct FunctionBreakpoint {
   priv display_name : String
   priv selector : FunctionBreakpointSelector
   priv enabled : Bool
+  priv condition : @expression.Condition?
 }
 
 ///|
@@ -144,8 +145,16 @@ fn FunctionBreakpoint::new(
   id : Int,
   display_name : String,
   selector : FunctionBreakpointSelector,
+  condition? : @expression.Condition? = None,
 ) -> FunctionBreakpoint {
-  { id, display_name, selector, enabled: true, }
+  { id, display_name, selector, enabled: true, condition, }
+}
+
+///|
+pub fn FunctionBreakpoint::condition(
+  self : FunctionBreakpoint,
+) -> @expression.Condition? {
+  self.condition
 }
 
 ///|

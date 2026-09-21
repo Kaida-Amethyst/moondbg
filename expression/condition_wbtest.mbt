@@ -16,7 +16,7 @@ test "condition grammar reuses paths and preserves exact integer literals" {
   }
   for
     text in [
-      "i = 1", "i > 1.0", "i > 1 && j < 2", "i > 0x10", "i > 1; quit", "i >", "i() > 1",
+      "i = 1", "i > 1.0", "i > 1 & j < 2", "i > 0x10", "i > 1; quit", "i >", "i() > 1",
       "arr[i] == 0", "a.0 == 1", "a + 1 == 2", "ready > true", "x == 18446744073709551616",
       "x == -9223372036854775809",
     ] {
@@ -55,7 +55,7 @@ test "scalar comparisons keep integer width signedness and Bool semantics" {
       ("i == j", BoolValue(true), BoolValue(false), false),
       ("i != j", BoolValue(true), BoolValue(false), true),
     ] {
-    assert_eq(Condition::parse(text).evaluate(left, right), expected)
+    assert_eq(ScalarComparison::parse(text).evaluate(left, right), expected)
   }
   for
     (text, left, right) in [
@@ -67,7 +67,7 @@ test "scalar comparisons keep integer width signedness and Bool semantics" {
     ] {
     assert_true(
       try {
-        Condition::parse(text).evaluate(left, right) |> ignore
+        ScalarComparison::parse(text).evaluate(left, right) |> ignore
         false
       } catch {
         _ => true
@@ -79,11 +79,15 @@ test "scalar comparisons keep integer width signedness and Bool semantics" {
 ///|
 test "literal typing checks representability without converting runtime operands" {
   assert_eq(
-    Condition::parse("i == 9007199254740993").literal_value(UInt64Value(0UL)),
+    ScalarComparison::parse("i == 9007199254740993").literal_value(
+      UInt64Value(0UL),
+    ),
     Some(UInt64Value(9007199254740993UL)),
   )
   assert_eq(
-    Condition::parse("i == -9223372036854775808").literal_value(Int64Value(0L)),
+    ScalarComparison::parse("i == -9223372036854775808").literal_value(
+      Int64Value(0L),
+    ),
     Some(Int64Value(-9223372036854775808L)),
   )
   for
@@ -98,7 +102,7 @@ test "literal typing checks representability without converting runtime operands
     ] {
     assert_true(
       try {
-        Condition::parse(text).literal_value(left) |> ignore
+        ScalarComparison::parse(text).literal_value(left) |> ignore
         false
       } catch {
         _ => true

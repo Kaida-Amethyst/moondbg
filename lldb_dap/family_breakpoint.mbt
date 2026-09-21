@@ -1,5 +1,6 @@
 ///|
-/// LLDB CLI handles are not DAP breakpoint ids, even when their numbers agree.
+/// Keep CLI handle ownership distinct from protocol bookkeeping. LLDB-DAP's
+/// hitBreakpointIds uses the same SBTarget IDs for CLI-created breakpoints.
 priv enum LldbBreakpointId {
   LldbBreakpointId(Int)
 }

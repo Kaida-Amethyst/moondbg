@@ -204,7 +204,7 @@ pub fn DebugOutputKind::to_repr(Self) -> @debug.Repr
 pub struct DebugSession {
   // private fields
 }
-pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest) -> FunctionBreakpointSnapshot
+pub async fn DebugSession::add_function_breakpoint(Self, FunctionBreakpointRequest, condition? : @expression.Condition?) -> FunctionBreakpointSnapshot
 pub async fn DebugSession::add_source_breakpoint(Self, String, Int, display_path? : String, condition? : @expression.Condition?) -> BreakpointSnapshot
 pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
 pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
@@ -286,6 +286,7 @@ pub fn FrameSelection::to_repr(Self) -> @debug.Repr
 pub struct FunctionBreakpoint {
   // private fields
 }
+pub fn FunctionBreakpoint::condition(Self) -> @expression.Condition?
 pub fn FunctionBreakpoint::display_name(Self) -> String
 pub fn FunctionBreakpoint::enabled(Self) -> Bool
 pub fn FunctionBreakpoint::id(Self) -> Int

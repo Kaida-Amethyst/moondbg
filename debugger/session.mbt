@@ -193,6 +193,7 @@ pub async fn DebugSession::add_source_breakpoint(
 pub async fn DebugSession::add_function_breakpoint(
   self : DebugSession,
   request : FunctionBreakpointRequest,
+  condition? : @expression.Condition? = None,
 ) -> FunctionBreakpointSnapshot {
   let phase = self.application.phase
   guard phase is Ready || phase is Stopped else {
@@ -203,6 +204,7 @@ pub async fn DebugSession::add_function_breakpoint(
     self.next_breakpoint_id,
     request.display_name(),
     selector,
+    condition~,
   )
   self.next_breakpoint_id += 1
   self.function_breakpoints.push(breakpoint)

@@ -22,9 +22,7 @@ async test "REPL break if creates conditioned file and current-frame line breakp
   breakpoint_command(process, "run", ["Stopped (breakpoint)"])
   breakpoint_command(process, "p i", ["i:", " = 7"])
   breakpoint_command(process, "disable 1", ["Breakpoint 1 disabled."])
-  breakpoint_command(process, "b main if i == 9", [
-    "Conditions currently support only line breakpoints",
-  ])
+  breakpoint_command(process, "b main if i = 9", ["Use == for equality"])
   breakpoint_command(process, "break 4 if i == 9", [
     "Breakpoint 2 verified", "condition: i == 9",
   ])

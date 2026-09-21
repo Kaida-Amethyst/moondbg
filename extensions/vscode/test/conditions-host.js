@@ -1,5 +1,5 @@
 // Real Extension Development Host: VS Code sends its native breakpoint
-// condition, moondbg filters internally, and only i == 7 becomes a visible stop.
+// condition, moondbg filters internally, and only the requested hit is visible.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -29,13 +29,14 @@ exports.run = async function () {
   });
   const workspace = vscode.workspace.workspaceFolders[0];
   const paths = process.env.MOONDBG_TEST_CONDITION_PATHS === "1";
-  const packageName = paths ? "conditional_paths" : "conditional";
-  const expression = paths ? "scene.points[0].x == limit" : "i == 7";
+  const functions = process.env.MOONDBG_TEST_FUNCTION_CONDITIONS === "1";
+  const packageName = functions ? "conditional_functions" : paths ? "conditional_paths" : "conditional";
+  const expression = functions ? "(i >= 3 && i < 4) || (i < 0 && missing == 0)" : paths ? "scene.points[0].x == limit" : "i == 7";
   const watched = paths ? "scene.point.x" : "i";
   const source = vscode.Uri.file(path.join(workspace.uri.fsPath, packageName, "main.mbt"));
-  const line = paths ? fs.readFileSync(source.fsPath, "utf8").split("\n").findIndex(text => text.includes("let marker = scene.point.x")) : 3;
+  const line = paths || functions ? fs.readFileSync(source.fsPath, "utf8").split("\n").findIndex(text => text.includes(functions ? "let result = i + 1" : "let marker = scene.point.x")) : 3;
   assert.ok(line >= 0);
-  const breakpoint = new vscode.SourceBreakpoint(
+  const breakpoint = functions ? new vscode.FunctionBreakpoint("probe", true, expression) : new vscode.SourceBreakpoint(
     new vscode.Location(source, new vscode.Position(line, 0)), true, expression,
   );
   try {
@@ -46,10 +47,10 @@ exports.run = async function () {
       package: path.join(workspace.uri.fsPath, packageName),
     }), true);
     const stop = await until(() => received.find(message => message.event === "stopped"));
-    assert.equal(stop.body.reason, "breakpoint");
+    assert.equal(stop.body.reason, functions ? "function breakpoint" : "breakpoint");
     assert.ok(received.some(message => message.command === "initialize" &&
       message.body.supportsConditionalBreakpoints === true));
-    assert.ok(sent.some(message => message.command === "setBreakpoints" &&
+    assert.ok(sent.some(message => message.command === (functions ? "setFunctionBreakpoints" : "setBreakpoints") &&
       message.arguments.breakpoints.some(point => point.condition === expression)));
     session = vscode.debug.activeDebugSession;
     const frame = await until(() => {
@@ -59,7 +60,7 @@ exports.run = async function () {
     const value = await session.customRequest("evaluate", {
       frameId: frame.frameId, expression: watched, context: "watch",
     });
-    assert.equal(value.result, "7");
+    assert.equal(value.result, functions ? "3" : "7");
     const stack = await session.customRequest("stackTrace", { threadId: stop.body.threadId });
     assert.equal(stack.stackFrames[0].line, line + 1);
     assert.equal(fs.realpathSync(stack.stackFrames[0].source.path), fs.realpathSync(source.fsPath));

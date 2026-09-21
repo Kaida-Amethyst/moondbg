@@ -23,6 +23,7 @@ pub struct BreakpointConditions {
 pub fn BreakpointConditions::for_stop(Self, Json) -> Array[@expression.Condition]?
 pub fn BreakpointConditions::new() -> Self
 pub fn BreakpointConditions::replace(Self, String, Array[(Int, @expression.Condition?)]) -> Unit
+pub fn BreakpointConditions::replace_functions(Self, Array[(Int, @expression.Condition?)]) -> Unit
 
 pub struct FunctionBreakpointDriver {
   // private fields

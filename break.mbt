@@ -82,9 +82,6 @@ fn CommandBreak::parse(arguments : StringView) -> Result[CommandBreak, String] {
     Ok(target) => target
     Err(message) => return Err(message)
   }
-  guard !(target is FunctionBreakTarget(_)) else {
-    return Err("Conditions currently support only line breakpoints")
-  }
   let condition = @expression.Condition::parse(arguments[offset + 2:].trim()) catch {
     @expression.ConditionError(message) => return Err(message)
   }
@@ -201,7 +198,10 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
         )
       }
       FunctionBreakTarget(request) => {
-        let breakpoint = context.session.add_function_breakpoint(request)
+        let breakpoint = context.session.add_function_breakpoint(
+          request,
+          condition=self.condition,
+        )
         function_breakpoint_presentation(breakpoint)
       }
     }
@@ -226,6 +226,8 @@ impl ReplCommand for CommandBreak with fn execute(self, context) {
   let id = match event {
     BreakpointPendingPresentation(id, _, _) => Some(id)
     BreakpointUpdatePresentation(point) => Some(point.id())
+    FunctionBreakpointPendingPresentation(id, _) => Some(id)
+    FunctionBreakpointUpdatePresentation(point) => Some(point.id())
     _ => None
   }
   if id is Some(id) && self.condition is Some(condition) {
@@ -282,12 +284,16 @@ test "break if parses a conditional source location without splitting file names
   for
     input in [
       "", "if i == 7", "0 if i == 7", "4 if", "4 if   ", "4 if i = 7", "4 if i > other()",
-      "4 if i > 0 && j < 1", "4 ifi == 7", "4 if point.x + 1 == 7", "main if i == 7",
-      "@pkg.foo if i == 7",
+      "4 if i > 0 & j < 1", "4 ifi == 7", "4 if point.x + 1 == 7", "main if i ==",
+      "@pkg.foo if i ==",
     ] {
     assert_true(CommandBreak::parse(input) is Err(_), msg=input)
   }
-  for input in ["b main.mbt:4 if i == 7", "break 4 if i != 7"] {
+  for
+    input in [
+      "b main.mbt:4 if i == 7", "break 4 if i != 7", "b foo if i >= 3 && i < 8",
+      "b @pkg.foo if !(i == 0)",
+    ] {
     assert_true(
       default_command_registry().parse_line(input) is RegistryCommand(_),
       msg=input,

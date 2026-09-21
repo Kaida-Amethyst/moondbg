@@ -195,7 +195,7 @@ pub fn DebugSession::breakpoints(
       .unwrap_or(breakpoint.pending_snapshot())
     entries.push({
       id: breakpoint.id(),
-      condition: None,
+      condition: breakpoint.condition().map(value => value.text),
       target: FunctionTarget(
         display_name=breakpoint.display_name(),
         selector=breakpoint.selector(),

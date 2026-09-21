@@ -3,11 +3,20 @@
 /// entire binding set, including unconditional entries and duplicate IDs.
 pub struct BreakpointConditions {
   priv files : Map[String, Array[(Int, @expression.Condition?)]]
+  priv mut functions : Array[(Int, @expression.Condition?)]
 }
 
 ///|
 pub fn BreakpointConditions::new() -> BreakpointConditions {
-  { files: {}, }
+  { files: {}, functions: [], }
+}
+
+///|
+pub fn BreakpointConditions::replace_functions(
+  self : BreakpointConditions,
+  bindings : Array[(Int, @expression.Condition?)],
+) -> Unit {
+  self.functions = bindings.copy()
 }
 
 ///|
@@ -21,7 +30,7 @@ pub fn BreakpointConditions::replace(
 
 ///|
 /// None means preserve the stop. Missing/unknown hit IDs, signals, panic or
-/// co-located unconditional/function breakpoints must never be auto-continued.
+/// co-located unconditional breakpoints must never be auto-continued.
 pub fn BreakpointConditions::for_stop(
   self : BreakpointConditions,
   body : Json,
@@ -32,6 +41,8 @@ pub fn BreakpointConditions::for_stop(
     return None
   }
   let conditions : Array[@expression.Condition] = []
+  let groups = self.files.values().collect()
+  groups.push(self.functions)
   for id in ids {
     guard id is Number(id, ..) &&
       id >= 0 &&
@@ -40,7 +51,7 @@ pub fn BreakpointConditions::for_stop(
       return None
     }
     let before = conditions.length()
-    for entries in self.files.values() {
+    for entries in groups {
       for (raw, condition) in entries {
         if raw == id.to_int() {
           guard condition is Some(condition) else { return None }
@@ -118,19 +129,9 @@ pub async fn VariableInspector::test_conditions(
   let values : Map[String, @expression.ScalarValue] = Map([])
   let mut matches = false
   for condition in conditions {
-    let result = try {
-      let left = self.cached_scalar(frame, condition.left, values)
-      let right = match condition.right {
-        @expression.PathOperand(path) => self.cached_scalar(frame, path, values)
-        _ =>
-          match condition.literal_value(left) {
-            Some(value) => value
-            None =>
-              raise @expression.ConditionError("Missing condition operand")
-          }
-      }
-      condition.evaluate(left, right)
-    } catch {
+    let result = condition.evaluate(path => {
+      self.cached_scalar(frame, path, values)
+    }) catch {
       error => {
         if @async.is_cancellation_error(error) {
           raise error

@@ -227,9 +227,7 @@ test "P7 registry resolves every fixed alias through command specs" {
 async test "invalid inline conditions do not create breakpoints or consume IDs" {
   let context = framework_test_context()
   for
-    command in [
-      "b break.mbt:4 if i = 7", "b break.mbt:4 if", "b main if i == 7",
-    ] {
+    command in ["b break.mbt:4 if i = 7", "b break.mbt:4 if", "b main if i =="] {
     assert_true(context.registry.parse_line(command) is RegistryInvalid(_))
     assert_eq(context.session.breakpoints().length(), 0)
   }

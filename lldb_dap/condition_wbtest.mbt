@@ -241,3 +241,20 @@ async test "scalar reader rejects manually constructed invalid paths before back
     )
   }
 }
+
+///|
+test "function conditions share hit IDs safely with source and duplicate logical breakpoints" {
+  let bindings = BreakpointConditions::new()
+  let first = @expression.Condition::parse("i > 3 && i < 8")
+  let second = @expression.Condition::parse("i == 0")
+  let stop : Json = { "reason": "breakpoint", "hitBreakpointIds": [9] }
+  bindings.replace_functions([(9, Some(first)), (9, Some(second))])
+  assert_eq(bindings.for_stop(stop), Some([first, second]))
+  bindings.replace("/main.mbt", [(9, None)])
+  assert_eq(bindings.for_stop(stop), None)
+  bindings.replace("/main.mbt", [])
+  bindings.replace_functions([(9, Some(first)), (9, None)])
+  assert_eq(bindings.for_stop(stop), None)
+  bindings.replace_functions([])
+  assert_eq(bindings.for_stop(stop), None)
+}

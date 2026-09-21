@@ -34,6 +34,7 @@ priv struct LogicalFunctionBreakpoint {
   id : Int
   display_name : String
   selector : @debugger.FunctionBreakpointSelector
+  condition : @expression.Condition?
 } derive(Eq)
 
 ///|
@@ -44,6 +45,7 @@ fn LogicalFunctionBreakpoint::from_domain(
     id: breakpoint.id(),
     display_name: breakpoint.display_name(),
     selector: breakpoint.selector(),
+    condition: breakpoint.condition(),
   }
 }
 
@@ -408,4 +410,23 @@ async fn DebugExecution::configure_function_breakpoints(
   for breakpoint in family_function_breakpoints(breakpoints) {
     self.configure_family_function_breakpoint(breakpoint)
   }
+  self.bind_function_conditions(breakpoints)
+}
+
+///|
+fn DebugExecution::bind_function_conditions(
+  self : DebugExecution,
+  breakpoints : Array[LogicalFunctionBreakpoint],
+) -> Unit {
+  let bindings = []
+  for point in breakpoints {
+    if self.breakpoint_state.families.get(point.id)
+      is Some({ id: LldbBreakpointId(id), enabled: true, }) {
+      bindings.push((id, point.condition))
+    } else if self.breakpoint_state.outcomes.get(point.id)
+      is Some({ dap_id: Some(id), .. }) {
+      bindings.push((id, point.condition))
+    }
+  }
+  self.conditions.replace_functions(bindings)
 }

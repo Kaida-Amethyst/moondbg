@@ -19,6 +19,7 @@ fn LogicalFunctionBreakpoint::new(
     selector: @debugger.FunctionBreakpointSelector::exact_physical(
       physical_name,
     ),
+    condition: None,
   }
 }
 
@@ -32,6 +33,7 @@ fn LogicalFunctionBreakpoint::family(
     id,
     display_name,
     selector: @debugger.FunctionBreakpointSelector::family(base),
+    condition: None,
   }
 }
 

@@ -3,6 +3,7 @@ priv struct FunctionState {
   context : @debugger.DebugContext
   jobs : @async.Queue[Array[Json]]
   mut active : Int?
+  mut requested : Array[Json]
   deferred : Array[(Int, String, Json)]
   events : Array[Json]
   stops : Array[Json]
@@ -16,6 +17,7 @@ fn FunctionState::new(context : @debugger.DebugContext) -> FunctionState {
     context,
     jobs: @async.Queue(kind=Blocking(1)),
     active: None,
+    requested: [],
     deferred: [],
     events: [],
     stops: [],
@@ -40,11 +42,10 @@ fn resolve_function_point(
   guard point is Object(fields) && fields.get("name") is Some(String(text)) else {
     raise LiveError("Function breakpoint requires a name.")
   }
-  for key in ["condition", "hitCondition"] {
-    if fields.contains(key) {
-      raise LiveError("Only unconditional function breakpoints are supported.")
-    }
+  if fields.contains("hitCondition") {
+    raise LiveError("Function breakpoint hit counts are not supported.")
   }
+  breakpoint_condition(point) |> ignore
   let request = @debugger.FunctionBreakpointRequest::parse(text.trim())
   if request.display_name() != "main" {
     context.current_package() |> ignore
@@ -55,7 +56,9 @@ fn resolve_function_point(
 ///|
 fn function_error(error : Error) -> String {
   match error {
-    @debugger.FunctionNameError(message) | LiveError(message) => message
+    @debugger.FunctionNameError(message)
+    | LiveError(message)
+    | @expression.ConditionError(message) => message
     @debugger.MissingCurrentPackage =>
       "Function names require launch.package; launch.program only supports main."
     @debugger.UnknownPackageAlias(package_alias) =>
@@ -169,7 +172,9 @@ async fn LiveSession::complete_functions(
     // Session error handling fails the request and terminates the target.
     Err(message) => raise LiveError(message)
   }
+  self.conditions.install_functions(self.functions.requested, points)
   self.functions.active = None
+  self.functions.requested = []
   self.functions.published.clear()
   for point in points {
     if point is { "id": Number(id, ..), .. } {

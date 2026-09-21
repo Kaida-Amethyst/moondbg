@@ -155,6 +155,7 @@ async fn LldbDapSession::synchronize_breakpoints(
     execution.configure_exact_function_breakpoints(current_exact)
   }
   execution.synchronize_families(families)
+  execution.bind_function_conditions(functions)
   // Only now can this execution's applied configuration be replaced. Shared
   // DAP ids are never deleted individually: group replacement owns them.
   let active : Map[Int, Bool] = Map([])

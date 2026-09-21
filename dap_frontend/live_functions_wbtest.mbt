@@ -36,7 +36,7 @@ async test "function replacement deduplicates retains and deletes only owned han
     { "name": "foo" },
     { "name": "foo" },
     { "name": "@missing.foo" },
-    { "name": "bar", "condition": "x > 1" },
+    { "name": "bar", "condition": "x >" },
   ])
   assert_eq(commands, [
     "breakpoint set --func-regex '^_M0FP24demo4main3foo($|G|H)'",
@@ -178,4 +178,48 @@ async test "function installation publishes before early stops and preserves sou
     ],
     msg=Json(messages).stringify(),
   )
+}
+
+///|
+async test "conditional function replacement retains raw handles while replacing conditions" {
+  let commands : Array[String] = []
+  let driver = @lldb_dap.FunctionBreakpointDriver::new((_, args) => {
+    guard args is { "expression": String(command), .. } else {
+      fail(args.stringify())
+    }
+    commands.push(command)
+    function_reply(
+      if command.has_prefix("breakpoint delete ") {
+        "1 breakpoints deleted; 0 breakpoint locations disabled."
+      } else {
+        "Breakpoint 17: 2 locations."
+      },
+    )
+  })
+  let installed : Map[String, @lldb_dap.InstalledFunctionBreakpoint] = Map([])
+  let context = @debugger.DebugContext::new("demo/main", [])
+  let state = ConditionState::new()
+  let stop : Json = { "reason": "breakpoint", "hitBreakpointIds": [17] }
+  for text in ["value == 7", "value > 3 && value < 8"] {
+    let desired : Array[Json] = [{ "name": "identity", "condition": text }]
+    let result = replace_functions(driver, context, installed, desired)
+    state.install_functions(desired, result)
+    assert_true(
+      state.bindings.for_stop(stop) is Some([condition]) &&
+      condition.text == text,
+    )
+  }
+  assert_eq(commands.length(), 1)
+  let desired : Array[Json] = [
+    { "name": "identity", "condition": "value == 7" },
+    { "name": "identity" },
+  ]
+  state.install_functions(
+    desired,
+    replace_functions(driver, context, installed, desired),
+  )
+  assert_eq(state.bindings.for_stop(stop), None)
+  state.install_functions([], replace_functions(driver, context, installed, []))
+  assert_eq(state.bindings.for_stop(stop), None)
+  assert_eq(commands.length(), 2)
 }

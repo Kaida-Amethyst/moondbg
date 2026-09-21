@@ -29,7 +29,7 @@ fn ConditionState::new() -> ConditionState {
 }
 
 ///|
-fn source_condition(point : Json) -> @expression.Condition? raise {
+fn breakpoint_condition(point : Json) -> @expression.Condition? raise {
   match point {
     { "condition": String(text), .. } =>
       if text.trim().is_empty() {
@@ -84,7 +84,7 @@ fn ConditionState::install(
   }
   let bindings = []
   for index, point in points {
-    let condition = source_condition(point)
+    let condition = breakpoint_condition(point)
     if installed[index] is { "id": Number(id, ..), .. } &&
       id >= 0 &&
       id <= 2147483647 &&
@@ -104,6 +104,31 @@ fn LiveSession::breakpoint_work_pending(self : LiveSession) -> Bool {
   self.panic.active is Some(_) ||
   self.conditions.updating ||
   self.conditions.active is Some(_)
+}
+
+///|
+// Function families use the same target ID namespace as source breakpoints.
+// Keep duplicate logical entries so an unconditional one preserves the stop.
+fn ConditionState::install_functions(
+  self : ConditionState,
+  points : Array[Json],
+  installed : Array[Json],
+) -> Unit raise {
+  guard points.length() == installed.length() else {
+    raise LiveError("Incomplete function breakpoint replacement response.")
+  }
+  let bindings = []
+  for index, result in installed {
+    if result is { "id": Number(id, ..), .. } &&
+      id >= 0 &&
+      id <= 2147483647 &&
+      id == id.to_int().to_double() {
+      bindings.push((id.to_int(), breakpoint_condition(points[index])))
+    } else if result is { "verified": True, .. } {
+      raise LiveError("Verified function breakpoint has no adapter ID.")
+    }
+  }
+  self.bindings.replace_functions(bindings)
 }
 
 ///|

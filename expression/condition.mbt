@@ -7,36 +7,17 @@ pub(all) suberror ConditionError {
 pub extend ConditionError with @debug.Debug::{to_repr}
 
 ///|
-priv enum Comparison {
-  Greater
-  GreaterEqual
-  Less
-  LessEqual
-  Equal
-  NotEqual
+priv enum ConditionNode {
+  Compare(ScalarComparison)
+  And(ConditionNode, ConditionNode)
+  Or(ConditionNode, ConditionNode)
+  Not(ConditionNode)
 } derive(Eq, Debug)
 
 ///|
-pub(all) enum ConditionOperand {
-  PathOperand(VariablePath)
-  IntegerOperand(String)
-  BoolOperand(Bool)
-} derive(Eq, Debug)
-
-///|
-pub extend ConditionOperand with Eq::{equal, not_equal}
-
-///|
-pub extend ConditionOperand with @debug.Debug::{to_repr}
-
-///|
-/// Resolving paths belongs to the debugger. Integer literals acquire the
-/// left path's type; runtime values are never implicitly converted.
 pub struct Condition {
-  left : VariablePath
-  right : ConditionOperand
   text : String
-  priv comparison : Comparison
+  priv node : ConditionNode
 } derive(Eq, Debug)
 
 ///|
@@ -46,138 +27,157 @@ pub extend Condition with Eq::{equal, not_equal}
 pub extend Condition with @debug.Debug::{to_repr}
 
 ///|
+priv struct ConditionParser {
+  mut rest : StringView
+  mut nodes : Int
+}
+
+///|
+fn ConditionParser::consume(self : ConditionParser, token : StringView) -> Bool {
+  self.rest = self.rest.trim_start()
+  guard self.rest.strip_prefix(token) is Some(rest) else { return false }
+  self.rest = rest
+  true
+}
+
+///|
+fn ConditionParser::count_node(
+  self : ConditionParser,
+) -> Unit raise ConditionError {
+  self.nodes += 1
+  guard self.nodes <= 256 else {
+    raise ConditionError("Condition has too many operations")
+  }
+}
+
+///|
+fn ConditionParser::parse_or(
+  self : ConditionParser,
+  depth : Int,
+) -> ConditionNode raise ConditionError {
+  let mut node = self.parse_and(depth)
+  while self.consume("||") {
+    self.count_node()
+    node = Or(node, self.parse_and(depth))
+  }
+  node
+}
+
+///|
+fn ConditionParser::parse_and(
+  self : ConditionParser,
+  depth : Int,
+) -> ConditionNode raise ConditionError {
+  let mut node = self.parse_unary(depth)
+  while self.consume("&&") {
+    self.count_node()
+    node = And(node, self.parse_unary(depth))
+  }
+  node
+}
+
+///|
+fn ConditionParser::parse_unary(
+  self : ConditionParser,
+  depth : Int,
+) -> ConditionNode raise ConditionError {
+  guard depth <= 64 else {
+    raise ConditionError("Condition is nested too deeply")
+  }
+  if self.consume("!") {
+    guard self.rest.trim_start() is ['(' | '!', ..] else {
+      raise ConditionError("Use !(condition) to negate a condition")
+    }
+    self.count_node()
+    return Not(self.parse_unary(depth + 1))
+  }
+  if self.consume("(") {
+    let node = self.parse_or(depth + 1)
+    guard self.consume(")") else {
+      raise ConditionError("Expected ')' in condition")
+    }
+    return node
+  }
+  self.rest = self.rest.trim_start()
+  let end = for index, ch in self.rest.iter2() {
+    if ch is ('&' | '|' | '(' | ')') {
+      break index
+    }
+  } nobreak {
+    self.rest.length()
+  }
+  let comparison = ScalarComparison::parse(self.rest[:end])
+  self.rest = self.rest[end:]
+  self.count_node()
+  Compare(comparison)
+}
+
+///|
+fn ConditionNode::display(self : ConditionNode, parent : Int) -> String {
+  let (precedence, text) = match self {
+    Compare(value) => (4, value.text)
+    Not(value) => (3, "!(\{value.display(0)})")
+    And(left, right) => (2, "\{left.display(2)} && \{right.display(2)}")
+    Or(left, right) => (1, "\{left.display(1)} || \{right.display(1)}")
+  }
+  if precedence < parent {
+    "(\{text})"
+  } else {
+    text
+  }
+}
+
+///|
 pub fn Condition::parse(input : StringView) -> Condition raise ConditionError {
-  let input = input.trim()
   guard input.length() <= 8192 else {
     raise ConditionError("Condition is too long")
   }
-  let split = for index, ch in input.iter2() {
-    if ch is ('>' | '<' | '=' | '!') {
-      break Some(index)
-    }
-  } nobreak {
-    None
+  let parser = ConditionParser::{ rest: input, nodes: 0, }
+  let node = parser.parse_or(0)
+  guard parser.rest.trim().is_empty() else {
+    raise ConditionError("Unexpected condition suffix: \{parser.rest}")
   }
-  guard split is Some(index) else {
-    raise ConditionError(
-      "Expected <variable path> <comparison> <path or literal>; comparisons: > >= < <= == !=",
-    )
-  }
-  guard VariablePath::parse(input[:index].trim()) is Some(left) else {
-    raise ConditionError(
-      "Invalid left variable path; use point.x or arr[0], without calls or arithmetic",
-    )
-  }
-  let (comparison, operator, value) = match input[index:] {
-    ['>', '=', .. value] => (GreaterEqual, ">=", value)
-    ['<', '=', .. value] => (LessEqual, "<=", value)
-    ['=', '=', .. value] => (Equal, "==", value)
-    ['!', '=', .. value] => (NotEqual, "!=", value)
-    ['>', .. value] => (Greater, ">", value)
-    ['<', .. value] => (Less, "<", value)
-    _ =>
-      raise ConditionError(
-        "Use == for equality; supported comparisons: > >= < <= == !=",
-      )
-  }
-  let value = value.trim()
-  let (right, text) = match value {
-    "true" => (BoolOperand(true), "true")
-    "false" => (BoolOperand(false), "false")
-    ['-' | '0'..='9', ..] => {
-      let integer = integer_literal(value)
-      (IntegerOperand(integer), integer)
-    }
-    _ => {
-      guard VariablePath::parse(value) is Some(path) else {
-        raise ConditionError(
-          "Invalid right operand; use a variable path, decimal integer, true or false",
-        )
-      }
-      (PathOperand(path), path.display_name())
-    }
-  }
-  if right is BoolOperand(_) && !(comparison is (Equal | NotEqual)) {
-    raise ConditionError("Bool conditions support only == and !=")
-  }
-  {
-    left,
-    right,
-    comparison,
-    text: "\{left.display_name()} \{operator} \{text}",
-  }
+  { node, text: node.display(0), }
 }
 
 ///|
-fn integer_literal(text : StringView) -> String raise ConditionError {
-  decimal_digits(text)
-  try {
-    if text.has_prefix("-") {
-      @string.parse_int64(text, base=10).to_string()
-    } else {
-      @string.parse_uint64(text, base=10).to_string()
-    }
-  } catch {
-    _ =>
-      raise ConditionError(
-        "Integer literal is outside the supported 64-bit range",
-      )
-  }
-}
-
-///|
-pub fn Condition::literal_value(
+/// Resolve lazily: skipped branches perform no variable reads and raise no
+/// runtime type/availability errors. Parsing still validates the whole input.
+pub async fn Condition::evaluate(
   self : Condition,
-  left : ScalarValue,
-) -> ScalarValue? raise ConditionError {
-  match self.right {
-    PathOperand(_) => None
-    BoolOperand(value) => Some(BoolValue(value))
-    IntegerOperand(text) => {
-      guard !(left is BoolValue(_)) else {
-        raise ConditionError("Cannot compare Bool with an integer literal")
-      }
-      Some(ScalarValue::decode(left.type_name(), text))
-    }
-  }
+  read : async (VariablePath) -> ScalarValue,
+) -> Bool {
+  self.node.evaluate(read)
 }
 
 ///|
-fn[T : Compare] Comparison::matches(
-  self : Comparison,
-  left : T,
-  right : T,
+async fn ConditionNode::evaluate(
+  self : ConditionNode,
+  read : async (VariablePath) -> ScalarValue,
 ) -> Bool {
   match self {
-    Greater => left > right
-    GreaterEqual => left >= right
-    Less => left < right
-    LessEqual => left <= right
-    Equal => left == right
-    NotEqual => left != right
-  }
-}
-
-///|
-pub fn Condition::evaluate(
-  self : Condition,
-  left : ScalarValue,
-  right : ScalarValue,
-) -> Bool raise ConditionError {
-  match (left, right) {
-    (IntValue(a), IntValue(b)) => self.comparison.matches(a, b)
-    (UIntValue(a), UIntValue(b)) => self.comparison.matches(a, b)
-    (Int64Value(a), Int64Value(b)) => self.comparison.matches(a, b)
-    (UInt64Value(a), UInt64Value(b)) => self.comparison.matches(a, b)
-    (BoolValue(a), BoolValue(b)) =>
-      match self.comparison {
-        Equal => a == b
-        NotEqual => a != b
-        _ => raise ConditionError("Bool conditions support only == and !=")
+    Compare(comparison) => {
+      let left = read(comparison.left)
+      let right = match comparison.right {
+        PathOperand(path) => read(path)
+        _ =>
+          match comparison.literal_value(left) {
+            Some(value) => value
+            None => raise ConditionError("Missing condition operand")
+          }
       }
-    _ =>
-      raise ConditionError(
-        "Condition type mismatch: \{left.type_name()} and \{right.type_name()}; implicit conversions are not supported",
-      )
+      comparison.evaluate(left, right)
+    }
+    And(left, right) => {
+      guard left.evaluate(read) else { return false }
+      right.evaluate(read)
+    }
+    Or(left, right) => {
+      if left.evaluate(read) {
+        return true
+      }
+      right.evaluate(read)
+    }
+    Not(value) => !value.evaluate(read)
   }
 }

@@ -80,7 +80,7 @@ moondbg conditional
 ```
 
 预期只在 `i = 7` 的那轮停住。`b` 和 `break` 均支持 `if` 后缀，暂停后也可用
-`b 4 if i == 7` 在当前选中 frame 的源码设置条件断点；函数断点暂不支持条件。
+`b 4 if i == 7` 在当前选中 frame 的源码设置条件断点；函数断点也支持 `b foo if value == 7`。
 条件会在创建时一起安装，语法错误不会创建断点。`condition 1 i >= 8` 修改条件，`condition 1` 清除条件；
 `breakpoints` 显示条件。无效修改不会覆盖原条件；条件随 disable/enable 和再次 run 保留。
 
@@ -106,6 +106,40 @@ VS Code 打开 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行 `print
 VS Code 在同一文件第 32 行右键编辑条件，填入上述样例条件即可；无需修改扩展或重新安装 VSIX。
 样例中的对象集中放在 `scene` 中，对应路径为 `scene.arr[0]`、`scene.line.start.x` 等。
 
+第三轮支持组合条件、普通函数及泛型函数断点。运行 `moondbg conditional_functions`：
+
+```text
+(moondbg) b probe if i >= 3 && i < 8
+(moondbg) run
+(moondbg) p i
+(moondbg) c
+(moondbg) p i
+```
+
+依次停在 `i = 3`、`i = 4`；继续会停在 5、6、7。`&&` 优先于 `||`，可用括号分组及
+`!(condition)` 取反。真正短路：`i >= 0 || missing == 0` 不读取 missing；
+`i < 0 && missing == 0` 在 i 非负时也不读取它。整个输入的语法仍会先校验。
+
+试用泛型条件时先 `delete 1`，然后：
+
+```text
+(moondbg) b identity if value == 7
+(moondbg) run
+(moondbg) p value
+(moondbg) c
+(moondbg) p value
+(moondbg) c
+```
+
+同一个逻辑断点覆盖三个实例：先过滤 Int 的 1，然后停在 Int 的 7、UInt64 的 7；
+最后遇到 Double 实例时明确报错并保留现场，不把不支持的比较猜成 false。
+`condition <id> [expression]` 同样可修改/清除函数条件；disable/enable 与重跑保留设置。
+跨包形式为 `b @alias.foo if value > 3`。
+
+VS Code 的 **断点** 面板点击 **添加函数断点（+）**，填写 `probe`，然后右键该条目
+**编辑条件**，填写 `i >= 3 && i < 8`。泛型填写 `identity`，条件填 `value == 7`。
+函数名和条件在 VS Code 中是两个独立字段，不要把 `if ...` 写进函数名。仅启用要试用的断点。
+
 当前边界：
 
 - 左侧为当前命中 frame 的变量路径；右侧可以是变量路径、十进制整数常量或 `true` / `false`。
@@ -114,7 +148,8 @@ VS Code 在同一文件第 32 行右键编辑条件，填入上述样例条件�
 - 两侧路径必须同类型，不做 Int/UInt、Int/Int64、Bool/Int 等隐式转换。整数常量按左侧类型解析并严格检查范围，
   例如 `unsigned == 8` 可以，`unsigned == -1` 会报错；`ready == 1` 也会报错。
   超出 Int64/UInt64 总范围的常量在设置时拒绝，具体左侧类型的越界在命中读取后报告。
-- 暂不支持 Float/Double（需要精确读取契约）、Char、String、对象整体比较、函数断点条件、算术、逻辑组合、命中次数或 logpoint。
+- 支持 `&&`、`||`、`!` 和括号；不支持裸 Bool 路径作为整个条件，请写 `ready == true`。
+- 暂不支持 Float/Double（需要精确读取契约）、Char、String、对象整体比较、算术、命中次数或 logpoint。
 - 条件读取失败（变量不存在、不可用或类型不符）会停住并报告错误，不当成 false。
 - run/continue 在条件为假时自动继续；单步保留 LLDB 的真实停止，不为跳过条件断点而额外继续。
 - panic、信号、主动暂停及同时命中的无条件断点不会被条件过滤隐藏。无法可靠识别命中 ID 时也保留停止。

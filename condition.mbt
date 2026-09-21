@@ -10,7 +10,7 @@ fn condition_command_spec() -> CommandSpec {
     "condition",
     [],
     "condition <id> [expression]",
-    "Set a line breakpoint condition; omit expression to clear",
+    "Set a breakpoint condition; omit expression to clear",
     (_, arguments) => {
       let end = command_word_end(arguments)
       guard parse_breakpoint_id(arguments[:end]) is Some(id) else {
@@ -57,7 +57,7 @@ test "condition command validates its id and bounded comparison grammar" {
   }
   for
     text in [
-      "condition", "condition 0 i > 0", "condition -1", "condition 1 i = 0", "condition 1 i > 0 && j < 0",
+      "condition", "condition 0 i > 0", "condition -1", "condition 1 i = 0", "condition 1 i > 0 & j < 0",
       "condition 1 point.x == other()",
     ] {
     assert_true(registry.parse_line(text) is RegistryInvalid(_), msg=text)

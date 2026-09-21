@@ -10,9 +10,12 @@ async test "conditions survive disabled and restarted executions and invalid edi
   session.add_function_breakpoint(FunctionBreakpointRequest::current("main"))
   |> ignore
   session.set_condition(1, "i == 7")
+  session.set_condition(2, "i >= 3 && i < 8")
+  assert_eq(session.condition_text(2), Some("i >= 3 && i < 8"))
+  assert_eq(session.breakpoints()[1].condition, Some("i >= 3 && i < 8"))
   assert_eq(session.condition_text(1), Some("i == 7"))
   assert_eq(session.breakpoints()[0].condition, Some("i == 7"))
-  for (id, text) in [(1, "i = 3"), (2, "i == 3"), (999, "i == 3")] {
+  for (id, text) in [(1, "i = 3"), (2, "i =="), (999, "i == 3")] {
     assert_true(
       try {
         session.set_condition(id, text)
@@ -27,6 +30,10 @@ async test "conditions survive disabled and restarted executions and invalid edi
   assert_eq(session.breakpoints()[0].condition, Some("i == 7"))
   session.manage_breakpoint(1, EnableBreakpoint) |> ignore
   session.run() |> ignore
+  assert_eq(
+    backend.function_breakpoints[0].condition().map(value => value.text),
+    Some("i >= 3 && i < 8"),
+  )
   backend.reject_sync = true
   assert_true(
     try {
@@ -37,7 +44,24 @@ async test "conditions survive disabled and restarted executions and invalid edi
     },
   )
   assert_eq(session.condition_text(1), Some("i == 7"))
+  assert_true(
+    try {
+      session.set_condition(2, "i == 2")
+      false
+    } catch {
+      _ => true
+    },
+  )
+  assert_eq(session.condition_text(2), Some("i >= 3 && i < 8"))
   backend.reject_sync = false
+  session.set_condition(2, "i == 4")
+  session.manage_breakpoint(2, DisableBreakpoint) |> ignore
+  assert_eq(session.condition_text(2), Some("i == 4"))
+  session.manage_breakpoint(2, EnableBreakpoint) |> ignore
+  assert_eq(
+    backend.function_breakpoints[0].condition().map(value => value.text),
+    Some("i == 4"),
+  )
   session.set_condition(1, "i >= 8")
   assert_eq(
     backend.breakpoints[0].condition().map(condition => condition.text),
@@ -45,6 +69,9 @@ async test "conditions survive disabled and restarted executions and invalid edi
   )
   session.run() |> ignore
   assert_eq(session.condition_text(1), Some("i >= 8"))
+  assert_eq(session.condition_text(2), Some("i == 4"))
+  session.set_condition(2, "")
+  assert_eq(backend.function_breakpoints[0].condition(), None)
   session.set_condition(1, "   ")
   assert_eq(session.condition_text(1), None)
   assert_eq(backend.breakpoints[0].condition(), None)
