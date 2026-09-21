@@ -10,7 +10,7 @@
 支持按包自动构建或直接调试预编译 native 程序，以及行断点、函数断点、调用栈、三种单步、继续运行、暂停、局部变量树、实时输出和停止清理。
 原有 `connectionTest: true` 配置仍然只验证连接，不启动 lldb-dap 或用户程序。
 
-暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、条件断点、
+暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、重启、函数断点条件、
 算术表达式、函数调用或赋值。调试控制台支持只读变量路径（如 `point.x`、`arr[0]`），
 不能输入 REPL 的 `p`、`n` 等命令。一次会话只启动一个程序，再按 F5 是新会话。
 
@@ -435,3 +435,14 @@ panic 生命周期回归在 `acceptance/panic_lifecycle_wbtest.mbt` 与
 先构建本仓库 CLI，再设 `MOONDBG_TOOLCHAIN_ACCEPTANCE=1` 运行这两个文件；需要本机 `cc`、
 `ps`、LLDB 与 MoonBit 工具链。清理检查只针对本次测试的确切进程及退出前捕获的子进程 PID，
 不按进程名终止其他会话。真实 VS Code 宿主测试也检查 Stop 后目标 PID 消失。
+
+条件断点第一轮：`expression.IntCondition` 只解析局部 Int 与十进制常量比较；
+`lldb_dap.BreakpointConditions` 关联真实命中 ID，共享 `VariableInspector` 读取类型和值。
+源码 setBreakpoints 的条件保存在前端，发给 LLDB 前删除条件字段；替换请求必须成功后才提交绑定。
+条件探查走后台任务，主循环仍可接收 pause/disconnect；false 时内部 continue 不向 VS Code
+发送虚假的 stopped/continued。显式暂停优先于过滤，迟到求值不能恢复已暂停或关闭的会话。
+单步不触发额外自动继续。用户条件不经过 Python，也不传给 LLDB 的 evaluate。
+
+`acceptance/conditions_wbtest.mbt` 门控真实 REPL/DAP 循环、动态修改、失败停住、重跑、
+panic、持续 false 条件下的暂停及退出。`test/conditions-host.js` 是对应的真实扩展宿主测试，
+以 `testdata/dwarf_probe` 为工作区，通过 VS Code SourceBreakpoint 条件字段验证只停在 `i = 7`。

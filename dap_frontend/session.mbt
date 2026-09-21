@@ -150,7 +150,7 @@ fn ConnectionSession::handle_request(
       self.response(seq, command, body={
         "supportsConfigurationDoneRequest": true,
         "supportsFunctionBreakpoints": true,
-        "supportsConditionalBreakpoints": false,
+        "supportsConditionalBreakpoints": true,
         "supportsEvaluateForHovers": true,
         "supportsTerminateRequest": false,
         "supportsRestartRequest": false,

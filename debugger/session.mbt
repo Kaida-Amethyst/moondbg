@@ -317,6 +317,7 @@ async fn DebugSession::accept_outcome(
                 frame.source_path(),
                 frame.line(),
                 frame.column(),
+                notice=snapshot.notice(),
               )
             None => snapshot
           }

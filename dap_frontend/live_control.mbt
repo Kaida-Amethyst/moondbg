@@ -49,7 +49,7 @@ async fn LiveSession::control(
       raise LiveError("\{command} requires an active debug session.")
     }
     if command == "pause" {
-      guard !self.stopped else {
+      guard !self.stopped || self.conditions.active is Some(_) else {
         raise LiveError("The program is already stopped.")
       }
       guard self.pause_revision is None else {
@@ -70,7 +70,26 @@ async fn LiveSession::control(
       return
     }
   }
+  if command == "pause" && self.conditions.active is Some(job) {
+    self.conditions.active = None
+    self.execution_revision += 1
+    send_client(writer, self.client.response(seq, command))
+    let body = match job.body {
+      Object(fields) => {
+        let copy = fields.copy()
+        copy.set("reason", Json("pause"))
+        copy.set("description", Json("Paused by user request"))
+        copy.remove("hitBreakpointIds")
+        Json(copy)
+      }
+      _ => job.body
+    }
+    send_client(writer, self.client.event("stopped", body))
+    self.drain_breakpoint_updates(writer)
+    return
+  }
   if resumes_execution(command) {
+    self.conditions.stepping = command != "continue"
     self.invalidate_inspection(writer)
     self.execution_revision += 1
     self.stopped = false

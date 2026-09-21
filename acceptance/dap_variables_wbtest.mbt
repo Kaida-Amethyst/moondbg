@@ -75,7 +75,7 @@ async test "DAP variable trees inspect frames structs arrays enum payloads and i
     let point = named_variable(locals, "point")
     assert_true(
       named_variable(peer.children_of(point), "x")
-      is { "value": String("3"), .. },
+      is { "value": String("35"), .. },
     )
     let values = named_variable(locals, "values")
     assert_true(
@@ -146,7 +146,7 @@ async test "DAP variable trees inspect frames structs arrays enum payloads and i
     // Old tree locators must still point into the original frame after viewing a caller.
     assert_true(
       named_variable(peer.children_of(point), "x")
-      is { "value": String("3"), .. },
+      is { "value": String("35"), .. },
     )
     peer.response(peer.send("continue", arguments={ "threadId": thread }))
     |> ignore

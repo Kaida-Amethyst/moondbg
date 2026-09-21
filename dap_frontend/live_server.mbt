@@ -47,6 +47,7 @@ async fn serve_live(
       capabilities: {},
       functions: FunctionState::new(prepared.context),
       panic: PanicState::new(prepared.project_sources),
+      conditions: ConditionState::new(),
     }
     defer session.inspection.jobs.close()
     let inspection_task = group.spawn(no_wait=true, () => {
@@ -61,6 +62,11 @@ async fn serve_live(
     defer session.panic.jobs.close()
     let panic_task = group.spawn(no_wait=true, () => session.panic_worker(inbox))
     defer panic_task.cancel()
+    defer session.conditions.jobs.close()
+    let condition_task = group.spawn(no_wait=true, () => {
+      session.condition_worker(inbox)
+    })
+    defer condition_task.cancel()
     let adapter_task = group.spawn(no_wait=true, () => {
       try {
         for ;; {
@@ -155,6 +161,14 @@ async fn serve_live(
               session.request(0, command, args, panic_reply=Some(reply))
             }
           PanicDone(result) => session.complete_panic(writer, result)
+          ConditionRead(epoch, command, args, reply) =>
+            if session.condition_epoch() == Some(epoch) {
+              session.request(0, command, args, inspection_reply=Some(reply))
+            } else {
+              reply.close(error=LiveError("Stale condition request"))
+            }
+          ConditionDone(epoch, result) =>
+            session.complete_condition(writer, epoch, result)
         }
       }
     } catch {

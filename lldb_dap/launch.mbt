@@ -19,6 +19,8 @@ async fn DebugExecution::prepare_with_dispatcher(
     machine: DapSessionMachine::new(),
     capabilities: null,
     stop_reason: "stopped",
+    stop_body: {},
+    conditions: BreakpointConditions::new(),
     exit_code: None,
     stack_snapshot: None,
     variable_cache: StopVariableCache::new(),

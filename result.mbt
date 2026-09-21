@@ -40,6 +40,7 @@ priv enum PresentationEvent {
   FunctionBreakpointUpdatePresentation(@debugger.FunctionBreakpointSnapshot)
   BreakpointErrorPresentation(BreakpointCommandError)
   BreakpointsPresentation(Array[@debugger.BreakpointListEntry])
+  ConditionChangedPresentation(Int, String?)
   BreakpointManagedPresentation(@debugger.BreakpointManagementResult)
   BreakpointManagementFailurePresentation(BreakpointManagementFailure)
   StopPresentation(@debugger.StopSnapshot)

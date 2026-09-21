@@ -47,6 +47,8 @@ VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**
 - 暂不支持 attach、会话内 restart、条件断点、程序参数、环境变量覆盖及交互式 stdin。
   修改代码后重新启动调试；行号与变量可见性仍受编译器 DWARF 和 LLDB 限制。
 
+以上为已发布版本范围；当前源码新增的简单行条件断点见下方“条件断点（开发版本，第一轮）”。
+
 VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，本地 VSIX 打包见
 [打包说明](extensions/vscode/PACKAGING.md)。安装后可在普通 VS Code 窗口调试，不需要扩展开发窗口。
 仓库内开发与验收步骤见 [开发说明](extensions/vscode/DEVELOPMENT.md)。
@@ -55,6 +57,46 @@ VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，
 函数断点面板支持 `main`、启动包的 `foo` 和 `@alias.foo`，泛型函数匹配所有已生成实例。
 普通函数名需要 `package` 启动上下文；预编译 `program` 模式仅支持 `main`。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
+
+### 条件断点（开发版本，第一轮）
+
+当前源码支持 **行断点** 的简单条件，两种前端使用同一套 MoonBit Int 比较逻辑。
+这不是任意 MoonBit 表达式求值，也不会将条件交给 LLDB 的 C/C++ 表达式求值器。
+
+在仓库根目录构建后体验：
+
+```sh
+moon build --target native -g .
+cd testdata/dwarf_probe
+moondbg conditional
+```
+
+以上 `moondbg` 须指向本次构建；也可直接使用仓库内 `_build/native/debug/build/moondbg.exe` 的绝对路径。
+
+```text
+(moondbg) b conditional/main.mbt:4
+(moondbg) condition 1 i == 7
+(moondbg) run
+(moondbg) p i
+```
+
+预期只在 `i = 7` 的那轮停住。`condition 1 i >= 8` 修改条件，`condition 1` 清除条件；
+`breakpoints` 显示条件。无效修改不会覆盖原条件；条件随 disable/enable 和再次 run 保留。
+
+VS Code 打开 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行 `println(i)` 左侧
+右键选择 **添加条件断点 / Add Conditional Breakpoint**，选择表达式并填写 `i == 7`，按 F5。
+已有红点可以右键编辑条件。停住后变量面板、悬停或 Watch 可查看 `i = 7`。
+只需更新 CLI，无需重新安装 VSIX；下一次启动调试时会重新读取条件断点能力。
+
+第一轮边界：
+
+- 左侧仅支持当前命中 frame 的简单局部变量名（ASCII 字母、数字、下划线），类型必须为 `Int`。
+- 右侧为十进制 Int 常量（可带负号，范围 -2147483648 到 2147483647）。支持 `>`、`>=`、`<`、`<=`、`==`、`!=`。
+- 暂不支持函数断点条件、成员/下标访问、变量间比较、Double、算术、逻辑组合、命中次数或 logpoint。
+- 条件读取失败（变量不存在、不可用或类型不符）会停住并报告错误，不当成 false。
+- run/continue 在条件为假时自动继续；单步保留 LLDB 的真实停止，不为跳过条件断点而额外继续。
+- panic、信号、主动暂停及同时命中的无条件断点不会被条件过滤隐藏。无法可靠识别命中 ID 时也保留停止。
+- 每次命中都需要停下并读取变量，频繁命中的循环会比无断点慢；程序输出仍正常保留。
 
 ## 命令行使用
 

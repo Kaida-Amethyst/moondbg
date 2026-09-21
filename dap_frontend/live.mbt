@@ -11,6 +11,8 @@ priv enum LiveInput {
   FunctionDone(Result[Array[Json], String])
   PanicRead(String, Json, @async.Queue[Json])
   PanicDone(Result[@lldb_dap.InstalledFunctionBreakpoint?, String])
+  ConditionRead(Int, String, Json, @async.Queue[Json])
+  ConditionDone(Int, Result[Bool, String])
 }
 
 ///|
@@ -23,6 +25,7 @@ priv struct PendingRequest {
   function_reply : @async.Queue[Json]?
   panic_reply : @async.Queue[Json]?
   stop_context : Json?
+  condition_continue : Json?
   arguments : Json
 }
 
@@ -50,6 +53,7 @@ priv struct LiveSession {
   mut capabilities : Json
   functions : FunctionState
   panic : PanicState
+  conditions : ConditionState
 }
 
 ///|
@@ -67,6 +71,7 @@ async fn LiveSession::request(
   function_reply? : @async.Queue[Json]? = None,
   panic_reply? : @async.Queue[Json]? = None,
   stop_context? : Json? = None,
+  condition_continue? : Json? = None,
 ) -> Unit {
   let seq = self.next_seq
   self.next_seq += 1
@@ -79,13 +84,18 @@ async fn LiveSession::request(
     function_reply,
     panic_reply,
     stop_context,
+    condition_continue,
     arguments,
   })
   self.transport.send_message({
     "seq": seq,
     "type": "request",
     "command": command,
-    "arguments": arguments,
+    "arguments": if command == "setBreakpoints" {
+      strip_conditions(arguments)
+    } else {
+      arguments
+    },
   })
 }
 

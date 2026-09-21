@@ -1,0 +1,31 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "Kaida-Amethyst/moondbg/expression"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn decimal_int(StringView) -> Int raise ConditionError
+
+// Errors
+pub(all) suberror ConditionError {
+  ConditionError(String)
+} derive(@debug.Debug)
+pub fn ConditionError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct IntCondition {
+  variable : String
+  text : String
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn IntCondition::equal(Self, Self) -> Bool
+pub fn IntCondition::evaluate(Self, Int) -> Bool
+pub fn IntCondition::not_equal(Self, Self) -> Bool
+pub fn IntCondition::parse(StringView) -> Self raise ConditionError
+pub fn IntCondition::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

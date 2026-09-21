@@ -32,6 +32,20 @@ async fn LiveSession::on_adapter(
         raise LiveError("Unexpected lldb-dap response.")
       }
       self.pending.remove(raw.to_int())
+      if pending.condition_continue is Some(stop) {
+        if success == Json(false) &&
+          pending.execution_revision == self.execution_revision &&
+          !self.closing &&
+          !self.ended &&
+          !self.exited {
+          self.stopped = true
+          self.conditions.suppress_continued = false
+          self.condition_failure(
+            writer, stop, "LLDB could not continue after a false condition.",
+          )
+        }
+        return
+      }
       if pending.panic_reply is Some(reply) {
         (reply.try_put(message) catch { _ => false }) |> ignore
         return
@@ -93,6 +107,31 @@ async fn LiveSession::on_adapter(
           )
         _ => raise LiveError("Invalid lldb-dap response success field.")
       }
+      if command == "setBreakpoints" {
+        // A rejected replacement may have partially changed LLDB's state.
+        // End safely rather than running with mismatched logical conditions.
+        let installed = try {
+          if error is Some(message) {
+            raise LiveError(message)
+          }
+          self.conditions.install(pending.arguments, body)
+          Ok(())
+        } catch {
+          failure => Err(inspection_error_message(failure))
+        }
+        if installed is Err(message) {
+          send_client(
+            writer,
+            self.client.response(
+              pending.client_seq,
+              command,
+              error=Some(message),
+            ),
+          )
+          raise LiveError(message)
+        }
+        self.conditions.updating = false
+      }
       if command == "initialize" {
         if error is Some(error) {
           raise LiveError(error)
@@ -125,6 +164,9 @@ async fn LiveSession::on_adapter(
       }
       if command == "launch" {
         self.launch_answered = true
+      }
+      if command == "setBreakpoints" {
+        self.drain_breakpoint_updates(writer)
       }
       if (command == "launch" || command == "configurationDone") &&
         error is Some(_) {
@@ -172,8 +214,14 @@ async fn LiveSession::on_adapter(
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = true
+          self.conditions.active = None
+          self.conditions.suppress_continued = false
+          let was_pause = self.pause_revision is Some(_)
           let stop = self.pause_stop_body(body)
-          if self.functions.active is Some(_) || self.panic.active is Some(_) {
+          if was_pause {
+            self.conditions.stepping = true
+          }
+          if self.breakpoint_work_pending() {
             // A running target can hit a newly created breakpoint before its
             // installation reply. Publish the BP IDs before its stop event.
             self.functions.stops.push(stop)
@@ -186,7 +234,11 @@ async fn LiveSession::on_adapter(
           self.invalidate_inspection(writer)
           self.execution_revision += 1
           self.stopped = false
-          send_client(writer, self.client.event(name, body))
+          if self.conditions.suppress_continued {
+            self.conditions.suppress_continued = false
+          } else {
+            send_client(writer, self.client.event(name, body))
+          }
         }
         "terminated" => {
           self.cancel_functions(writer, "Session terminated.")
@@ -206,7 +258,7 @@ async fn LiveSession::on_adapter(
           send_client(writer, self.client.event(name, body))
         }
         "breakpoint" =>
-          if self.functions.active is Some(_) || self.panic.active is Some(_) {
+          if self.breakpoint_work_pending() {
             self.functions.events.push(body)
           } else {
             self.function_event(writer, body)

@@ -94,6 +94,7 @@ pub extend BreakpointInstallation with Eq::{equal, not_equal}
 ///|
 pub struct BreakpointListEntry {
   id : Int
+  condition : String?
   target : BreakpointTarget
   enabled : Bool
   installation : BreakpointInstallation
@@ -172,6 +173,7 @@ pub fn DebugSession::breakpoints(
       .unwrap_or(breakpoint.pending_snapshot())
     entries.push({
       id: breakpoint.id(),
+      condition: breakpoint.condition().map(value => value.text),
       target: SourceTarget(
         display_path=breakpoint.display_path(),
         source_path=breakpoint.source_path(),
@@ -193,6 +195,7 @@ pub fn DebugSession::breakpoints(
       .unwrap_or(breakpoint.pending_snapshot())
     entries.push({
       id: breakpoint.id(),
+      condition: None,
       target: FunctionTarget(
         display_name=breakpoint.display_name(),
         selector=breakpoint.selector(),

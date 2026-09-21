@@ -105,6 +105,8 @@ priv struct DebugExecution {
   machine : DapSessionMachine
   mut capabilities : Json
   mut stop_reason : String
+  mut stop_body : Json
+  conditions : BreakpointConditions
   mut exit_code : Int?
   mut stack_snapshot : @debugger.StackSnapshot?
   variable_cache : StopVariableCache
@@ -166,6 +168,7 @@ fn DebugExecution::accept_event(
   }
   match event.name() {
     "stopped" => {
+      self.stop_body = event.body()
       self.stop_reason = match event.body() {
         // LLDB descriptions contain physical ids such as "breakpoint 3.1".
         // They must not look like the stable logical ids used by REPL commands.
@@ -285,19 +288,65 @@ async fn DebugExecution::wait_until_stable(self : DebugExecution) -> Unit {
 ///|
 async fn DebugExecution::complete_execution(
   self : DebugExecution,
+  filter_conditions? : Bool = true,
 ) -> @debugger.RunOutcome {
-  self.wait_until_stable()
-  match self.machine.state {
-    Stopped => {
-      let snapshot = self.build_stop_snapshot()
-      @debugger.RunOutcome::stopped(snapshot)
+  for ;; {
+    self.wait_until_stable()
+    match self.machine.state {
+      Stopped => {
+        let snapshot = self.build_stop_snapshot()
+        if filter_conditions &&
+          snapshot.reason() != "MoonBit panic" &&
+          self.conditions.for_stop(self.stop_body) is Some(conditions) &&
+          self.machine.frame_id(0) is Some(frame) {
+          let result = @async.with_timeout(12000, () => {
+            self.variable_inspector().test_conditions(frame, conditions)
+          }) catch {
+            error => {
+              if @async.is_cancellation_error(error) {
+                raise error
+              }
+              Err(
+                "Could not evaluate breakpoint condition: \{@debug.to_string(error)}",
+              )
+            }
+          }
+          match result {
+            Ok(false) => {
+              let thread = self.resolve_stopped_thread()
+              self.machine.mark_resumed()
+              self.stack_snapshot = None
+              self.variable_cache.reset(0)
+              self.request("continue", {
+                "threadId": thread,
+                "singleThread": false,
+              })
+              |> ignore
+              continue
+            }
+            Err(message) =>
+              return @debugger.RunOutcome::stopped(
+                @debugger.StopSnapshot::new(
+                  "breakpoint condition error",
+                  snapshot.function_name(),
+                  snapshot.source_path(),
+                  snapshot.line(),
+                  snapshot.column(),
+                  notice=Some(message),
+                ),
+              )
+            Ok(true) => ()
+          }
+        }
+        return @debugger.RunOutcome::stopped(snapshot)
+      }
+      Exited => return @debugger.RunOutcome::exited(self.exit_code)
+      state =>
+        raise InvalidSessionTransition(
+          state~,
+          action="complete execution transaction",
+        )
     }
-    Exited => @debugger.RunOutcome::exited(self.exit_code)
-    state =>
-      raise InvalidSessionTransition(
-        state~,
-        action="complete execution transaction",
-      )
   }
 }
 
@@ -305,13 +354,14 @@ async fn DebugExecution::complete_execution(
 async fn DebugExecution::resume_transaction(
   self : DebugExecution,
   request : @dap.DapRequest,
+  filter_conditions? : Bool = true,
 ) -> @debugger.RunOutcome {
   errdefer self.machine.fail("\{request.command()} transaction failed")
   self.machine.mark_resumed()
   self.stack_snapshot = None
   self.variable_cache.reset(0)
   self.request(request.command(), request.arguments()) |> ignore
-  self.complete_execution()
+  self.complete_execution(filter_conditions~)
 }
 
 ///|
@@ -322,7 +372,7 @@ async fn DebugExecution::resume_execution(
 ) -> @debugger.RunOutcome {
   let thread_id = self.selected_thread_id(thread, kind.action())
   let request = kind.request(thread_id, self.capabilities)
-  self.resume_transaction(request) catch {
+  self.resume_transaction(request, filter_conditions=kind is ContinueExecution) catch {
     error => raise LldbDapBackendError::AdapterFailure(@debug.to_string(error))
   }
 }

@@ -52,7 +52,7 @@ async test "DAP evaluate supports hover watch console paths expandable values an
       let value = peer.evaluate_path(top, "  point.x  ", context~)
       assert_true(
         value
-        is { "result": String("3"), "variablesReference": Number(0, ..), .. },
+        is { "result": String("35"), "variablesReference": Number(0, ..), .. },
         msg=value.stringify(),
       )
     }
@@ -128,7 +128,7 @@ async test "DAP evaluate supports hover watch console paths expandable values an
       is { "value": String("5"), .. },
     )
     assert_true(
-      peer.evaluate_path(top, "point.x") is { "result": String("3"), .. },
+      peer.evaluate_path(top, "point.x") is { "result": String("35"), .. },
     )
     peer.response(peer.send("continue", arguments={ "threadId": thread }))
     |> ignore

@@ -226,7 +226,7 @@ test "P7 registry resolves every fixed alias through command specs" {
 ///|
 test "P5 help metadata is derived from registry order" {
   let entries = default_command_registry().help_entries()
-  assert_eq(entries.length(), 19)
+  assert_eq(entries.length(), 20)
   assert_eq(entries[0].usage, "break <location>")
   assert_eq(entries[0].aliases, ["b"])
   assert_eq(entries[0].alias_usage(), "b <location>")
@@ -234,15 +234,16 @@ test "P5 help metadata is derived from registry order" {
     entries[0].summary,
     "Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
   )
-  assert_eq(entries[12].usage, "backtrace [--all]")
-  assert_eq(entries[12].aliases, ["bt"])
-  assert_eq(entries[12].alias_usage(), "bt [--all]")
-  assert_eq(entries[16].usage, "locals")
-  assert_eq(entries[17].usage, "help")
-  assert_eq(entries[18].usage, "quit")
-  assert_eq(entries[18].aliases, ["q", "exit"])
-  assert_eq(entries[18].alias_usage(), "q, exit")
-  assert_eq(entries[18].summary, "Exit moondbg")
+  assert_eq(entries[2].usage, "condition <id> [expression]")
+  assert_eq(entries[13].usage, "backtrace [--all]")
+  assert_eq(entries[13].aliases, ["bt"])
+  assert_eq(entries[13].alias_usage(), "bt [--all]")
+  assert_eq(entries[17].usage, "locals")
+  assert_eq(entries[18].usage, "help")
+  assert_eq(entries[19].usage, "quit")
+  assert_eq(entries[19].aliases, ["q", "exit"])
+  assert_eq(entries[19].alias_usage(), "q, exit")
+  assert_eq(entries[19].summary, "Exit moondbg")
 }
 
 ///|
@@ -253,7 +254,7 @@ test "P5 human help renderer preserves existing column layout" {
     "  break <location>     b <location>     Set a breakpoint at line (selected frame), file:line, function, or @alias.function",
   )
   assert_eq(
-    format_help_entry(entries[18]),
+    format_help_entry(entries[19]),
     "  quit                  q, exit          Exit moondbg",
   )
 }
@@ -267,7 +268,7 @@ async test "P5 help command returns structured registry help" {
     fail("help should return one structured presentation event")
   }
   assert_eq(entries.length(), context.registry.specs.length())
-  assert_eq(entries[17].summary, "Show this help")
+  assert_eq(entries[18].summary, "Show this help")
 }
 
 ///|

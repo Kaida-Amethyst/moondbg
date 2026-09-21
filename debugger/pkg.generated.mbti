@@ -2,6 +2,7 @@
 package "Kaida-Amethyst/moondbg/debugger"
 
 import {
+  "Kaida-Amethyst/moondbg/expression",
   "moonbitlang/core/debug",
 }
 
@@ -99,6 +100,7 @@ pub fn BreakpointInstallation::to_repr(Self) -> @debug.Repr
 
 pub struct BreakpointListEntry {
   id : Int
+  condition : String?
   target : BreakpointTarget
   enabled : Bool
   installation : BreakpointInstallation
@@ -208,6 +210,7 @@ pub fn DebugSession::breakpoint_configuration(Self) -> BreakpointConfiguration
 pub fn DebugSession::breakpoints(Self) -> Array[BreakpointListEntry]
 pub fn DebugSession::close(Self) -> Unit
 pub async fn DebugSession::complete_stack_snapshot(Self) -> StackSnapshot raise DebugSessionError
+pub fn DebugSession::condition_text(Self, Int) -> String?
 pub async fn DebugSession::continue_execution(Self) -> RunOutcome
 pub async fn DebugSession::disconnect(Self) -> Unit
 pub fn DebugSession::execution_epoch(Self) -> ExecutionEpoch?
@@ -226,6 +229,7 @@ pub async fn DebugSession::select_visible_caller_frame(Self) -> StackFrameSnapsh
 pub fn DebugSession::selected_frame(Self) -> FrameSelection?
 pub fn DebugSession::selected_frame_snapshot(Self) -> StackFrameSnapshot?
 pub fn DebugSession::selected_thread(Self) -> ThreadSelection?
+pub async fn DebugSession::set_condition(Self, Int, String) -> Unit
 pub fn DebugSession::source_breakpoints(Self) -> Array[BreakpointSnapshot]
 pub fn DebugSession::stack_snapshot(Self) -> StackSnapshot?
 pub fn DebugSession::state(Self) -> DebugSessionState
@@ -418,6 +422,7 @@ pub fn RunOutcome::stopped(StopSnapshot) -> Self
 pub struct SourceBreakpoint {
   // private fields
 }
+pub fn SourceBreakpoint::condition(Self) -> @expression.IntCondition?
 pub fn SourceBreakpoint::display_path(Self) -> String
 pub fn SourceBreakpoint::enabled(Self) -> Bool
 pub fn SourceBreakpoint::id(Self) -> Int

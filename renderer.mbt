@@ -544,6 +544,11 @@ async fn render_presentation_event(event : PresentationEvent) -> Unit {
     FunctionBreakpointUpdatePresentation(breakpoint) =>
       render_function_breakpoint_update(breakpoint)
     BreakpointErrorPresentation(error) => render_breakpoint_error(error)
+    ConditionChangedPresentation(id, text) =>
+      match text {
+        Some(text) => println("Breakpoint \{id} condition: \{text}")
+        None => println("Breakpoint \{id} condition cleared.")
+      }
     BreakpointsPresentation(entries) =>
       for line in breakpoint_list_lines(entries) {
         println(line)

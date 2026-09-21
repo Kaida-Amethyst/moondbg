@@ -23,6 +23,7 @@ fn live_test_session() -> (LiveSession, @dap_testkit.ScriptedTransport) {
     capabilities: {},
     functions: FunctionState::new(@debugger.DebugContext::empty()),
     panic: PanicState::new([]),
+    conditions: ConditionState::new(),
   }
   (session, transport)
 }
@@ -53,7 +54,7 @@ test "line breakpoint requests replace one source and reject unsupported options
     { "source": { "path": "/main.mbt" }, "breakpoints": [{ "line": 1.5 }] },
     {
       "source": { "path": "/main.mbt" },
-      "breakpoints": [{ "line": 3, "condition": "x > 1" }],
+      "breakpoints": [{ "line": 3, "condition": "x > foo()" }],
     },
     {
       "source": { "path": "/main.mbt" },

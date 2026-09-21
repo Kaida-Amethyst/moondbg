@@ -99,6 +99,19 @@ CLI 新版发布到 Mooncakes 后可再次执行 `moon install Kaida-Amethyst/mo
 - **预编译程序**：可用 `"program": "绝对路径/program.exe"` 替换 `package`；两者只能选一个。
   程序需带完整调试信息。此模式不重新构建，函数断点仅支持 `main`。
 
+## 条件断点（需要开发版 CLI）
+
+在源码行号左侧右键 → **添加条件断点 / Add Conditional Breakpoint**，选“表达式”，
+输入 `i == 7`。已有断点可右键编辑；清空表达式恢复无条件断点。
+支持行断点的局部 `Int` 变量与十进制 Int 常量比较：`>`、`>=`、`<`、`<=`、`==`、`!=`。
+变量名暂限 ASCII 字母、数字和下划线；不支持字段、数组下标、变量间比较或函数调用。
+
+示例：打开仓库 `testdata/dwarf_probe/conditional/main.mbt`，在第 4 行设置 `i == 7`，
+F5 后只在 `i = 7` 的那轮停止。条件变量读取失败会停住并明确报错。
+run/continue 过滤 false 条件；单步保留 LLDB 原有停止，不额外自动继续。
+此功能由 CLI 提供能力声明，更新 CLI 后重新启动调试即可，无需重新安装 VSIX。
+当前发布版的限制仍见下文，第一轮尚不支持函数断点条件、命中次数或 logpoint。
+
 ## MoonBit panic（需要开发版 CLI）
 
 新版 moondbg CLI 在 **运行和调试 → 断点** 面板提供默认开启的 **MoonBit panic**。
@@ -111,7 +124,7 @@ CLI 新版发布到 Mooncakes 后可再次执行 `moon install Kaida-Amethyst/mo
 
 ## 已知限制与排错
 
-- 暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、会话内 restart、条件断点、
+- 已发布版暂不支持程序参数、环境变量覆盖、交互式 stdin、attach、会话内 restart、条件断点、
   算术表达式、函数调用或赋值。再次 F5 开始新会话。
 - 按包启动需要整个项目 `moon check` 通过，其他包或测试的错误也可能阻止启动。
 - 找不到 `moondbg`：查看错误中的实际路径，检查 `moondbg.moonHome`，并用对应工具链执行安装。

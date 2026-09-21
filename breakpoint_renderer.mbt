@@ -57,6 +57,9 @@ fn breakpoint_list_lines(
     lines.push(
       "     installation: \{breakpoint_installation_text(entry.installation)}",
     )
+    if entry.condition is Some(text) {
+      lines.push("     condition: \{text}")
+    }
     let previous = entry.installation is @debugger.PreviousInstallation(_)
     let prefix = if previous { "previous " } else { "" }
     if entry.target

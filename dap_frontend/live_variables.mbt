@@ -104,7 +104,11 @@ fn InspectionState::reference(
 
 ///|
 fn LiveSession::inspection_epoch(self : LiveSession) -> Int? {
-  if self.stopped && !self.exited && !self.ended && !self.closing {
+  if self.stopped &&
+    !self.exited &&
+    !self.ended &&
+    !self.closing &&
+    self.conditions.active is None {
     Some(self.execution_revision)
   } else {
     None

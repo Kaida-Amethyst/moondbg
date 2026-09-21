@@ -4,6 +4,7 @@ package "Kaida-Amethyst/moondbg/lldb_dap"
 import {
   "Kaida-Amethyst/moondbg/dap",
   "Kaida-Amethyst/moondbg/debugger",
+  "Kaida-Amethyst/moondbg/expression",
   "moonbitlang/async",
 }
 
@@ -16,6 +17,13 @@ pub suberror VariableEvaluationError {
 }
 
 // Types and methods
+pub struct BreakpointConditions {
+  // private fields
+}
+pub fn BreakpointConditions::for_stop(Self, Json) -> Array[@expression.IntCondition]?
+pub fn BreakpointConditions::new() -> Self
+pub fn BreakpointConditions::replace(Self, String, Array[(Int, @expression.IntCondition?)]) -> Unit
+
 pub struct FunctionBreakpointDriver {
   // private fields
 }
@@ -39,6 +47,8 @@ pub struct VariableInspector {
   // private fields
 }
 pub fn VariableInspector::new(async (String, Json) -> @dap.DapResponse, () -> Int?, Json) -> Self
+pub async fn VariableInspector::read_condition_int(Self, Int, String) -> Int
+pub async fn VariableInspector::test_conditions(Self, Int, Array[@expression.IntCondition]) -> Result[Bool, String]
 pub async fn VariableInspector::tree_children(Self, Int, VariableNode, start~ : Int, count~ : Int) -> Array[VariableNode]
 pub async fn VariableInspector::tree_evaluate(Self, Int, @debugger.VariablePath) -> VariableNode
 pub async fn VariableInspector::tree_locals(Self, Int) -> Array[VariableNode]

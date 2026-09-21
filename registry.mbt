@@ -111,6 +111,7 @@ fn default_command_registry() -> CommandRegistry raise CommandRegistryError {
   CommandRegistry::new([
     break_command_spec(),
     breakpoints_command_spec(),
+    condition_command_spec(),
     delete_command_spec(),
     disable_command_spec(),
     enable_command_spec(),

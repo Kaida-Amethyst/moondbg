@@ -4,7 +4,7 @@ fn LogicalSourceBreakpoint::new(
   source_path : String,
   requested_line : Int,
 ) -> LogicalSourceBreakpoint {
-  { id, source_path, requested_line, }
+  { id, source_path, requested_line, condition: None, }
 }
 
 ///|

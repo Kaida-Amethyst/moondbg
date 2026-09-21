@@ -141,6 +141,7 @@ async fn LiveSession::drain_breakpoint_updates(
   self : LiveSession,
   writer : &@io.Writer,
 ) -> Unit {
+  guard !self.breakpoint_work_pending() else { return }
   for event in self.functions.events {
     self.function_event(writer, event)
   }
@@ -149,9 +150,7 @@ async fn LiveSession::drain_breakpoint_updates(
     self.publish_stop(writer, stop)
   }
   self.functions.stops.clear()
-  while self.functions.active is None &&
-        self.panic.active is None &&
-        self.functions.deferred.length() > 0 {
+  while !self.breakpoint_work_pending() && self.functions.deferred.length() > 0 {
     let (seq, command, arguments) = self.functions.deferred.remove(0)
     self.handle_live_request(writer, seq, command, arguments)
   }
@@ -185,10 +184,7 @@ async fn LiveSession::publish_stop(
       return
     }
   }
-  send_client(
-    writer,
-    self.client.event("stopped", self.function_stop_body(body)),
-  )
+  self.publish_condition_stop(writer, body)
 }
 
 ///|
@@ -263,10 +259,7 @@ async fn LiveSession::complete_panic_stop(
         }),
       )
     }
-    send_client(
-      writer,
-      self.client.event("stopped", self.function_stop_body(body)),
-    )
+    self.publish_condition_stop(writer, body)
   }
 }
 

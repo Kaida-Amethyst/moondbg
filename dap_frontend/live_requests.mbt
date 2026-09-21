@@ -16,9 +16,12 @@ fn line_breakpoint_arguments(arguments : Json) -> Json raise {
       line == line.to_int().to_double() else {
       raise LiveError("Breakpoint lines must be positive integers.")
     }
-    for key in ["condition", "hitCondition", "logMessage", "column"] {
+    source_condition(point) |> ignore
+    for key in ["hitCondition", "logMessage", "column"] {
       if point is Object(fields) && fields.contains(key) {
-        raise LiveError("Only unconditional line breakpoints are supported.")
+        raise LiveError(
+          "Hit counts, logpoints and column breakpoints are not supported.",
+        )
       }
     }
   }
@@ -77,9 +80,10 @@ async fn LiveSession::handle_live_request(
   }
   // Preserve client order around asynchronous breakpoint replacement. Stop
   // and inspection remain responsive; execution cannot outrun installation.
-  if (self.functions.active is Some(_) || self.panic.active is Some(_)) &&
+  if self.breakpoint_work_pending() &&
     (
       command == "setFunctionBreakpoints" ||
+      command == "setBreakpoints" ||
       command == "setExceptionBreakpoints" ||
       command == "configurationDone" ||
       resumes_execution(command)
@@ -138,6 +142,7 @@ async fn LiveSession::handle_live_request(
           return
         }
       }
+      self.conditions.updating = true
       self.request(seq, command, checked)
     }
     "setExceptionBreakpoints" if self.ready && !self.ended => {
@@ -170,7 +175,7 @@ async fn LiveSession::handle_live_request(
       self.deadline = None
       self.request(seq, command, {})
     }
-    "stackTrace" if self.stopped && !self.ended =>
+    "stackTrace" if self.inspection_epoch() is Some(_) =>
       self.request(seq, command, arguments)
     "scopes" | "variables" | "evaluate" =>
       self.inspect_client(writer, seq, command, arguments)
