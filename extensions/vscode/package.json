@@ -2,7 +2,7 @@
   "name": "moondbg",
   "displayName": "moondbg (Preview)",
   "description": "通过 moondbg 构建并调试 MoonBit native 程序。",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "moondbg-local",
   "private": true,
   "preview": true,

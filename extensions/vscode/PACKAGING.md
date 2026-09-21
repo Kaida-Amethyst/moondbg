@@ -10,7 +10,7 @@ npm ci
 npm run package
 ```
 
-输出：`dist/moondbg-0.1.1-darwin-arm64.vsix`。
+输出：`dist/moondbg-0.1.2-darwin-arm64.vsix`。
 `@vscode/vsce` 版本与传递依赖由 package-lock.json 锁定；仅打包白名单中的运行时代码、用户文档和许可证。
 不会包含 node_modules、测试、开发文档、CLI 或本机配置。`LICENSE` 必须与仓库根目录一致。
 
@@ -25,7 +25,7 @@ npm run package
 源码断点、变量展开及求值验收。运行时清除 MOON_HOME，测试通过用户设置 `~/.moon` 启动已安装 CLI。
 测试驱动本身不注册调试类型，moondbg 不能从 extensionDevelopmentPath 加载。
 
-0.1.1 的无配置启动还需当前 CLI 的 `--resolve-source` 协议 v1。
+无配置启动需要 CLI 的 `--resolve-source` 协议 v1；0.1.2 的新调试能力还需要配套标签的 CLI。
 开发验收可将 `moon install --path . --bin <临时工具链>/bin` 安装到隔离目录，再通过
 `MOONDBG_TEST_MOON_HOME` 传给已安装 VSIX 测试；不覆盖用户的 `~/.moon/bin/moondbg`。
 `test/automatic-host.js` 验证无 launch.json 项目的 Run and Debug / 当前包命令、源码断点和 library 拒绝。
@@ -34,9 +34,9 @@ npm run package
 
 ## GitHub Release
 
-扩展使用独立标签 `vscode-v0.1.1`，与 MoonBit CLI 模块版本区分。
+扩展使用独立标签 `vscode-v0.1.2`，与 MoonBit CLI 模块版本区分。
 先提交并推送对应源码与文档，创建、推送该标签，再发布为 **prerelease**，上传
-`dist/moondbg-0.1.1-darwin-arm64.vsix`。发布说明见
-[vscode-v0.1.1](../../docs/releases/vscode-v0.1.1.md)。
+`dist/moondbg-0.1.2-darwin-arm64.vsix`。发布说明见
+[vscode-v0.1.2](../../docs/releases/vscode-v0.1.2.md)。
 发布前重新打包，确保扩展内的 README 与标签中的源码一致；发布后下载资产并核对 SHA-256。
 不要把 VSIX 提交到 Git，也不要自动发布 Mooncakes 包或 Marketplace 扩展。

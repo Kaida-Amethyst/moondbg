@@ -4,18 +4,18 @@ MoonBit native 程序的调试器，提供 REPL 和 VS Code 调试，通过 `lld
 
 ## VS Code 技术预览版
 
-下载 [GitHub Release：vscode-v0.1.1](https://github.com/Kaida-Amethyst/moondbg/releases/tag/vscode-v0.1.1)
-中的 `moondbg-0.1.1-darwin-arm64.vsix`。这是预发布版本，尚未上架 VS Code Marketplace。
+下载 [GitHub Release：vscode-v0.1.2](https://github.com/Kaida-Amethyst/moondbg/releases/tag/vscode-v0.1.2)
+中的 `moondbg-0.1.2-darwin-arm64.vsix`。这是预发布版本，尚未上架 VS Code Marketplace。
 VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**。
 
 ### 安装与启动
 
 1. 安装 CLI。通常通过 `moon install Kaida-Amethyst/moondbg` 安装到 `~/.moon/bin/moondbg`。
-   本版自动定位需要 CLI 的 `--resolve-source` 接口；旧版 Mooncakes 包可能尚未包含它。
+   本版新增能力由 CLI 提供；仅更新 VSIX 不会更新 CLI，Mooncakes 包也可能落后于此 release。
    要确保 CLI 与此预览版匹配，可在一个新的目录中安装本 release 的源码：
 
    ```sh
-   git clone --branch vscode-v0.1.1 --depth 1 https://github.com/Kaida-Amethyst/moondbg.git moondbg-preview
+   git clone --branch vscode-v0.1.2 --depth 1 https://github.com/Kaida-Amethyst/moondbg.git moondbg-preview
    cd moondbg-preview
    moon install --path .
    ```
@@ -42,12 +42,13 @@ VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**
   尚未完成 v0.10.4 的独立兼容性验收。
 - 需要 MoonBit 语言扩展，以及可用的 `lldb-dap`（可用 `xcrun --find lldb-dap` 检查）。
   包调试要求整个项目检查通过，以 `-g -O0` 构建；其他包或测试的检查错误也可能阻止启动。
-- 支持行/函数断点、单步、暂停、调用栈、变量按需展开、Watch、悬停和程序输出。
-  求值仅支持 `point.x`、`arr[0].x` 等只读变量路径，不支持算术、函数调用或赋值。
-- 暂不支持 attach、会话内 restart、条件断点、程序参数、环境变量覆盖及交互式 stdin。
+- 支持行/函数条件断点、panic 停点、单步、暂停、调用栈、变量按需展开、Watch、悬停和程序输出。
+  求值支持 `point.x`、`arr[0].x`、`result.0.x`、`text[0:128]` 等只读路径，不支持算术、函数调用或赋值。
+- 暂不支持 attach、会话内 restart、命中次数、logpoint、程序参数、环境变量覆盖及交互式 stdin。
   修改代码后重新启动调试；行号与变量可见性仍受编译器 DWARF 和 LLDB 限制。
+- 优化表示的 Option 仍等待编译器调试信息契约落地；本版不宣称完整支持 Option，也不猜测 Some/None。
 
-以上为已发布版本范围；当前源码新增的行条件断点见下方“条件断点（开发版本）”。
+以上能力需要与 `vscode-v0.1.2` 标签对应的 CLI；扩展运行时代码不变，不自动更新 CLI。
 
 VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，本地 VSIX 打包见
 [打包说明](extensions/vscode/PACKAGING.md)。安装后可在普通 VS Code 窗口调试，不需要扩展开发窗口。
@@ -58,7 +59,7 @@ VS Code 安装及使用说明见 [扩展 README](extensions/vscode/README.md)，
 普通函数名需要 `package` 启动上下文；预编译 `program` 模式仅支持 `main`。
 `connectionTest: true` 配置仅验证 DAP 连接，不启动用户程序或 lldb-dap。
 
-### String / Bytes 内容查看（开发版本）
+### String / Bytes 内容查看
 
 当前源码的 REPL 与 VS Code 共用内存读取和类型显示，不调用 `Debug` trait 或用户代码。
 String 显示带引号的内容，保留中文和 emoji，换行、NUL 等控制字符会转义；Bytes 使用
@@ -78,11 +79,11 @@ String 显示带引号的内容，保留中文和 emoji，换行、NUL 等控制
 `run`，然后查看 `values.text`、`values.bytes`、`values.long_text`、`values.long_bytes`。
 `moondbg` 须指向本次构建；VS Code 在该包的 `let marker = values.text` 行设断点后按 F5。
 
-### tuple、Result 与位置成员（开发版本）
+### tuple、Result 与位置成员
 
 `.N` 从零开始：对 tuple 表示第 N 项，对 enum（包括 Result）表示**当前构造器**的第 N 个载荷。
 例如 `p pair.0`、`p result.0`、`p result.0.x`。REPL 打印 tuple 会列出 `.0`、`.1` 等成员；
-enum 仍先显示浅层摘要，例如 `Ok(Point)`，需要时再显式访问载荷。
+enum 显示有界嵌套摘要，例如 `Ok(Point { x: 3, y: 4 })`，需要时再显式访问载荷。
 
 VS Code 展开成员、Add to Watch、Watch 与调试控制台使用同一套位置规则，表达式不加 `p`。
 `Empty.0`、越界位置和对普通 struct 使用 `.0` 会明确报错；继续运行后重新识别当前构造器，
@@ -90,16 +91,23 @@ VS Code 展开成员、Add to Watch、Watch 与调试控制台使用同一套位
 
 试用：`moondbg testdata/dwarf_probe/positional_values`，在该包的 `let marker = pair.0`
 行打断点后 `run`，查看 `pair`、`result.0.x`、`values.choice.1.y`、`items[0].0`。
-在 `POSITIONAL_CHANGED` 行再停住，`values.changing` 会从 `Ok(Point)` 变为 `Err(String)`。
+在 `POSITIONAL_CHANGED` 行再停住，`values.changing` 会从 `Ok(...)` 变为 `Err("changed🙂"...)`。
 
 已知限制：tuple/enum 的位置成员内若包含**复合元素数组**，例如 `values.nested.1[0]`，
 当前 LLDB 生成的数组表达式不可用；展开数组与路径读取均报错，不结束调试会话。
 基本类型数组（如 `values.numbers.1[1]`）走已有内存读取，可正常访问。
 命名变量中的复合数组仍支持 `items[0].0`；后续补齐位置成员内的复合数组读取。
 
-### 条件断点（开发版本）
+### 有界嵌套摘要
 
-当前源码支持 **行断点** 的简单条件，两种前端使用同一套带类型的标量比较逻辑。
+REPL 的 enum 摘要和 VS Code 的复合值预览共用规则：最多展开 2 层、每个复合值 4 个成员、
+合计 16 个值、160 个 Unicode 字符；数组不自动展开元素。省略用 `…` 标明，
+显式路径与 VS Code 点击展开仍可继续深入。内存读取失败、变量不可用和当前 frame 未找到变量分别报告。
+试用与详细边界见 [变量摘要](docs/value_summary.md)；Option 的编译器依赖见 [Option 留痕](docs/option_view.md)。
+
+### 条件断点
+
+支持 **行断点、普通函数和泛型函数断点** 的条件，两种前端使用同一套带类型的标量比较逻辑。
 这不是任意 MoonBit 表达式求值，也不会将条件交给 LLDB 的 C/C++ 表达式求值器。
 
 在仓库根目录构建后体验：
@@ -182,7 +190,7 @@ VS Code 的 **断点** 面板点击 **添加函数断点（+）**，填写 `prob
 当前边界：
 
 - 左侧为当前命中 frame 的变量路径；右侧可以是变量路径、十进制整数常量或 `true` / `false`。
-  路径与 `p` 共用语法，支持嵌套字段、数组常量下标及组合；不支持 `arr[i]`、负下标或 enum 位置访问。
+  路径与 `p` 共用语法，支持嵌套字段、数组常量下标、位置成员及组合；不支持 `arr[i]` 或负下标。
 - 支持 `Int`、`UInt`、`Int64`、`UInt64` 的 `>`、`>=`、`<`、`<=`、`==`、`!=`；`Bool` 只支持 `==`、`!=`。
 - 两侧路径必须同类型，不做 Int/UInt、Int/Int64、Bool/Int 等隐式转换。整数常量按左侧类型解析并严格检查范围，
   例如 `unsigned == 8` 可以，`unsigned == -1` 会报错；`ready == 1` 也会报错。
@@ -233,11 +241,11 @@ quit
 
 ## 开发与验证
 
-### panic 停点（开发版本）
+### panic 停点
 
 当前源码中的 REPL 会在 `moonbit_panic` 入口自动停止，显示 `MoonBit panic`。
 这是内部停点，不占用用户断点编号，也不受 `delete` / `disable` 影响。
-VS Code 也支持此停点，需要本仓库的新 CLI；上面的 release 所对应的旧 CLI 尚不包含此功能。
+VS Code 也支持此停点，需要本 release 对应的 CLI；仅更新 VSIX 不会更新 CLI。
 
 在构建本仓库 CLI 后可试用：
 
