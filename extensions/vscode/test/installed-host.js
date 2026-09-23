@@ -5,7 +5,7 @@ const path = require("node:path");
 const vscode = require("vscode");
 
 exports.run = async function () {
-  const extension = vscode.extensions.getExtension("moondbg-local.moondbg");
+  const extension = vscode.extensions.getExtension("KaidaAmethyst.moondbg");
   assert.ok(extension, "Installed VSIX extension is missing");
   assert.equal(path.dirname(extension.extensionPath), process.env.MOONDBG_INSTALLED_EXTENSIONS);
   assert.equal(extension.packageJSON.version, "0.1.1");

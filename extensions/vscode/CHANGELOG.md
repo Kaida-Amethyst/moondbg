@@ -1,5 +1,12 @@
 # Changelog
 
+## 待发布 — Marketplace 发布者迁移
+
+- publisher 改为 Marketplace 发布者 `KaidaAmethyst`，扩展完整 ID 为 `KaidaAmethyst.moondbg`。
+- 上传用 VSIX 暂保留版本 0.1.2；已发布的 GitHub `vscode-v0.1.2` 资产仍是旧 publisher，不替换历史资产。
+- 安装新包前卸载或禁用 `moondbg-local.moondbg`，避免两个扩展同时注册 moondbg 调试类型。
+- 此迁移不修改 moondbg CLI，也不自动发布到 Marketplace。
+
 ## 0.1.2 — panic、条件断点与变量探查
 
 - 与本 release 的 CLI 配套：提供默认开启的 MoonBit panic 停点，并定位最近的项目源码 frame。
@@ -24,4 +31,4 @@
 - 支持按包自动构建、行断点、函数断点、单步、暂停、调用栈、变量树、Watch 和只读求值。
 - MoonBit 支持基线为 v0.10.4；本次开发验收使用 nightly，v0.10.4 专项验收尚待完成。
 
-此 VSIX 使用本地发布者 `moondbg-local`，尚未发布到 Marketplace。
+历史 GitHub 预览包使用本地发布者 `moondbg-local`。

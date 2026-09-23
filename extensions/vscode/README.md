@@ -16,6 +16,11 @@
 
 ## 安装
 
+当前源码的 publisher 已改为 `KaidaAmethyst`，扩展完整 ID 为 `KaidaAmethyst.moondbg`。
+本地重新打包的 0.1.2 VSIX 可上传到该 Marketplace 发布者下；这不表示已完成 Marketplace 发布。
+安装此新包前先卸载或禁用旧 `moondbg-local.moondbg`，不会自动从旧 ID 升级。
+下面的 GitHub Release 及其资产仍保留旧 publisher，不包含这次身份迁移。
+
 从 [GitHub Release：vscode-v0.1.2](https://github.com/Kaida-Amethyst/moondbg/releases/tag/vscode-v0.1.2)
 下载 `moondbg-0.1.2-darwin-arm64.vsix`。这是技术预览，尚未上架 Marketplace。
 
@@ -51,8 +56,9 @@
    自定义工具链请填对应的绝对目录。该设置优先于环境变量；留空才使用 VS Code 进程的 `MOON_HOME`。
    不会搜索 PATH 或自动尝试其他目录。扩展将所选目录传给 CLI，保证构建使用同一套工具链。
 
-若之前装过 `moondbg-dev` 或启动了旧的 moondbg 扩展开发窗口，请先禁用旧扩展并关闭旧窗口，
-避免两个扩展同时注册 `moondbg` 调试类型。本预览包的扩展标识是 `moondbg-local.moondbg`。
+若之前装过 `moondbg-dev`、`moondbg-local.moondbg` 或启动了旧的 moondbg 扩展开发窗口，
+使用新 publisher 的包前请先禁用旧扩展并关闭旧窗口，避免两个扩展同时注册 `moondbg` 调试类型。
+当前源码打包的扩展标识是 `KaidaAmethyst.moondbg`。
 更新时下载相应 release 的 VSIX 重新安装，并按其说明同步 CLI。
 
 ## 第一次调试

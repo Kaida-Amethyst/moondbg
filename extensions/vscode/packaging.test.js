@@ -6,7 +6,7 @@ const manifest = require("./package.json");
 
 test("preview manifest restricts execution and ships only runtime files", () => {
   assert.equal(manifest.preview, true);
-  assert.equal(manifest.publisher, "moondbg-local");
+  assert.equal(manifest.publisher, "KaidaAmethyst");
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, false);
   assert.equal(manifest.capabilities.virtualWorkspaces.supported, false);
   assert.deepEqual(manifest.extensionKind, ["workspace"]);

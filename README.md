@@ -8,6 +8,10 @@ MoonBit native 程序的调试器，提供 REPL 和 VS Code 调试，通过 `lld
 中的 `moondbg-0.1.2-darwin-arm64.vsix`。这是预发布版本，尚未上架 VS Code Marketplace。
 VSIX **只包含扩展，不包含 moondbg CLI、MoonBit 工具链或 lldb-dap**。
 
+当前源码已将 Marketplace publisher 改为 `KaidaAmethyst`，本地打包的扩展 ID 为
+`KaidaAmethyst.moondbg`。上面的历史 GitHub Release 仍保留旧 publisher；安装新身份的包前，
+请先卸载或禁用 `moondbg-local.moondbg`，避免调试类型冲突。此次迁移不修改 CLI。
+
 ### 安装与启动
 
 1. 安装 CLI。通常通过 `moon install Kaida-Amethyst/moondbg` 安装到 `~/.moon/bin/moondbg`。
